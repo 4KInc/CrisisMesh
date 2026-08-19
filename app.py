@@ -12,11 +12,13 @@ from google.genai.types import Content, Part
 
 from src.agents.coordinator.agent import coordinator_agent
 from src.core.knowledge_base import init_knowledge_base
+from src.core.memory_bank import init_memory_bank
 
 load_dotenv()
 
-# Initialize the knowledge base with seed data at startup
+# Initialize knowledge base and memory bank at startup
 init_knowledge_base()
+init_memory_bank()
 
 APP_NAME = "crisismesh"
 USER_ID = "commander"
