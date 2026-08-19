@@ -11,8 +11,12 @@ from google.adk.sessions import InMemorySessionService
 from google.genai.types import Content, Part
 
 from src.agents.coordinator.agent import coordinator_agent
+from src.core.knowledge_base import init_knowledge_base
 
 load_dotenv()
+
+# Initialize the knowledge base with seed data at startup
+init_knowledge_base()
 
 APP_NAME = "crisismesh"
 USER_ID = "commander"

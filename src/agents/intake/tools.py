@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from typing import Any
 
+from src.core.knowledge_base import KnowledgeBase
 from src.models.incident import IncidentType, Severity
 
 
@@ -21,7 +23,6 @@ PLAYBOOK_MAP: dict[str, str] = {
     IncidentType.BOMB_THREAT: "playbook-bomb-threat-v1",
 }
 
-# Keywords for classification heuristics (supplements Gemini classification)
 _TYPE_KEYWORDS: dict[IncidentType, list[str]] = {
     IncidentType.FIRE: ["fire", "smoke", "flames", "burning", "alarm"],
     IncidentType.ACTIVE_THREAT: ["shooter", "weapon", "armed", "threat", "intruder", "gun"],
@@ -47,7 +48,7 @@ def classify_incident(report_text: str) -> dict[str, Any]:
     """
     text_lower = report_text.lower()
 
-    best_type = IncidentType.MEDICAL  # default fallback
+    best_type = IncidentType.MEDICAL
     best_score = 0
 
     for itype, keywords in _TYPE_KEYWORDS.items():
@@ -56,7 +57,6 @@ def classify_incident(report_text: str) -> dict[str, Any]:
             best_score = score
             best_type = itype
 
-    # Severity heuristics
     severity = Severity.MODERATE
     critical_words = ["critical", "multiple", "spreading", "uncontrolled", "mass", "armed"]
     high_words = ["urgent", "serious", "large", "expanding", "trapped"]
@@ -68,9 +68,8 @@ def classify_incident(report_text: str) -> dict[str, Any]:
     elif best_score <= 1:
         severity = Severity.LOW
 
-    # Generate incident ID
-    year = datetime.utcnow().year
-    incident_id = f"{best_type.upper()}-{year}-{datetime.utcnow().strftime('%H%M%S')}"
+    now = datetime.now(timezone.utc)
+    incident_id = f"{best_type.upper()}-{now.year}-{now.strftime('%H%M%S')}"
 
     return {
         "incident_id": incident_id,
@@ -82,23 +81,26 @@ def classify_incident(report_text: str) -> dict[str, Any]:
     }
 
 
-def extract_location(report_text: str) -> dict[str, str]:
-    """Extract location details from an incident report.
+def extract_location(report_text: str) -> dict[str, Any]:
+    """Extract and resolve location details from an incident report against the knowledge base.
 
     Args:
         report_text: The raw incident report text.
 
     Returns:
-        Extracted location with building, floor, room, and zone fields.
+        Extracted location with resolved zone, room, and floor from the KB.
     """
-    # This is a simplified extraction — Gemini handles the real NLU
+    kb = KnowledgeBase.get()
     text_lower = report_text.lower()
-    location = {
-        "building": "",
+
+    location: dict[str, Any] = {
         "floor": "",
-        "room": "",
-        "zone": "",
+        "room_id": "",
+        "room_name": "",
+        "zone_id": "",
+        "zone_name": "",
         "raw_location": "",
+        "resolved": False,
     }
 
     # Floor extraction
@@ -111,21 +113,67 @@ def extract_location(report_text: str) -> dict[str, str]:
                 location["floor"] = floor_num
                 break
 
-    # Room extraction
-    for marker in ["room ", "rm ", "lab ", "office "]:
-        idx = text_lower.find(marker)
-        if idx >= 0:
-            rest = report_text[idx + len(marker):idx + len(marker) + 20].strip()
-            room_id = rest.split()[0] if rest.split() else ""
-            if room_id:
-                location["room"] = room_id
-                break
+    # Room extraction — match "room 215", "rm 215", "Room 215"
+    room_match = re.search(r'(?:room|rm)\s*(\d{3})', text_lower)
+    if room_match:
+        room_id = room_match.group(1)
+        room = kb.get_room(room_id)
+        if room:
+            location["room_id"] = room_id
+            location["room_name"] = room["name"]
+            location["zone_id"] = room.get("zone_id", "")
+            location["floor"] = str(room.get("floor", ""))
+            zone = kb.get_zone(room.get("zone_id", ""))
+            if zone:
+                location["zone_name"] = zone["name"]
+            location["resolved"] = True
+            return location
 
-    # Near / by extraction for general location
+    # Zone name matching — check if any zone name appears in the text
+    for z in kb.zones:
+        zone_name_lower = z["name"].lower()
+        if zone_name_lower in text_lower:
+            location["zone_id"] = z["zone_id"]
+            location["zone_name"] = z["name"]
+            location["floor"] = str(z.get("floor", ""))
+            location["resolved"] = True
+            return location
+
+    # Room name / keyword matching — "science lab", "gym", "cafeteria", "library"
+    keyword_zone_map = {
+        "science lab": "west-wing-f2",
+        "lab": "west-wing-f2",
+        "gymnasium": "gym",
+        "gym": "gym",
+        "cafeteria": "cafeteria",
+        "library": "library",
+        "media center": "library",
+        "main office": "admin-f1",
+        "front office": "admin-f1",
+        "nurse": "east-wing-f1",
+    }
+    for keyword, zone_id in keyword_zone_map.items():
+        if keyword in text_lower:
+            zone = kb.get_zone(zone_id)
+            if zone:
+                location["zone_id"] = zone_id
+                location["zone_name"] = zone["name"]
+                location["floor"] = str(zone.get("floor", ""))
+                location["resolved"] = True
+
+            # Also try to find the specific room
+            for r in kb.rooms:
+                if keyword in r["name"].lower():
+                    location["room_id"] = r["room_id"]
+                    location["room_name"] = r["name"]
+                    break
+            return location
+
+    # Fallback: capture raw location text
     for marker in ["near ", "by ", "at ", "in "]:
         idx = text_lower.find(marker)
         if idx >= 0:
-            rest = report_text[idx:idx + 50].strip()
+            rest = report_text[idx:idx + 60].strip()
             end = rest.find(".")
             location["raw_location"] = rest[:end] if end > 0 else rest
             break

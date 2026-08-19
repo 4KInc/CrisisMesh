@@ -1,6 +1,24 @@
 """Tests for Intake & Classification Agent tools."""
 
+import os
+
+import pytest
+
+from src.core.knowledge_base import KnowledgeBase, init_knowledge_base
 from src.agents.intake.tools import classify_incident, extract_location, select_playbook
+
+SEED_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "data", "seed",
+)
+
+
+@pytest.fixture(autouse=True)
+def fresh_kb():
+    KnowledgeBase.reset()
+    init_knowledge_base(SEED_DIR)
+    yield
+    KnowledgeBase.reset()
 
 
 class TestClassifyIncident:
@@ -41,12 +59,36 @@ class TestExtractLocation:
         assert result["floor"] == "2"
 
     def test_room_extraction(self):
-        result = extract_location("Smoke coming from room 203")
-        assert result["room"] == "203"
+        result = extract_location("Smoke coming from room 215")
+        assert result["room_id"] == "215"
+        assert result["zone_id"] == "west-wing-f2"
+        assert result["resolved"] is True
 
-    def test_near_extraction(self):
-        result = extract_location("Incident near the science lab")
-        assert "near the science lab" in result["raw_location"]
+    def test_room_name_resolved(self):
+        result = extract_location("Smoke coming from room 215")
+        assert "Science Lab" in result["room_name"]
+
+    def test_science_lab_keyword(self):
+        result = extract_location("Smoke near the science lab on floor 2")
+        assert result["zone_id"] == "west-wing-f2"
+        assert result["resolved"] is True
+
+    def test_gym_keyword(self):
+        result = extract_location("Medical emergency in the gym")
+        assert result["zone_id"] == "gym"
+        assert result["resolved"] is True
+
+    def test_cafeteria_keyword(self):
+        result = extract_location("Water leak in the cafeteria")
+        assert result["zone_id"] == "cafeteria"
+
+    def test_library_keyword(self):
+        result = extract_location("Suspicious package found in the library")
+        assert result["zone_id"] == "library"
+
+    def test_unresolved_location(self):
+        result = extract_location("Something happened outside the building")
+        assert result["resolved"] is False
 
 
 class TestSelectPlaybook:
