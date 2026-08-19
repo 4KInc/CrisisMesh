@@ -1,7 +1,7 @@
 [
   {
     "event_num": 1,
-    "timestamp": "2026-08-19T14:42:39.255084+00:00",
+    "timestamp": "2026-08-19T15:31:24.177556+00:00",
     "author": "coordinator",
     "type": "tool_call",
     "tool_name": "transfer_to_agent",
@@ -11,14 +11,31 @@
   },
   {
     "event_num": 2,
-    "timestamp": "2026-08-19T14:42:39.256711+00:00",
+    "timestamp": "2026-08-19T15:31:24.179308+00:00",
     "author": "coordinator",
     "type": "delegation",
     "target_agent": "intake"
   },
   {
     "event_num": 3,
-    "timestamp": "2026-08-19T14:42:42.720331+00:00",
+    "timestamp": "2026-08-19T15:31:26.161949+00:00",
+    "author": "intake",
+    "type": "tool_call",
+    "tool_name": "classify_incident",
+    "tool_args": {
+      "report_text": "Smoke near the science lab, floor 2 \u2014 kids still inside"
+    }
+  },
+  {
+    "event_num": 4,
+    "timestamp": "2026-08-19T15:31:26.162679+00:00",
+    "author": "intake",
+    "type": "tool_result",
+    "tool_name": "classify_incident"
+  },
+  {
+    "event_num": 5,
+    "timestamp": "2026-08-19T15:31:27.208563+00:00",
     "author": "intake",
     "type": "tool_call",
     "tool_name": "extract_location",
@@ -27,15 +44,15 @@
     }
   },
   {
-    "event_num": 4,
-    "timestamp": "2026-08-19T14:42:42.721284+00:00",
+    "event_num": 6,
+    "timestamp": "2026-08-19T15:31:27.209252+00:00",
     "author": "intake",
     "type": "tool_result",
     "tool_name": "extract_location"
   },
   {
-    "event_num": 5,
-    "timestamp": "2026-08-19T14:42:44.406514+00:00",
+    "event_num": 7,
+    "timestamp": "2026-08-19T15:31:28.319815+00:00",
     "author": "intake",
     "type": "tool_call",
     "tool_name": "select_playbook",
@@ -44,15 +61,15 @@
     }
   },
   {
-    "event_num": 6,
-    "timestamp": "2026-08-19T14:42:44.407201+00:00",
+    "event_num": 8,
+    "timestamp": "2026-08-19T15:31:28.320408+00:00",
     "author": "intake",
     "type": "tool_result",
     "tool_name": "select_playbook"
   },
   {
-    "event_num": 7,
-    "timestamp": "2026-08-19T14:42:47.941471+00:00",
+    "event_num": 9,
+    "timestamp": "2026-08-19T15:31:30.168331+00:00",
     "author": "intake",
     "type": "tool_call",
     "tool_name": "transfer_to_agent",
@@ -61,15 +78,15 @@
     }
   },
   {
-    "event_num": 8,
-    "timestamp": "2026-08-19T14:42:47.941968+00:00",
+    "event_num": 10,
+    "timestamp": "2026-08-19T15:31:30.168878+00:00",
     "author": "intake",
     "type": "delegation",
     "target_agent": "coordinator"
   },
   {
-    "event_num": 9,
-    "timestamp": "2026-08-19T14:42:49.753931+00:00",
+    "event_num": 11,
+    "timestamp": "2026-08-19T15:31:32.542407+00:00",
     "author": "coordinator",
     "type": "tool_call",
     "tool_name": "transfer_to_agent",
@@ -78,15 +95,15 @@
     }
   },
   {
-    "event_num": 10,
-    "timestamp": "2026-08-19T14:42:49.756180+00:00",
+    "event_num": 12,
+    "timestamp": "2026-08-19T15:31:32.542939+00:00",
     "author": "coordinator",
     "type": "delegation",
     "target_agent": "safety_intel"
   },
   {
-    "event_num": 11,
-    "timestamp": "2026-08-19T14:42:52.965202+00:00",
+    "event_num": 13,
+    "timestamp": "2026-08-19T15:31:35.183007+00:00",
     "author": "safety_intel",
     "type": "tool_call",
     "tool_name": "find_zone_info",
@@ -96,71 +113,52 @@
     }
   },
   {
-    "event_num": 12,
-    "timestamp": "2026-08-19T14:42:52.967599+00:00",
+    "event_num": 14,
+    "timestamp": "2026-08-19T15:31:35.183777+00:00",
     "author": "safety_intel",
     "type": "tool_result",
     "tool_name": "find_zone_info"
   },
   {
-    "event_num": 13,
-    "timestamp": "2026-08-19T14:42:55.564002+00:00",
+    "event_num": 15,
+    "timestamp": "2026-08-19T15:31:36.308291+00:00",
     "author": "safety_intel",
     "type": "tool_call",
     "tool_name": "find_blocked_zones",
     "tool_args": {
-      "facility_id": "jefferson",
-      "incident_zone": "west-wing-f2"
+      "incident_zone": "west-wing-f2",
+      "facility_id": "jefferson"
     }
   },
   {
-    "event_num": 14,
-    "timestamp": "2026-08-19T14:42:55.564783+00:00",
+    "event_num": 16,
+    "timestamp": "2026-08-19T15:31:36.308981+00:00",
     "author": "safety_intel",
     "type": "tool_result",
     "tool_name": "find_blocked_zones"
   },
   {
-    "event_num": 15,
-    "timestamp": "2026-08-19T14:42:58.079604+00:00",
+    "event_num": 17,
+    "timestamp": "2026-08-19T15:31:37.716614+00:00",
     "author": "safety_intel",
     "type": "tool_call",
     "tool_name": "find_safe_routes",
     "tool_args": {
-      "blocked_zones": "west-wing-f2",
+      "blocked_zones": "",
       "facility_id": "jefferson",
       "from_zone": "west-wing-f2"
     }
   },
   {
-    "event_num": 16,
-    "timestamp": "2026-08-19T14:42:58.080139+00:00",
-    "author": "safety_intel",
-    "type": "tool_result",
-    "tool_name": "find_safe_routes"
-  },
-  {
-    "event_num": 17,
-    "timestamp": "2026-08-19T14:42:59.922583+00:00",
-    "author": "safety_intel",
-    "type": "tool_call",
-    "tool_name": "find_safe_routes",
-    "tool_args": {
-      "facility_id": "jefferson",
-      "from_zone": "west-wing-f2",
-      "blocked_zones": ""
-    }
-  },
-  {
     "event_num": 18,
-    "timestamp": "2026-08-19T14:42:59.923480+00:00",
+    "timestamp": "2026-08-19T15:31:37.717089+00:00",
     "author": "safety_intel",
     "type": "tool_result",
     "tool_name": "find_safe_routes"
   },
   {
     "event_num": 19,
-    "timestamp": "2026-08-19T14:43:01.766684+00:00",
+    "timestamp": "2026-08-19T15:31:38.957565+00:00",
     "author": "safety_intel",
     "type": "tool_call",
     "tool_name": "find_accessible_routes",
@@ -171,114 +169,109 @@
   },
   {
     "event_num": 20,
-    "timestamp": "2026-08-19T14:43:01.767368+00:00",
+    "timestamp": "2026-08-19T15:31:38.957993+00:00",
     "author": "safety_intel",
     "type": "tool_result",
     "tool_name": "find_accessible_routes"
   },
   {
     "event_num": 21,
-    "timestamp": "2026-08-19T14:43:04.018182+00:00",
+    "timestamp": "2026-08-19T15:31:40.613863+00:00",
     "author": "safety_intel",
     "type": "tool_call",
     "tool_name": "locate_resource",
     "tool_args": {
       "resource_type": "fire_extinguisher",
-      "facility_id": "jefferson",
       "near_zone": "west-wing-f2",
-      "floor": 2
+      "facility_id": "jefferson"
     }
   },
   {
     "event_num": 22,
-    "timestamp": "2026-08-19T14:43:04.018761+00:00",
+    "timestamp": "2026-08-19T15:31:40.614570+00:00",
     "author": "safety_intel",
     "type": "tool_result",
     "tool_name": "locate_resource"
   },
   {
     "event_num": 23,
-    "timestamp": "2026-08-19T14:43:05.375009+00:00",
+    "timestamp": "2026-08-19T15:31:41.526683+00:00",
     "author": "safety_intel",
     "type": "tool_call",
     "tool_name": "locate_resource",
     "tool_args": {
-      "resource_type": "first_aid_kit",
-      "near_zone": "west-wing-f2",
       "facility_id": "jefferson",
-      "floor": 2
+      "resource_type": "first_aid_kit",
+      "near_zone": "west-wing-f2"
     }
   },
   {
     "event_num": 24,
-    "timestamp": "2026-08-19T14:43:05.375606+00:00",
+    "timestamp": "2026-08-19T15:31:41.527430+00:00",
     "author": "safety_intel",
     "type": "tool_result",
     "tool_name": "locate_resource"
   },
   {
     "event_num": 25,
-    "timestamp": "2026-08-19T14:43:06.988101+00:00",
+    "timestamp": "2026-08-19T15:31:42.487634+00:00",
     "author": "safety_intel",
     "type": "tool_call",
     "tool_name": "locate_resource",
     "tool_args": {
-      "near_zone": "west-wing-f2",
       "resource_type": "aed",
-      "facility_id": "jefferson",
-      "floor": 2
+      "near_zone": "west-wing-f2",
+      "facility_id": "jefferson"
     }
   },
   {
     "event_num": 26,
-    "timestamp": "2026-08-19T14:43:06.988932+00:00",
+    "timestamp": "2026-08-19T15:31:42.489340+00:00",
     "author": "safety_intel",
     "type": "tool_result",
     "tool_name": "locate_resource"
   },
   {
     "event_num": 27,
-    "timestamp": "2026-08-19T14:43:08.294077+00:00",
+    "timestamp": "2026-08-19T15:31:43.536682+00:00",
     "author": "safety_intel",
     "type": "tool_call",
     "tool_name": "locate_resource",
     "tool_args": {
-      "floor": 0,
-      "near_zone": "west-wing-f2",
       "facility_id": "jefferson",
+      "near_zone": "west-wing-f2",
       "resource_type": "trauma_kit"
     }
   },
   {
     "event_num": 28,
-    "timestamp": "2026-08-19T14:43:08.295132+00:00",
+    "timestamp": "2026-08-19T15:31:43.537266+00:00",
     "author": "safety_intel",
     "type": "tool_result",
     "tool_name": "locate_resource"
   },
   {
     "event_num": 29,
-    "timestamp": "2026-08-19T14:43:09.347564+00:00",
+    "timestamp": "2026-08-19T15:31:44.704944+00:00",
     "author": "safety_intel",
     "type": "tool_call",
     "tool_name": "locate_resource",
     "tool_args": {
-      "floor": 0,
       "resource_type": "emergency_phone",
-      "near_zone": "west-wing-f2",
-      "facility_id": "jefferson"
+      "facility_id": "jefferson",
+      "near_zone": "west-wing-f2"
     }
   },
   {
     "event_num": 30,
-    "timestamp": "2026-08-19T14:43:09.348379+00:00",
+    "timestamp": "2026-08-19T15:31:44.705824+00:00",
     "author": "safety_intel",
     "type": "tool_result",
     "tool_name": "locate_resource"
   },
   {
     "event_num": 31,
-    "timestamp": "2026-08-19T14:43:10.469682+00:00",
+    "timestamp": "2026-08-19T15:31:45.566108+00:00",
     "author": "safety_intel",
     "type": "tool_call",
     "tool_name": "find_assembly_point",
@@ -288,14 +281,14 @@
   },
   {
     "event_num": 32,
-    "timestamp": "2026-08-19T14:43:10.470190+00:00",
+    "timestamp": "2026-08-19T15:31:45.566839+00:00",
     "author": "safety_intel",
     "type": "tool_result",
     "tool_name": "find_assembly_point"
   },
   {
     "event_num": 33,
-    "timestamp": "2026-08-19T14:43:11.698789+00:00",
+    "timestamp": "2026-08-19T15:31:46.714926+00:00",
     "author": "safety_intel",
     "type": "tool_call",
     "tool_name": "find_nearby_services",
@@ -303,14 +296,14 @@
   },
   {
     "event_num": 34,
-    "timestamp": "2026-08-19T14:43:11.699258+00:00",
+    "timestamp": "2026-08-19T15:31:46.715651+00:00",
     "author": "safety_intel",
     "type": "tool_result",
     "tool_name": "find_nearby_services"
   },
   {
     "event_num": 35,
-    "timestamp": "2026-08-19T14:43:15.533685+00:00",
+    "timestamp": "2026-08-19T15:31:54.242817+00:00",
     "author": "safety_intel",
     "type": "tool_call",
     "tool_name": "transfer_to_agent",
@@ -320,14 +313,14 @@
   },
   {
     "event_num": 36,
-    "timestamp": "2026-08-19T14:43:15.534078+00:00",
+    "timestamp": "2026-08-19T15:31:54.243719+00:00",
     "author": "safety_intel",
     "type": "delegation",
     "target_agent": "coordinator"
   },
   {
     "event_num": 37,
-    "timestamp": "2026-08-19T14:43:17.741779+00:00",
+    "timestamp": "2026-08-19T15:31:58.300237+00:00",
     "author": "coordinator",
     "type": "tool_call",
     "tool_name": "transfer_to_agent",
@@ -337,14 +330,14 @@
   },
   {
     "event_num": 38,
-    "timestamp": "2026-08-19T14:43:17.742143+00:00",
+    "timestamp": "2026-08-19T15:31:58.302143+00:00",
     "author": "coordinator",
     "type": "delegation",
     "target_agent": "accountability"
   },
   {
     "event_num": 39,
-    "timestamp": "2026-08-19T14:43:20.436210+00:00",
+    "timestamp": "2026-08-19T15:32:00.781899+00:00",
     "author": "accountability",
     "type": "tool_call",
     "tool_name": "read_roster",
@@ -354,65 +347,66 @@
   },
   {
     "event_num": 40,
-    "timestamp": "2026-08-19T14:43:20.436667+00:00",
+    "timestamp": "2026-08-19T15:32:00.782394+00:00",
     "author": "accountability",
     "type": "tool_result",
     "tool_name": "read_roster"
   },
   {
     "event_num": 41,
-    "timestamp": "2026-08-19T14:43:23.860044+00:00",
+    "timestamp": "2026-08-19T15:32:01.885895+00:00",
     "author": "accountability",
     "type": "tool_call",
     "tool_name": "send_checkin_request",
     "tool_args": {
-      "incident_id": "FIRE-2026-144242"
+      "incident_id": "FIRE-2026-153126",
+      "facility_id": "jefferson"
     }
   },
   {
     "event_num": 42,
-    "timestamp": "2026-08-19T14:43:23.860893+00:00",
+    "timestamp": "2026-08-19T15:32:01.886742+00:00",
     "author": "accountability",
     "type": "tool_result",
     "tool_name": "send_checkin_request"
   },
   {
     "event_num": 43,
-    "timestamp": "2026-08-19T14:43:25.830810+00:00",
+    "timestamp": "2026-08-19T15:32:03.034722+00:00",
     "author": "accountability",
     "type": "tool_call",
     "tool_name": "compute_accountability_summary",
     "tool_args": {
-      "incident_id": "FIRE-2026-144242"
+      "incident_id": "FIRE-2026-153126"
     }
   },
   {
     "event_num": 44,
-    "timestamp": "2026-08-19T14:43:25.831439+00:00",
+    "timestamp": "2026-08-19T15:32:03.035214+00:00",
     "author": "accountability",
     "type": "tool_result",
     "tool_name": "compute_accountability_summary"
   },
   {
     "event_num": 45,
-    "timestamp": "2026-08-19T14:43:27.066370+00:00",
+    "timestamp": "2026-08-19T15:32:04.059342+00:00",
     "author": "accountability",
     "type": "tool_call",
     "tool_name": "escalate_missing_checkins",
     "tool_args": {
-      "incident_id": "FIRE-2026-144242"
+      "incident_id": "FIRE-2026-153126"
     }
   },
   {
     "event_num": 46,
-    "timestamp": "2026-08-19T14:43:27.067061+00:00",
+    "timestamp": "2026-08-19T15:32:04.060145+00:00",
     "author": "accountability",
     "type": "tool_result",
     "tool_name": "escalate_missing_checkins"
   },
   {
     "event_num": 47,
-    "timestamp": "2026-08-19T14:43:30.746606+00:00",
+    "timestamp": "2026-08-19T15:32:07.950018+00:00",
     "author": "accountability",
     "type": "tool_call",
     "tool_name": "transfer_to_agent",
@@ -422,14 +416,14 @@
   },
   {
     "event_num": 48,
-    "timestamp": "2026-08-19T14:43:30.747081+00:00",
+    "timestamp": "2026-08-19T15:32:07.950652+00:00",
     "author": "accountability",
     "type": "delegation",
     "target_agent": "coordinator"
   },
   {
     "event_num": 49,
-    "timestamp": "2026-08-19T14:43:33.688268+00:00",
+    "timestamp": "2026-08-19T15:32:10.208380+00:00",
     "author": "coordinator",
     "type": "tool_call",
     "tool_name": "transfer_to_agent",
@@ -439,32 +433,32 @@
   },
   {
     "event_num": 50,
-    "timestamp": "2026-08-19T14:43:33.689623+00:00",
+    "timestamp": "2026-08-19T15:32:10.209030+00:00",
     "author": "coordinator",
     "type": "delegation",
     "target_agent": "learning"
   },
   {
     "event_num": 51,
-    "timestamp": "2026-08-19T14:43:36.307841+00:00",
+    "timestamp": "2026-08-19T15:32:12.984214+00:00",
     "author": "learning",
     "type": "tool_call",
     "tool_name": "find_similar_incidents",
     "tool_args": {
-      "facility_id": "jefferson",
-      "incident_type": "fire"
+      "incident_type": "fire",
+      "facility_id": "jefferson"
     }
   },
   {
     "event_num": 52,
-    "timestamp": "2026-08-19T14:43:36.308498+00:00",
+    "timestamp": "2026-08-19T15:32:12.984798+00:00",
     "author": "learning",
     "type": "tool_result",
     "tool_name": "find_similar_incidents"
   },
   {
     "event_num": 53,
-    "timestamp": "2026-08-19T14:43:40.504767+00:00",
+    "timestamp": "2026-08-19T15:32:17.376282+00:00",
     "author": "learning",
     "type": "tool_call",
     "tool_name": "transfer_to_agent",
@@ -474,16 +468,16 @@
   },
   {
     "event_num": 54,
-    "timestamp": "2026-08-19T14:43:40.505734+00:00",
+    "timestamp": "2026-08-19T15:32:17.377517+00:00",
     "author": "learning",
     "type": "delegation",
     "target_agent": "coordinator"
   },
   {
     "event_num": 55,
-    "timestamp": "2026-08-19T14:43:55.359274+00:00",
+    "timestamp": "2026-08-19T15:32:30.122814+00:00",
     "author": "coordinator",
     "type": "final_response",
-    "text": "**CRITICAL EMERGENCY NOTICE**  \n\ud83d\udea8 **If this is a life-threatening emergency, call 911 immediately.** CrisisMesh is NOT a replacement for municipal emergency services. Do not delay contacting emergency services.  \n\n---\n\n### **Incident Summary & Briefing: Smoke Near Science Lab (Floor 2)**\n**Incident ID:** FIRE-2026-144242  \n**Incident Type:** Fire (Smoke reported near Science Lab)  \n**Location:** Room 215 (Science Lab), West Wing Floor 2 (Zone: `west-wing-f2`), Jefferson School  \n**Approved Playbook initiated:** `playbook-fire-v1` (Pre-approved fire protocol)  \n\n---\n\n### **1. Accountability & Personnel Status**\n*Check-in requests have been broadcast to all 34 school personnel. Status is actively being tracked.*\n\n*   **Total Tracked:** 34\n*   **Accounted for:** 0\n*   **Unaccounted/Missing:** 34 (Awaiting check-in confirmations)\n*   **\ud83d\udea8 URGENT MOBILITY LIMITATION ESCALATIONS (Prioritize Evacuation Search):**\n    *   **Mrs. Thompson** (7th Grade Teacher, last known location: Room 204, Floor 2) \u2013 Missing. Has mobility limitations. **Requires elevator evacuation.**\n    *   **Mrs. Davis** (4th Grade Teacher, last known location: Room 104, Floor 1) \u2013 Missing. Has mobility limitations.\n*   **Critical On-Scene Roles (Floor 2):**\n    *   **Ms. Johnson** (Room 209): Floor Warden \u2013 West Floor 2.\n    *   **Mrs. Nguyen** (Room 201): Floor Warden \u2013 East Floor 2. *Holds duplicate elevator key.*\n    *   **Tech Jordan** (Library): Controls PA system and security camera feeds.\n\n---\n\n### **2. Safety & Evacuation Intelligence**\n\n#### **Evacuation Routes:**\n*   **Standard Route:** Exit via the West hallway F2 to the **West Stairwell** down to Floor 1, escaping through **Door 1** to the staff parking lot.\n*   **Wheelchair-Accessible Route:** Exit via the West hallway F2 to the **Elevator** (mid-hallway) down to Floor 1, exit through the west corridor to **Door 1**. \n    *   *Key Access:* The elevator requires a key. A duplicate elevator key is pre-staged in **Room 201** (Mrs. Nguyen's classroom) for rapid deployment.\n\n#### **Assembly Points:**\n*   **Primary Rally Point:** **Athletic Field** (Behind the gym, past the track, 500ft from building). Teachers must line up classes there.\n*   **Alternate Rally Point:** **Staff Parking Lot** (West side, far end near Oak Street).\n*   **Off-Site Reunification:** **First Baptist Church** (1300 Oak Street, directly across the street).\n\n#### **Emergency Resources Near Room 215 (Floor 2 West Wing):**\n*   **Fire Extinguisher:** West hallway F2, directly outside **Room 215 (Science Lab)**.\n*   **First Aid Kit:** Floor 2, **Library** front desk bottom drawer.\n*   **AED:** \n    1. Floor 1, Hallway B outside Room 112 (nearest to West Wing stairwell access).\n    2. Floor 1, Main office lobby next to front desk.\n*   **Trauma Kit:** Floor 1, Security office locked cabinet (Admin area).\n\n---\n\n### **3. Nearby Emergency Services**\n*First responders have been notified or are in the process of being updated.*\n*   **Fire Department:** Nashville Fire Station 9 (0.8 miles away | ETA: 3 minutes)\n*   **Police Department:** Metro Nashville Police - Central Precinct (1.5 miles away | ETA: 4 minutes)\n*   **Nearest Hospital:** TriStar Centennial Medical Center (1.8 miles away | ETA: 5 minutes)\n*   **Trauma Center:** Vanderbilt Children's Hospital (3.4 miles away | ETA: 9 minutes | Level I Pediatric Trauma)\n\n---\n\n### **4. Prior Lessons Learned & Drill Notes (Critical Safety Protocols)**\nTo ensure a safe and efficient evacuation of the West Wing Floor 2, responders and floor wardens must observe these documented drill outcomes:\n\n1.  **Science Lab Gas Shutoff Valve:** During evacuation, the West Floor 2 Floor Warden (Ms. Johnson) must confirm that the **science lab gas shutoff valve** (located on the east wall of Room 215) is fully **CLOSED** before reporting Floor 2 West clear.\n2.  **Staggered Evacuation to Prevent Bottlenecks:** Historically, simultaneous evacuation of Room 215 and Room 210 causes a severe bottleneck at the West Stairwell. **Evacuate Room 215 (Science Lab) first**, staggering Room 210's exit by 30 seconds to prevent stairwell congestion.\n3.  **Mrs. Thompson's Elevator Evacuation:** Do not wait for the elevator key to be retrieved from the main office. **Retrieve the duplicate elevator key immediately from Room 201 (Mrs. Nguyen's room)** on Floor 2 to expedite Mrs. Thompson\u2019s evacuation.\n\n---\n\n\u26a0\ufe0f **REMINDER:** High-impact external communications or emergency announcements over the PA system require immediate Incident Commander (Principal Johnson) approval. \n\n**If you have not already done so, dial 911 immediately.**"
+    "text": "### \ud83d\udea8 EMERGENCY NOTICE\n**If this is a life-threatening emergency, please call 911 immediately.**\n\n---\n\n### \ud83d\udccb Incident Classification\n* **Incident ID:** FIRE-2026-153126\n* **Incident Type:** Fire (Smoke Reported)\n* **Severity:** Low (as classified by automated triage, though actively being monitored due to reports of occupants inside)\n* **Location:** Floor 2, Room 215 - Science Lab (Zone: **West Wing Floor 2 / west-wing-f2**)\n* **Active Playbook:** `playbook-fire-v1` (Pre-approved Fire Playbook)\n\n---\n\n### \ud83d\udee1\ufe0f Safety & Resource Intelligence\n\n#### **Evacuation Routes & Assembly Points**\n* **Primary Evacuation Route:** West hallway Floor 2 \u27a1\ufe0f West Stairwell \u27a1\ufe0f Door 1 (West Exit) leading to the staff parking lot.\n* **Wheelchair-Accessible Route:** West hallway Floor 2 \u27a1\ufe0f Elevator (mid-hall) \u27a1\ufe0f Floor 1 \u27a1\ufe0f West corridor \u27a1\ufe0f Door 1.\n  * *Crucial Accessibility Note:* The elevator requires a key (located in the Main Office, or alternatively in **Room 201** as noted in historical lessons).\n* **Primary Assembly Point:** **Athletic Field (Primary)** \u2013 Behind the gym past the track (500ft from the building).\n* **Alternate Assembly Point:** **Staff Parking Lot (Alternate)** \u2013 West side staff parking lot near Oak Street.\n* **Off-Site Reunification:** **First Baptist Church** \u2013 1300 Oak Street (across the street).\n\n#### **Emergency Resources Near Incident (West-Wing-F2)**\n* \ud83d\udd25 **Fire Extinguisher:** Located in the **West hallway F2 near Room 215 (Science Lab)**.\n* \ud83e\ude79 **First Aid Kits:** Located in the **Library front desk** (Floor 2, bottom drawer). Nearby first aid kits on Floor 1 are in the Nurse's Office (Room 108) and the Main Office behind the reception counter.\n* \u2764\ufe0f **AEDs:** Located on Floor 1: **Hallway B outside Room 112** (West-Wing-F1), Main Office lobby, and the Gym entrance.\n* \ud83c\udf92 **Trauma Kit:** Located in the **Security Office** inside the admin area (Floor 1, locked cabinet).\n* \ud83d\udcde **Emergency Phones:** Main Office front desk (direct line to 911) and Gym office (Coach Williams' desk phone).\n\n#### **Nearby Emergency Services**\n* **Fire Station:** Nashville Fire Station 9 (0.8 miles | ~3 mins ETA) \u2014 *Phone: 615-862-5421*\n* **Police Station:** Metro Nashville Police - Central Precinct (1.5 miles | ~4 mins ETA) \u2014 *Phone: 615-862-8600*\n* **Hospitals:** \n  * TriStar Centennial Medical Center (1.8 miles | ~5 mins ETA | Level II Trauma)\n  * Vanderbilt Children's Hospital (3.4 miles | ~9 mins ETA | Level I Pediatric Trauma)\n\n---\n\n### \ud83d\udc65 Accountability & Personnel Status\nA facility-wide check-in request has been sent out to all **34** registered personnel at the Jefferson facility. Because the incident is active and has just begun, all personnel are currently categorized as unaccounted for (silent/unknown) pending their check-ins.\n\n#### **High-Priority Escalation (Mobility Limitations)**\nTwo individuals with mobility needs are on the roster. **Emergency response and Floor Wardens should prioritize searching and evacuating these locations:**\n1. **Mrs. Thompson (p021)** \u2013 Room 204 (Floor 2, near the incident zone). *Requires elevator evacuation.*\n2. **Mrs. Davis (p008)** \u2013 Room 104 (Floor 1).\n\n---\n\n### \ud83e\udde0 Prior Lessons & Historical Insights\nBased on previous fire drills at the Jefferson facility, response teams must observe the following:\n\n1. **Science Lab Gas Shutoff:** The Floor Warden (Ms. Johnson, West Wing F2) must verify that the **gas shutoff valve located on the east wall of Room 215 (Science Lab)** is fully closed before reporting Floor 2 West as clear.\n2. **Elevator Key Staging:** Retrieving the elevator key from the Floor 1 main office can delay mobility evacuations. **A duplicate elevator key is pre-staged in Room 201** (Mrs. Nguyen\u2019s classroom, Floor Warden East F2) for immediate Floor 2 access to assist Mrs. Thompson.\n3. **Stairwell Bottleneck Prevention:** Simultaneous evacuation of Room 215 (Science Lab) and Room 210 can clog the west stairwell. It is recommended to **stagger evacuations by exiting Room 215 approximately 30 seconds before Room 210** to ensure a smooth flow down the stairs."
   }
 ]

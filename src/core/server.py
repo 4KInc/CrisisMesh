@@ -19,7 +19,8 @@ from typing import Any
 from urllib.parse import urlparse, parse_qs
 
 from src.config.agent_registry import AGENT_REGISTRY
-from src.core.agent_gateway import AgentGateway, ModelArmor
+from src.core.agent_gateway import AgentGateway
+from src.core.content_scanner import ContentScanner
 from src.core.event_bus import EventBus, create_event
 from src.core.knowledge_base import KnowledgeBase, init_knowledge_base
 from src.core.memory_bank import MemoryBank, init_memory_bank
@@ -141,7 +142,7 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
                 return
 
             # Model Armor — scan incoming message
-            armor = ModelArmor.scan_message(report)
+            armor = ContentScanner.get().scan_message(report)
             if armor["blocked"]:
                 _json_response(self, {
                     "blocked": True,
@@ -254,7 +255,7 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
         elif path == "/armor/scan":
             body = _read_body(self)
             text = body.get("text", "")
-            result = ModelArmor.scan_message(text)
+            result = ContentScanner.get().scan_message(text)
             _json_response(self, result)
 
         else:
