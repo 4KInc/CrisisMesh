@@ -1,0 +1,39 @@
+[project]
+name = "crisismesh"
+version = "0.1.0"
+description = "Autonomous multi-agent incident-command fleet for schools, nonprofits & resource-constrained organizations"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "google-adk>=0.5.0",
+    "google-cloud-firestore>=2.19.0",
+    "google-cloud-pubsub>=2.25.0",
+    "google-cloud-storage>=2.18.0",
+    "google-cloud-aiplatform>=1.74.0",
+    "slack-bolt>=1.21.0",
+    "pydantic>=2.10.0",
+    "python-dotenv>=1.0.0",
+    "opentelemetry-api>=1.28.0",
+    "opentelemetry-sdk>=1.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0",
+    "ruff>=0.8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

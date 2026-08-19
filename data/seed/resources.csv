@@ -1,0 +1,26 @@
+id,facility_id,type,name,location,room_id,floor,notes
+res-001,facility-001,aed,AED Unit 1,Main hallway near office,room-104,1,Checked monthly
+res-002,facility-001,aed,AED Unit 2,Gymnasium entrance,gym-001,1,Checked monthly
+res-003,facility-001,trauma_kit,First Aid Kit - Office,Main Office,room-104,1,Full kit
+res-004,facility-001,trauma_kit,First Aid Kit - Nurse,Nurse's Office,room-105,1,Full kit with medications
+res-005,facility-001,trauma_kit,First Aid Kit - Gym,Gymnasium office,gym-001,1,Sports injury kit
+res-006,facility-001,fire_extinguisher,Extinguisher F1-A,Floor 1 east hallway,,1,ABC type
+res-007,facility-001,fire_extinguisher,Extinguisher F1-B,Floor 1 west hallway,,1,ABC type
+res-008,facility-001,fire_extinguisher,Extinguisher F2-A,Floor 2 east hallway,,2,ABC type
+res-009,facility-001,fire_extinguisher,Extinguisher F2-B,Floor 2 west hallway near science lab,,2,ABC type
+res-010,facility-001,fire_extinguisher,Extinguisher Gym,Gymnasium south wall,gym-001,1,ABC type
+res-011,facility-001,utility_shutoff,Main Gas Shutoff,North exterior wall utility room,,1,Yellow valve - turn clockwise
+res-012,facility-001,utility_shutoff,Electrical Main Panel,Basement utility closet,,0,Main breaker - red handle
+res-013,facility-001,utility_shutoff,Water Main Shutoff,South exterior near parking,,1,Blue valve
+res-014,facility-001,utility_shutoff,Science Lab Gas Shutoff,Inside science lab east wall,room-203,2,Individual lab shutoff valve
+res-015,facility-001,hazmat_storage,Science Lab Chemical Cabinet,Science Lab storage closet,room-203,2,Acids and bases for experiments - locked cabinet
+res-016,facility-001,hazmat_storage,Custodial Chemical Storage,Custodial closet floor 1,,1,Cleaning supplies
+res-017,facility-001,assembly_point,Assembly Point A - Front,Front parking lot,,1,Primary assembly for Main Building
+res-018,facility-001,assembly_point,Assembly Point B - Field,Athletic field south,,1,Secondary assembly / overflow
+res-019,facility-001,assembly_point,Assembly Point C - Portable,Portable classroom area east lot,,1,Assembly for portable buildings
+res-020,facility-001,emergency_exit,Exit 1 - Front Main,Main entrance front,,1,Primary entrance/exit
+res-021,facility-001,emergency_exit,Exit 2 - East Wing,East hallway door,,1,Ground floor
+res-022,facility-001,emergency_exit,Exit 3 - West Wing,West hallway door,,1,Ground floor
+res-023,facility-001,emergency_exit,Exit 4 - Cafeteria,Cafeteria south door,room-106,1,Opens to parking lot
+res-024,facility-001,emergency_exit,Exit 5 - Floor 2 East,East stairwell floor 2,,2,Down to east hallway exit
+res-025,facility-001,emergency_exit,Exit 6 - Floor 2 West,West stairwell floor 2,,2,Down to west hallway exit

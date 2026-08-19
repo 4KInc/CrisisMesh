@@ -1,0 +1,21 @@
+id,name,role,email,facility_id,room_id,department,accessibility_flags,medical_notes,is_on_call
+p-001,Sarah Mitchell,Principal,s.mitchell@lincoln.edu,facility-001,room-104,Administration,,, true
+p-002,James Rodriguez,Vice Principal,j.rodriguez@lincoln.edu,facility-001,room-104,Administration,,,true
+p-003,Linda Johnson,Teacher,l.johnson@lincoln.edu,facility-001,room-101,Grade 3,,,false
+p-004,Robert Davis,Teacher,r.davis@lincoln.edu,facility-001,room-102,Grade 4,,,false
+p-005,Maria Garcia,Teacher,m.garcia@lincoln.edu,facility-001,room-103,Grade 5,,,false
+p-006,Wei Chen,Teacher,w.chen@lincoln.edu,facility-001,room-201,Grade 3,,,false
+p-007,Michael Brown,Teacher,m.brown@lincoln.edu,facility-001,room-202,Grade 4,,,false
+p-008,David Kim,Science Teacher,d.kim@lincoln.edu,facility-001,room-203,Science,,,false
+p-009,Emily Taylor,Art Teacher,e.taylor@lincoln.edu,facility-001,room-204,Art,,,false
+p-010,Karen White,Librarian,k.white@lincoln.edu,facility-001,room-205,Library,,,false
+p-011,Tom Harris,PE Teacher,t.harris@lincoln.edu,facility-001,gym-001,Physical Education,,,false
+p-012,Susan Lee,Teacher,s.lee@lincoln.edu,facility-001,port-001,Grade 5,,,false
+p-013,Mark Wilson,Teacher,m.wilson@lincoln.edu,facility-001,port-002,Grade 3,,,false
+p-014,Nancy Adams,School Nurse,n.adams@lincoln.edu,facility-001,room-105,Health Services,,,true
+p-015,George Martinez,Custodian,g.martinez@lincoln.edu,facility-001,,Facilities,,,true
+p-016,Patricia Clark,Cafeteria Manager,p.clark@lincoln.edu,facility-001,room-106,Food Services,,,false
+p-017,Daniel Lewis,IT Coordinator,d.lewis@lincoln.edu,facility-001,room-104,Technology,,,true
+p-018,Jennifer Walker,Counselor,j.walker@lincoln.edu,facility-001,room-104,Student Services,mobility,,false
+p-019,Anthony Hall,Security Guard,a.hall@lincoln.edu,facility-001,,Security,,,true
+p-020,Lisa Young,Office Manager,l.young@lincoln.edu,facility-001,room-104,Administration,,,false
