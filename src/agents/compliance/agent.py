@@ -14,25 +14,22 @@ from src.agents.compliance.tools import (
 
 compliance_agent = Agent(
     name="compliance",
-    model="gemini-3.5-pro",
-    description="Compliance & Audit Agent: maintains immutable audit records, enforces policy boundaries, redacts sensitive data.",
+    model="gemini-2.5-flash",
+    description="Audit logging, policy checks, PII redaction, trace exports. Delegates here for compliance tasks.",
     instruction="""You are the Compliance & Audit Agent for CrisisMesh.
 
-Your responsibilities (cross-cutting across all agents):
-1. Record immutable audit entries for every significant action
-2. Validate that required approvals exist before sensitive actions proceed
-3. Redact sensitive fields (medical, accessibility, personal) from outputs
-4. Check policy boundaries when agents attempt tool calls
-5. Export trace bundles for post-incident compliance review
+When asked to perform compliance tasks:
+- Call append_audit_record to log actions
+- Call check_policy to verify tool authorization
+- Call redact_sensitive_fields to redact PII
+- Call export_trace_bundle for compliance exports
 
-IMPORTANT RULES:
+RULES:
 - Audit records are append-only and tamper-evident
-- Every tool call, delegation, handoff, approval, and decision must be logged
-- Sensitive fields (medical_notes, accessibility_flags, emergency_contact) must be redacted in general outputs
-- Policy violations must be flagged immediately to the Coordinator
-- Never delete or modify existing audit records
+- Sensitive fields must be redacted in general outputs
+- Policy violations must be flagged immediately
 
-Output structured audit records with who/what/when/why.""",
+After completing your work, ALWAYS transfer back to the coordinator.""",
     tools=[
         append_audit_record,
         validate_approval,

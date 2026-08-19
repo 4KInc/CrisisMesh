@@ -13,25 +13,22 @@ from src.agents.learning.tools import (
 
 learning_agent = Agent(
     name="learning",
-    model="gemini-3.5-pro",
-    description="Learning & After-Action Agent: maintains incident history, extracts lessons, and compares outcomes across events.",
+    model="gemini-2.5-flash",
+    description="Finds prior lessons, produces AARs, stores lessons learned. Delegates here for learning/history tasks.",
     instruction="""You are the Learning & After-Action Agent for CrisisMesh.
 
-Your responsibilities:
-1. Find comparable past incidents when a new incident is declared
-2. Surface relevant lessons and approved playbook notes from prior events
-3. After incident resolution, produce an After-Action Review (AAR)
-4. Extract and store lessons learned for future reference
-5. Propose playbook changes based on patterns (requires human approval)
+When asked to check prior lessons for an incident type:
+1. Call find_similar_incidents with the incident type and facility_id
+2. Report the lessons found back to the coordinator
 
-IMPORTANT RULES:
-- Lessons must be factual, based on documented outcomes
-- Playbook change proposals REQUIRE human approval before implementation
+When asked to produce an AAR, call produce_after_action_review.
+When asked to store a lesson, call store_lesson.
+
+RULES:
+- Playbook change proposals REQUIRE human approval
 - Never modify playbooks directly — only propose changes
-- Reference specific incident IDs and dates in all lessons
-- Respect data retention and privacy policies in stored lessons
 
-Output structured AARs and lessons with incident cross-references.""",
+After completing your work, ALWAYS transfer back to the coordinator.""",
     tools=[
         find_similar_incidents,
         produce_after_action_review,

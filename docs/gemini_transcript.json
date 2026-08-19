@@ -1,0 +1,484 @@
+[
+  {
+    "event_num": 1,
+    "timestamp": "2026-08-19T14:26:37.484935+00:00",
+    "author": "coordinator",
+    "type": "tool_call",
+    "tool_name": "transfer_to_agent",
+    "tool_args": {
+      "agent_name": "intake"
+    }
+  },
+  {
+    "event_num": 2,
+    "timestamp": "2026-08-19T14:26:37.486303+00:00",
+    "author": "coordinator",
+    "type": "delegation",
+    "target_agent": "intake"
+  },
+  {
+    "event_num": 3,
+    "timestamp": "2026-08-19T14:26:39.118285+00:00",
+    "author": "intake",
+    "type": "tool_call",
+    "tool_name": "classify_incident",
+    "tool_args": {
+      "report_text": "Smoke near the science lab, floor 2 \u2014 kids still inside"
+    }
+  },
+  {
+    "event_num": 4,
+    "timestamp": "2026-08-19T14:26:39.118933+00:00",
+    "author": "intake",
+    "type": "tool_result",
+    "tool_name": "classify_incident"
+  },
+  {
+    "event_num": 5,
+    "timestamp": "2026-08-19T14:26:40.323495+00:00",
+    "author": "intake",
+    "type": "tool_call",
+    "tool_name": "extract_location",
+    "tool_args": {
+      "report_text": "Smoke near the science lab, floor 2 \u2014 kids still inside"
+    }
+  },
+  {
+    "event_num": 6,
+    "timestamp": "2026-08-19T14:26:40.324886+00:00",
+    "author": "intake",
+    "type": "tool_result",
+    "tool_name": "extract_location"
+  },
+  {
+    "event_num": 7,
+    "timestamp": "2026-08-19T14:26:42.097940+00:00",
+    "author": "intake",
+    "type": "tool_call",
+    "tool_name": "select_playbook",
+    "tool_args": {
+      "incident_type": "fire"
+    }
+  },
+  {
+    "event_num": 8,
+    "timestamp": "2026-08-19T14:26:42.098422+00:00",
+    "author": "intake",
+    "type": "tool_result",
+    "tool_name": "select_playbook"
+  },
+  {
+    "event_num": 9,
+    "timestamp": "2026-08-19T14:26:45.070359+00:00",
+    "author": "intake",
+    "type": "tool_call",
+    "tool_name": "transfer_to_agent",
+    "tool_args": {
+      "agent_name": "coordinator"
+    }
+  },
+  {
+    "event_num": 10,
+    "timestamp": "2026-08-19T14:26:45.070855+00:00",
+    "author": "intake",
+    "type": "delegation",
+    "target_agent": "coordinator"
+  },
+  {
+    "event_num": 11,
+    "timestamp": "2026-08-19T14:26:47.116969+00:00",
+    "author": "coordinator",
+    "type": "tool_call",
+    "tool_name": "transfer_to_agent",
+    "tool_args": {
+      "agent_name": "safety_intel"
+    }
+  },
+  {
+    "event_num": 12,
+    "timestamp": "2026-08-19T14:26:47.117628+00:00",
+    "author": "coordinator",
+    "type": "delegation",
+    "target_agent": "safety_intel"
+  },
+  {
+    "event_num": 13,
+    "timestamp": "2026-08-19T14:26:50.803151+00:00",
+    "author": "safety_intel",
+    "type": "tool_call",
+    "tool_name": "find_zone_info",
+    "tool_args": {
+      "facility_id": "jefferson",
+      "zone_id": "west-wing-f2"
+    }
+  },
+  {
+    "event_num": 14,
+    "timestamp": "2026-08-19T14:26:50.803675+00:00",
+    "author": "safety_intel",
+    "type": "tool_result",
+    "tool_name": "find_zone_info"
+  },
+  {
+    "event_num": 15,
+    "timestamp": "2026-08-19T14:26:53.058804+00:00",
+    "author": "safety_intel",
+    "type": "tool_call",
+    "tool_name": "find_blocked_zones",
+    "tool_args": {
+      "incident_zone": "west-wing-f2",
+      "facility_id": "jefferson"
+    }
+  },
+  {
+    "event_num": 16,
+    "timestamp": "2026-08-19T14:26:53.060437+00:00",
+    "author": "safety_intel",
+    "type": "tool_result",
+    "tool_name": "find_blocked_zones"
+  },
+  {
+    "event_num": 17,
+    "timestamp": "2026-08-19T14:26:56.947274+00:00",
+    "author": "safety_intel",
+    "type": "tool_call",
+    "tool_name": "find_safe_routes",
+    "tool_args": {
+      "blocked_zones": "",
+      "facility_id": "jefferson",
+      "from_zone": "west-wing-f2"
+    }
+  },
+  {
+    "event_num": 18,
+    "timestamp": "2026-08-19T14:26:56.947789+00:00",
+    "author": "safety_intel",
+    "type": "tool_result",
+    "tool_name": "find_safe_routes"
+  },
+  {
+    "event_num": 19,
+    "timestamp": "2026-08-19T14:26:59.237814+00:00",
+    "author": "safety_intel",
+    "type": "tool_call",
+    "tool_name": "find_accessible_routes",
+    "tool_args": {
+      "from_zone": "west-wing-f2",
+      "facility_id": "jefferson"
+    }
+  },
+  {
+    "event_num": 20,
+    "timestamp": "2026-08-19T14:26:59.238319+00:00",
+    "author": "safety_intel",
+    "type": "tool_result",
+    "tool_name": "find_accessible_routes"
+  },
+  {
+    "event_num": 21,
+    "timestamp": "2026-08-19T14:27:01.965009+00:00",
+    "author": "safety_intel",
+    "type": "tool_call",
+    "tool_name": "locate_resource",
+    "tool_args": {
+      "floor": 2,
+      "resource_type": "aed",
+      "near_zone": "west-wing-f2",
+      "facility_id": "jefferson"
+    }
+  },
+  {
+    "event_num": 22,
+    "timestamp": "2026-08-19T14:27:01.965616+00:00",
+    "author": "safety_intel",
+    "type": "tool_result",
+    "tool_name": "locate_resource"
+  },
+  {
+    "event_num": 23,
+    "timestamp": "2026-08-19T14:27:03.869340+00:00",
+    "author": "safety_intel",
+    "type": "tool_call",
+    "tool_name": "locate_resource",
+    "tool_args": {
+      "floor": 2,
+      "resource_type": "fire_extinguisher",
+      "near_zone": "west-wing-f2",
+      "facility_id": "jefferson"
+    }
+  },
+  {
+    "event_num": 24,
+    "timestamp": "2026-08-19T14:27:03.870027+00:00",
+    "author": "safety_intel",
+    "type": "tool_result",
+    "tool_name": "locate_resource"
+  },
+  {
+    "event_num": 25,
+    "timestamp": "2026-08-19T14:27:06.776190+00:00",
+    "author": "safety_intel",
+    "type": "tool_call",
+    "tool_name": "locate_resource",
+    "tool_args": {
+      "facility_id": "jefferson",
+      "resource_type": "first_aid_kit",
+      "floor": 2,
+      "near_zone": "west-wing-f2"
+    }
+  },
+  {
+    "event_num": 26,
+    "timestamp": "2026-08-19T14:27:06.777029+00:00",
+    "author": "safety_intel",
+    "type": "tool_result",
+    "tool_name": "locate_resource"
+  },
+  {
+    "event_num": 27,
+    "timestamp": "2026-08-19T14:27:09.112777+00:00",
+    "author": "safety_intel",
+    "type": "tool_call",
+    "tool_name": "find_assembly_point",
+    "tool_args": {
+      "facility_id": "jefferson"
+    }
+  },
+  {
+    "event_num": 28,
+    "timestamp": "2026-08-19T14:27:09.113531+00:00",
+    "author": "safety_intel",
+    "type": "tool_result",
+    "tool_name": "find_assembly_point"
+  },
+  {
+    "event_num": 29,
+    "timestamp": "2026-08-19T14:27:11.288385+00:00",
+    "author": "safety_intel",
+    "type": "tool_call",
+    "tool_name": "find_nearby_services",
+    "tool_args": {
+      "service_type": "hospital"
+    }
+  },
+  {
+    "event_num": 30,
+    "timestamp": "2026-08-19T14:27:11.289148+00:00",
+    "author": "safety_intel",
+    "type": "tool_result",
+    "tool_name": "find_nearby_services"
+  },
+  {
+    "event_num": 31,
+    "timestamp": "2026-08-19T14:27:13.528279+00:00",
+    "author": "safety_intel",
+    "type": "tool_call",
+    "tool_name": "find_nearby_services",
+    "tool_args": {
+      "service_type": "fire_station"
+    }
+  },
+  {
+    "event_num": 32,
+    "timestamp": "2026-08-19T14:27:13.528749+00:00",
+    "author": "safety_intel",
+    "type": "tool_result",
+    "tool_name": "find_nearby_services"
+  },
+  {
+    "event_num": 33,
+    "timestamp": "2026-08-19T14:27:16.977685+00:00",
+    "author": "safety_intel",
+    "type": "tool_call",
+    "tool_name": "find_nearby_services",
+    "tool_args": {
+      "service_type": "police_station"
+    }
+  },
+  {
+    "event_num": 34,
+    "timestamp": "2026-08-19T14:27:16.980017+00:00",
+    "author": "safety_intel",
+    "type": "tool_result",
+    "tool_name": "find_nearby_services"
+  },
+  {
+    "event_num": 35,
+    "timestamp": "2026-08-19T14:27:20.944833+00:00",
+    "author": "safety_intel",
+    "type": "tool_call",
+    "tool_name": "transfer_to_agent",
+    "tool_args": {
+      "agent_name": "coordinator"
+    }
+  },
+  {
+    "event_num": 36,
+    "timestamp": "2026-08-19T14:27:20.945375+00:00",
+    "author": "safety_intel",
+    "type": "delegation",
+    "target_agent": "coordinator"
+  },
+  {
+    "event_num": 37,
+    "timestamp": "2026-08-19T14:27:24.340545+00:00",
+    "author": "coordinator",
+    "type": "tool_call",
+    "tool_name": "transfer_to_agent",
+    "tool_args": {
+      "agent_name": "accountability"
+    }
+  },
+  {
+    "event_num": 38,
+    "timestamp": "2026-08-19T14:27:24.340996+00:00",
+    "author": "coordinator",
+    "type": "delegation",
+    "target_agent": "accountability"
+  },
+  {
+    "event_num": 39,
+    "timestamp": "2026-08-19T14:27:27.052863+00:00",
+    "author": "accountability",
+    "type": "tool_call",
+    "tool_name": "read_roster",
+    "tool_args": {
+      "facility_id": "jefferson"
+    }
+  },
+  {
+    "event_num": 40,
+    "timestamp": "2026-08-19T14:27:27.054014+00:00",
+    "author": "accountability",
+    "type": "tool_result",
+    "tool_name": "read_roster"
+  },
+  {
+    "event_num": 41,
+    "timestamp": "2026-08-19T14:27:32.456586+00:00",
+    "author": "accountability",
+    "type": "tool_call",
+    "tool_name": "send_checkin_request",
+    "tool_args": {
+      "incident_id": "FIRE-2026-142639",
+      "facility_id": "jefferson"
+    }
+  },
+  {
+    "event_num": 42,
+    "timestamp": "2026-08-19T14:27:32.457409+00:00",
+    "author": "accountability",
+    "type": "tool_result",
+    "tool_name": "send_checkin_request"
+  },
+  {
+    "event_num": 43,
+    "timestamp": "2026-08-19T14:27:34.837138+00:00",
+    "author": "accountability",
+    "type": "tool_call",
+    "tool_name": "compute_accountability_summary",
+    "tool_args": {
+      "incident_id": "FIRE-2026-142639"
+    }
+  },
+  {
+    "event_num": 44,
+    "timestamp": "2026-08-19T14:27:34.837848+00:00",
+    "author": "accountability",
+    "type": "tool_result",
+    "tool_name": "compute_accountability_summary"
+  },
+  {
+    "event_num": 45,
+    "timestamp": "2026-08-19T14:27:39.033693+00:00",
+    "author": "accountability",
+    "type": "tool_call",
+    "tool_name": "escalate_missing_checkins",
+    "tool_args": {
+      "incident_id": "FIRE-2026-142639"
+    }
+  },
+  {
+    "event_num": 46,
+    "timestamp": "2026-08-19T14:27:39.034417+00:00",
+    "author": "accountability",
+    "type": "tool_result",
+    "tool_name": "escalate_missing_checkins"
+  },
+  {
+    "event_num": 47,
+    "timestamp": "2026-08-19T14:27:40.164221+00:00",
+    "author": "accountability",
+    "type": "tool_call",
+    "tool_name": "transfer_to_agent",
+    "tool_args": {
+      "agent_name": "coordinator"
+    }
+  },
+  {
+    "event_num": 48,
+    "timestamp": "2026-08-19T14:27:40.164808+00:00",
+    "author": "accountability",
+    "type": "delegation",
+    "target_agent": "coordinator"
+  },
+  {
+    "event_num": 49,
+    "timestamp": "2026-08-19T14:27:41.799120+00:00",
+    "author": "coordinator",
+    "type": "tool_call",
+    "tool_name": "transfer_to_agent",
+    "tool_args": {
+      "agent_name": "learning"
+    }
+  },
+  {
+    "event_num": 50,
+    "timestamp": "2026-08-19T14:27:41.799729+00:00",
+    "author": "coordinator",
+    "type": "delegation",
+    "target_agent": "learning"
+  },
+  {
+    "event_num": 51,
+    "timestamp": "2026-08-19T14:27:45.196317+00:00",
+    "author": "learning",
+    "type": "tool_call",
+    "tool_name": "find_similar_incidents",
+    "tool_args": {
+      "incident_type": "fire",
+      "facility_id": "jefferson"
+    }
+  },
+  {
+    "event_num": 52,
+    "timestamp": "2026-08-19T14:27:45.196878+00:00",
+    "author": "learning",
+    "type": "tool_result",
+    "tool_name": "find_similar_incidents"
+  },
+  {
+    "event_num": 53,
+    "timestamp": "2026-08-19T14:27:49.552426+00:00",
+    "author": "learning",
+    "type": "tool_call",
+    "tool_name": "transfer_to_agent",
+    "tool_args": {
+      "agent_name": "coordinator"
+    }
+  },
+  {
+    "event_num": 54,
+    "timestamp": "2026-08-19T14:27:49.552890+00:00",
+    "author": "learning",
+    "type": "delegation",
+    "target_agent": "coordinator"
+  },
+  {
+    "event_num": 55,
+    "timestamp": "2026-08-19T14:27:58.926521+00:00",
+    "author": "coordinator",
+    "type": "final_response",
+    "text": "**Incident Summary: Smoke near Science Lab (Room 215), Floor 2**\n\n**911 Emergency Notice:**\n**REMINDER: If this is a life-threatening emergency, call 911 immediately.** CrisisMesh is NOT an emergency-services replacement.\n\n**Incident Classification:**\n*   **Incident ID:** FIRE-2026-142639\n*   **Type:** Fire\n*   **Severity:** Low\n*   **Location:** Room 215 - Science Lab, West Wing Floor 2 (zone: west-wing-f2)\n*   **Playbook Activated:** playbook-fire-v1\n\n**Safety & Resource Intelligence:**\n*   **Zone Details:** West Wing Floor 2, including the science lab (Room 215). Primary exit is the West Stairwell to Door 1, alternate exit is the Central Stairwell to Door 2. Shelter location is Interior hallway D.\n*   **Blocked Routes:** None identified.\n*   **Safe Evacuation Routes:**\n    *   **Standard:** West hallway F2 to West Stairwell to Door 1.\n    *   **Wheelchair-Accessible:** West hallway F2 to Elevator mid-hall to Floor 1 to west corridor to Door 1. (Note: Elevator key usually in main office, but a duplicate is now in Room 201 as per prior lessons).\n*   **Emergency Resources:**\n    *   **AEDs:** No AEDs located on Floor 2 in the West Wing F2 zone. (3 found on Floor 1 or other zones).\n    *   **Fire Extinguishers:** One located in the West hallway F2 near Room 215 science lab.\n    *   **First Aid Kits:** One located at the Library front desk (Floor 2).\n*   **Assembly Points:**\n    *   **Primary:** Athletic Field\n    *   **Alternate:** Staff Parking Lot\n    *   **Off-Site:** First Baptist Church\n*   **Nearby Emergency Services:**\n    *   **Hospitals:** TriStar Centennial Medical Center (1.8 miles, ~5 min ETA, Level II Trauma), Vanderbilt University Medical Center (3.2 miles, ~8 min ETA, Level I Trauma).\n    *   **Fire Station:** Nashville Fire Station 9 (0.8 miles, ~3 min ETA).\n    *   **Police Station:** Metro Nashville Police - Central Precinct (1.5 miles, ~4 min ETA).\n\n**Accountability Status:**\n*   **Total Personnel Tracked:** 34\n*   **Accounted:** 0\n*   **Missing (Unaccounted):** 34 (all personnel are currently in 'unknown' status awaiting check-in responses).\n*   **Mobility-Flagged Missing Personnel:**\n    *   Mrs. Davis (last known location: Room 104, Floor 1)\n    *   Mrs. Thompson (last known location: Room 204, Floor 2)\n\n**Prior Lessons from Similar Incidents (Fire at Jefferson Facility):**\n*   **Science Lab Gas Shutoff:** Floor Warden for West F2 (Ms. Johnson, Room 209) must confirm the science lab gas shutoff valve (Room 215 east wall) is closed before reporting Floor 2 West clear.\n*   **Elevator Key for Mobility Evacuations:** A duplicate elevator key is now stored in Room 201 (Floor Warden Mrs. Nguyen's classroom) to facilitate mobility evacuations from Floor 2, especially relevant for Mrs. Thompson.\n*   **Floor 2 West Stairwell Bottleneck:** To prevent congestion in the west stairwell, it is recommended to stagger the evacuation of Room 215 (Science Lab) 30 seconds before Room 210."
+  }
+]

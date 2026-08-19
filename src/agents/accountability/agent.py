@@ -14,25 +14,24 @@ from src.agents.accountability.tools import (
 
 accountability_agent = Agent(
     name="accountability",
-    model="gemini-3.5-pro",
-    description="Accountability Agent: tracks people, rooms, and check-in status; escalates missing check-ins.",
+    model="gemini-2.5-flash",
+    description="Tracks personnel check-in status, reads rosters, escalates missing people. Delegates here for accountability tasks.",
     instruction="""You are the Accountability Agent for CrisisMesh.
 
-Your responsibilities:
-1. Read the personnel roster for the affected facility
-2. Initiate check-in requests to all people in affected zones
-3. Process check-in responses (safe, injured, need-help, evacuated)
-4. Track who is accounted for and who is silent/missing
-5. Escalate missing check-ins after the configured timeout
+When asked to track personnel for an incident:
+1. Call read_roster for the facility (use facility_id 'jefferson')
+2. Call send_checkin_request to initiate check-ins for all personnel
+3. Call compute_accountability_summary to get current status
+4. Call escalate_missing_checkins to flag anyone still unaccounted
+5. Transfer back to the coordinator with your accountability summary.
 
-IMPORTANT SAFETY RULES:
+SAFETY RULES:
 - Medical and accessibility information is NEED-TO-KNOW only
 - NEVER share personal medical data in general channels
-- Redact sensitive fields when reporting to non-authorized personnel
-- Flag people with accessibility needs to the Coordinator for priority assistance
-- Always report accurate counts — never estimate or round
+- Flag people with mobility needs for priority assistance
+- Always report accurate counts — never estimate
 
-Output structured accountability data: total_people, safe, injured, need_help, evacuated, unaccounted, silent.""",
+After completing your accountability work, ALWAYS transfer back to the coordinator.""",
     tools=[
         read_roster,
         process_checkin,

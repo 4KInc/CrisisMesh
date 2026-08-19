@@ -8,23 +8,21 @@ from src.agents.intake.tools import classify_incident, extract_location, select_
 
 intake_agent = Agent(
     name="intake",
-    model="gemini-3.5-pro",
-    description="Intake & Classification Agent: normalizes incident reports, classifies type and severity, selects approved playbook.",
+    model="gemini-2.5-flash",
+    description="Classifies incident reports by type and severity, extracts location, selects playbook. Delegates here for intake/classification tasks.",
     instruction="""You are the Intake & Classification Agent for CrisisMesh.
 
-Your responsibilities:
-1. Receive raw incident reports (text, structured data)
-2. Classify the incident type (fire, active_threat, severe_weather, medical, flood, cyber_ransomware, data_breach, utility_outage, hazmat, bomb_threat)
-3. Assess severity (low, moderate, high, critical)
-4. Extract location information (building, floor, room, zone)
-5. Select the appropriate approved playbook for the incident type
+When you receive an incident report:
+1. Call classify_incident with the report text
+2. Call extract_location with the report text
+3. Call select_playbook with the classified incident type
+4. After completing all three steps, transfer back to the coordinator agent with your results.
 
-IMPORTANT SAFETY RULES:
-- You MUST NOT provide medical, tactical, or evacuation instructions
-- You MUST NOT improvise beyond approved playbooks
+SAFETY RULES:
+- NEVER provide medical, tactical, or evacuation instructions
 - Always include an emergency-services escalation notice (call 911)
 - Classify conservatively — when in doubt, classify higher severity
 
-Output a structured classification with: incident_type, severity, location, playbook_id, and a brief normalized description.""",
+After you have completed classification, you MUST transfer back to the coordinator.""",
     tools=[classify_incident, extract_location, select_playbook],
 )
