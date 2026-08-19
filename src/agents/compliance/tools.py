@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from src.config.agent_registry import is_tool_allowed
@@ -52,7 +52,7 @@ def append_audit_record(
         "target": target,
         "details": details,
         "approval_id": approval_id,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "immutable": True,
     }
 
@@ -140,7 +140,7 @@ def export_trace_bundle(
     return {
         "type": "TRACE_BUNDLE",
         "incident_id": incident_id,
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "includes": {
             "audit_log": include_audit,
             "timeline": include_timeline,
@@ -173,7 +173,7 @@ def check_policy(
         "tool_name": tool_name,
         "incident_id": incident_id,
         "allowed": allowed,
-        "checked_at": datetime.utcnow().isoformat(),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
     }
 
     if not allowed:

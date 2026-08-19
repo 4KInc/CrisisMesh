@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from google.cloud import firestore
@@ -41,7 +41,7 @@ class FirestoreState:
     async def update_incident(
         self, incident_id: str, updates: dict[str, Any]
     ) -> Incident | None:
-        updates["updated_at"] = datetime.utcnow().isoformat()
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         doc_ref = self.db.collection("incidents").document(incident_id)
         await doc_ref.update(updates)
         await self._append_audit_log(
@@ -105,7 +105,7 @@ class FirestoreState:
             {
                 "person_id": person_id,
                 "status": status,
-                "updated_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             },
             merge=True,
         )
@@ -181,7 +181,7 @@ class FirestoreState:
         lesson_id = str(uuid.uuid4())
         lesson["id"] = lesson_id
         lesson["incident_id"] = incident_id
-        lesson["created_at"] = datetime.utcnow().isoformat()
+        lesson["created_at"] = datetime.now(timezone.utc).isoformat()
         await self.db.collection("lessons").document(lesson_id).set(lesson)
         return lesson_id
 

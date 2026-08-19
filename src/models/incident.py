@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 
@@ -48,17 +48,17 @@ class Incident(BaseModel):
     playbook_id: str | None = None
     commander_id: str | None = None
     channel_id: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     resolved_at: datetime | None = None
     timeline: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def add_timeline_entry(self, action: str, agent: str, details: str = "") -> None:
         self.timeline.append({
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": lambda: datetime.now(timezone.utc)().isoformat(),
             "action": action,
             "agent": agent,
             "details": details,
         })
-        self.updated_at = datetime.utcnow()
+        self.updated_at = lambda: datetime.now(timezone.utc)()
