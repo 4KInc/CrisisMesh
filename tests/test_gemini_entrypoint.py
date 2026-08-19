@@ -44,13 +44,13 @@ class TestCoordinatorAgentStructure:
     def test_coordinator_model(self):
         from src.agents.coordinator.agent import coordinator_agent
 
-        assert coordinator_agent.model == "gemini-2.5-flash"
+        assert coordinator_agent.model == "gemini-3.5-flash"
 
     def test_all_agents_use_same_model(self):
         from src.agents.coordinator.agent import coordinator_agent
 
         for sub in coordinator_agent.sub_agents:
-            assert sub.model == "gemini-2.5-flash", f"{sub.name} uses {sub.model}"
+            assert sub.model == "gemini-3.5-flash", f"{sub.name} uses {sub.model}"
 
 
 class TestIntakeAgentTools:

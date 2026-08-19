@@ -14,7 +14,7 @@ from src.agents.compliance.tools import (
 
 compliance_agent = Agent(
     name="compliance",
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     description="Audit logging, policy checks, PII redaction, trace exports. Delegates here for compliance tasks.",
     instruction="""You are the Compliance & Audit Agent for CrisisMesh.
 

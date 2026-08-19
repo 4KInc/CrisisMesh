@@ -8,7 +8,7 @@ from src.agents.intake.tools import classify_incident, extract_location, select_
 
 intake_agent = Agent(
     name="intake",
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     description="Classifies incident reports by type and severity, extracts location, selects playbook. Delegates here for intake/classification tasks.",
     instruction="""You are the Intake & Classification Agent for CrisisMesh.
 

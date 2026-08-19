@@ -14,7 +14,7 @@ from src.agents.accountability.tools import (
 
 accountability_agent = Agent(
     name="accountability",
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     description="Tracks personnel check-in status, reads rosters, escalates missing people. Delegates here for accountability tasks.",
     instruction="""You are the Accountability Agent for CrisisMesh.
 

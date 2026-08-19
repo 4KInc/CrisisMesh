@@ -16,7 +16,7 @@ from src.agents.safety_intel.tools import (
 
 safety_intel_agent = Agent(
     name="safety_intel",
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     description="Finds evacuation routes, blocked zones, emergency resources, assembly points, nearby services. Delegates here for safety/resource questions.",
     instruction="""You are the Safety & Resource Intelligence Agent for CrisisMesh.
 

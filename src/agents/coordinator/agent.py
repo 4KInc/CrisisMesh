@@ -13,7 +13,7 @@ from src.agents.sitrep.agent import sitrep_agent
 
 coordinator_agent = Agent(
     name="coordinator",
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     description="CrisisMesh Coordinator: owns the incident state machine, delegates to specialist agents, enforces human-approval gates.",
     instruction="""You are the Coordinator Agent for CrisisMesh — the central orchestrator of a multi-agent crisis-coordination fleet for schools.
 

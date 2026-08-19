@@ -13,7 +13,7 @@ from src.agents.learning.tools import (
 
 learning_agent = Agent(
     name="learning",
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     description="Finds prior lessons, produces AARs, stores lessons learned. Delegates here for learning/history tasks.",
     instruction="""You are the Learning & After-Action Agent for CrisisMesh.
 

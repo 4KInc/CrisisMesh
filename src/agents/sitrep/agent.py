@@ -13,7 +13,7 @@ from src.agents.sitrep.tools import (
 
 sitrep_agent = Agent(
     name="sitrep",
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     description="Generates IC SITREPs, responder one-card briefs, and stakeholder updates. Delegates here for situation reports.",
     instruction="""You are the SITREP & Handoff Agent for CrisisMesh.
 
