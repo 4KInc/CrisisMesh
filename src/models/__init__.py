@@ -1,11 +1,21 @@
 from src.models.incident import Incident, IncidentStatus, IncidentType, Severity
-from src.models.person import Person, PersonStatus, AccessibilityFlag
-from src.models.facility import Facility, Room, Route, Resource, ResourceType
+from src.models.person import Person, PersonStatus
+from src.models.facility import (
+    AssemblyPoint,
+    EmergencyResource,
+    EvacuationRoute,
+    Facility,
+    NearbyService,
+    ResourceType,
+    Room,
+    Zone,
+)
 from src.models.events import Event, EventType
 
 __all__ = [
     "Incident", "IncidentStatus", "IncidentType", "Severity",
-    "Person", "PersonStatus", "AccessibilityFlag",
-    "Facility", "Room", "Route", "Resource", "ResourceType",
+    "Person", "PersonStatus",
+    "AssemblyPoint", "EmergencyResource", "EvacuationRoute",
+    "Facility", "NearbyService", "ResourceType", "Room", "Zone",
     "Event", "EventType",
 ]

@@ -1,0 +1,14 @@
+facility_id,name,from_zone,to_exit,route_description,accessibility,blocked_by_zones
+jefferson,East Wing F1 Primary,east-wing-f1,Door 3 (East Exit),East hallway to Door 3 east side of building to parking lot,standard,east-entrance
+jefferson,East Wing F1 Alternate,east-wing-f1,Door 7 (Gym Exit),East hallway through gym corridor to Door 7 athletic field,standard,
+jefferson,West Wing F1 Primary,west-wing-f1,Door 1 (West Exit),West hallway to Door 1 west side to staff parking lot,standard,
+jefferson,West Wing F1 Alternate,west-wing-f1,Door 5 (Cafeteria Exit),West hallway through cafeteria to Door 5 bus loop,standard,
+jefferson,East Wing F2 Primary,east-wing-f2,Door 3 (East Exit),East hallway F2 to East Stairwell end of hall to Door 3 parking lot,standard,east-entrance
+jefferson,East Wing F2 Alternate,east-wing-f2,Door 2 (Main Entrance),East hallway F2 to Central Stairwell to main lobby to Door 2 front circle,standard,
+jefferson,West Wing F2 Primary,west-wing-f2,Door 1 (West Exit),West hallway F2 to West Stairwell to Door 1 staff parking lot,standard,
+jefferson,Library Route,library,Door 2 (Main Entrance),Library to Central Stairwell to main lobby to Door 2,standard,
+jefferson,Cafeteria Primary,cafeteria,Door 5 (Cafeteria Exit),Cafeteria main doors to Door 5 bus loop,standard,
+jefferson,Gym Primary,gym,Door 7 (Gym Exit),Gym main doors to Door 7 athletic field,standard,
+jefferson,Gym Alternate,gym,Door 8 (Field Exit),Gym to back corridor to Door 8 playing fields furthest from building,standard,
+jefferson,East Wing F2 Elevator,east-wing-f2,Door 2 (Main Entrance),East hallway F2 to Elevator mid-hall to Floor 1 to main lobby to Door 2. KEY: elevator key in main office,wheelchair_accessible,
+jefferson,West Wing F2 Elevator,west-wing-f2,Door 1 (West Exit),West hallway F2 to Elevator mid-hall to Floor 1 to west corridor to Door 1. KEY: elevator key in main office,wheelchair_accessible,

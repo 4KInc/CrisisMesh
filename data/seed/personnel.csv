@@ -1,0 +1,35 @@
+person_id,name,slack_user_id,role,department,default_location,floor,phone,emergency_contact_name,emergency_contact_phone,medical_notes,mobility_limitations,trained_first_aid,trained_cpr,is_floor_warden,evacuation_role
+p001,Principal Johnson,U_PRINCIPAL,Principal,Administration,admin-f1,1,615-555-0101,Mark Johnson,615-555-0102,,false,true,false,true,Incident Commander
+p002,VP Martinez,U_VP,Vice Principal,Administration,admin-f1,1,615-555-0103,Rosa Martinez,615-555-0104,,false,true,false,false,Communications Lead
+p003,Maria Santos,U_MARIA,Office Admin,Administration,admin-f1,1,615-555-0105,Carlos Santos,615-555-0106,,false,false,false,false,
+p004,Nurse Sarah,U_NURSE,School Nurse,Health,108,1,615-555-0107,David Park,615-555-0108,Asthma inhaler in office,false,true,true,false,Medical Lead
+p005,Mrs. Rodriguez,U_RODRIGUEZ,3rd Grade Teacher,Teaching,101,1,615-555-0110,Jose Rodriguez,615-555-0111,,false,false,false,true,Floor Warden - East F1
+p006,Mr. Chen,U_CHEN,3rd Grade Teacher,Teaching,102,1,615-555-0112,Wei Chen,615-555-0113,,false,false,false,false,
+p007,Ms. Williams,U_WILLIAMS,4th Grade Teacher,Teaching,103,1,615-555-0114,James Williams,615-555-0115,,false,true,false,false,
+p008,Mrs. Davis,U_DAVIS,4th Grade Teacher,Teaching,104,1,615-555-0116,Robert Davis,615-555-0117,Uses wheelchair — elevator required for evacuation,true,false,false,false,
+p009,Mr. Okafor,U_OKAFOR,5th Grade Teacher,Teaching,105,1,615-555-0118,Ada Okafor,615-555-0119,,false,false,false,false,
+p010,Ms. Garcia,U_GARCIA,5th Grade Teacher,Teaching,106,1,615-555-0120,Luis Garcia,615-555-0121,,false,true,true,false,
+p011,Mrs. Lee,U_LEE,ESL Teacher,Teaching,107,1,615-555-0122,Kevin Lee,615-555-0123,,false,false,false,false,
+p012,Mr. Brown,U_BROWN,3rd Grade Teacher,Teaching,109,1,615-555-0124,Linda Brown,615-555-0125,,false,false,false,true,Floor Warden - West F1
+p013,Ms. Taylor,U_TAYLOR,4th Grade Teacher,Teaching,110,1,615-555-0126,Chris Taylor,615-555-0127,,false,false,false,false,
+p014,Mrs. White,U_WHITE,5th Grade Teacher,Teaching,111,1,615-555-0128,Tom White,615-555-0129,,false,false,false,false,
+p015,Mr. Scott,U_SCOTT,5th Grade Teacher,Teaching,112,1,615-555-0130,Karen Scott,615-555-0131,,false,true,false,false,
+p016,Ms. Ahmed,U_AHMED,Art Teacher,Teaching,113,1,615-555-0132,Omar Ahmed,615-555-0133,,false,false,false,false,
+p017,Mr. Rivera,U_RIVERA,Music Teacher,Teaching,114,1,615-555-0134,Sofia Rivera,615-555-0135,,false,false,false,false,
+p018,Mrs. Nguyen,U_NGUYEN,6th Grade Teacher,Teaching,201,2,615-555-0136,Minh Nguyen,615-555-0137,,false,false,false,true,Floor Warden - East F2
+p019,Mr. Patel,U_PATEL,6th Grade Teacher,Teaching,202,2,615-555-0138,Priya Patel,615-555-0139,,false,false,false,false,
+p020,Ms. Clark,U_CLARK,7th Grade Teacher,Teaching,203,2,615-555-0140,Nancy Clark,615-555-0141,,false,true,true,false,
+p021,Mrs. Thompson,U_THOMPSON,7th Grade Teacher,Teaching,204,2,615-555-0142,John Thompson,615-555-0143,Knee replacement — limited mobility on stairs,true,false,false,false,
+p022,Mr. Kim,U_KIM,8th Grade Teacher,Teaching,205,2,615-555-0144,Susan Kim,615-555-0145,,false,false,false,false,
+p023,Ms. Johnson,U_JOHNSON,6th Grade Teacher,Teaching,209,2,615-555-0146,Mike Johnson,615-555-0147,,false,false,false,true,Floor Warden - West F2
+p024,Mr. Martinez,U_MARTINEZ,7th Grade Teacher,Teaching,210,2,615-555-0148,Ana Martinez,615-555-0149,,false,false,false,false,
+p025,Dr. Franklin,U_FRANKLIN,Science Teacher,Teaching,215,2,615-555-0150,Eleanor Franklin,615-555-0151,,false,true,false,false,
+p026,Ms. Jackson,U_JACKSON,Librarian,Library,library,2,615-555-0152,Marcus Jackson,615-555-0153,,false,false,false,false,
+p027,Coach Williams,U_COACH,PE Teacher / Coach,Athletics,gym,1,615-555-0154,Pat Williams,615-555-0155,,false,true,true,false,
+p028,Custodian Frank,U_FRANK,Head Custodian,Facilities,west-wing-f1,1,615-555-0156,Betty Franklin,615-555-0157,,false,false,false,false,Knows all utility shutoffs
+p029,Cafeteria Rosa,U_ROSA,Cafeteria Manager,Food Services,cafeteria,1,615-555-0158,Miguel Rosa,615-555-0159,,false,true,false,false,
+p030,Security Dave,U_SECURITY,Security Officer,Security,admin-f1,1,615-555-0160,Sarah Davis,615-555-0161,,false,true,true,false,Radio channel: Security 1
+p031,Tech Jordan,U_TECH,IT Coordinator,Technology,library,2,615-555-0162,Taylor Jordan,615-555-0163,,false,false,false,false,Controls PA system and camera feeds
+p032,Mrs. Evans,U_EVANS,School Counselor,Counseling,admin-f1,1,615-555-0164,Greg Evans,615-555-0165,,false,true,false,false,Crisis counseling trained
+p033,Ms. Cooper,U_COOPER,Special Ed Aide,Special Education,east-wing-f1,1,615-555-0166,James Cooper,615-555-0167,,false,true,true,false,
+p034,Mr. Hughes,U_HUGHES,Special Ed Aide,Special Education,east-wing-f2,2,615-555-0168,Linda Hughes,615-555-0169,,false,false,false,false,

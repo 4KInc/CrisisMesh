@@ -17,15 +17,17 @@ load_dotenv()
 
 SEED_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "seed")
 
+# Maps csv_type to filename — order matters (facility first, then zones, etc.)
 SEED_FILES = [
-    ("facilities", "facilities.csv"),
+    ("facility", "facility.csv"),
+    ("zones", "zones.csv"),
     ("rooms", "rooms.csv"),
-    ("people", "people.csv"),
-    ("resources", "resources.csv"),
-    ("routes", "routes.csv"),
+    ("personnel", "personnel.csv"),
+    ("evacuation_routes", "evacuation_routes.csv"),
+    ("emergency_resources", "emergency_resources.csv"),
+    ("assembly_points", "assembly_points.csv"),
+    ("nearby_services", "nearby_services.csv"),
 ]
-
-FACILITY_ID = "facility-001"
 
 
 async def main() -> None:
@@ -45,8 +47,8 @@ async def main() -> None:
         with open(filepath) as f:
             content = f.read()
 
-        result = await ingest_csv(state, csv_type, content, facility_id=FACILITY_ID)
-        print(f"OK: {csv_type} -> {result}")
+        result = await ingest_csv(state, csv_type, content)
+        print(f"  OK: {csv_type} -> {result}")
 
     print("\nSeed data loaded successfully.")
 

@@ -7,47 +7,10 @@ from pydantic import BaseModel, Field
 
 class ResourceType(StrEnum):
     AED = "aed"
+    FIRST_AID_KIT = "first_aid_kit"
     TRAUMA_KIT = "trauma_kit"
     FIRE_EXTINGUISHER = "fire_extinguisher"
-    UTILITY_SHUTOFF = "utility_shutoff"
-    HAZMAT_STORAGE = "hazmat_storage"
-    ASSEMBLY_POINT = "assembly_point"
-    EMERGENCY_EXIT = "emergency_exit"
-    SHELTER_AREA = "shelter_area"
-    COMMUNICATION_DEVICE = "communication_device"
-
-
-class Room(BaseModel):
-    id: str
-    name: str
-    facility_id: str
-    floor: int = 1
-    building: str = ""
-    capacity: int = 0
-    room_type: str = ""  # classroom, lab, office, gym, cafeteria, etc.
-
-
-class Route(BaseModel):
-    id: str
-    facility_id: str
-    name: str
-    from_zone: str
-    to_zone: str
-    route_type: str = "evacuation"  # evacuation, access, emergency
-    is_accessible: bool = True
-    status: str = "open"  # open, blocked, restricted
-    notes: str = ""
-
-
-class Resource(BaseModel):
-    id: str
-    facility_id: str
-    type: ResourceType
-    name: str
-    location: str
-    room_id: str = ""
-    floor: int = 1
-    notes: str = ""
+    EMERGENCY_PHONE = "emergency_phone"
 
 
 class Facility(BaseModel):
@@ -55,7 +18,69 @@ class Facility(BaseModel):
     name: str
     address: str = ""
     floors: int = 1
-    buildings: list[str] = Field(default_factory=list)
-    rooms: list[Room] = Field(default_factory=list)
-    routes: list[Route] = Field(default_factory=list)
-    resources: list[Resource] = Field(default_factory=list)
+    capacity: int = 0
+
+
+class Zone(BaseModel):
+    id: str
+    facility_id: str
+    name: str
+    floor: int = 1
+    zone_type: str = ""  # classrooms, administrative, common
+    primary_exit: str = ""
+    alternate_exit: str = ""
+    shelter_location: str = ""
+    capacity: int = 0
+    notes: str = ""
+
+
+class Room(BaseModel):
+    id: str
+    facility_id: str
+    name: str
+    floor: int = 1
+    zone_id: str = ""
+    room_type: str = ""  # classroom, laboratory, art_room, music_room
+    capacity: int = 0
+    notes: str = ""
+
+
+class EvacuationRoute(BaseModel):
+    facility_id: str
+    name: str
+    from_zone: str
+    to_exit: str
+    route_description: str = ""
+    accessibility: str = "standard"  # standard, wheelchair_accessible
+    blocked_by_zones: str = ""  # zones that if affected block this route
+
+
+class EmergencyResource(BaseModel):
+    facility_id: str
+    resource_type: ResourceType
+    location_description: str
+    floor: int = 1
+    zone_id: str = ""
+    notes: str = ""
+
+
+class AssemblyPoint(BaseModel):
+    id: str
+    facility_id: str
+    name: str
+    location_description: str = ""
+    capacity: int = 0
+    is_primary: bool = False
+    accessibility: str = "standard"
+    notes: str = ""
+
+
+class NearbyService(BaseModel):
+    service_type: str  # hospital, trauma_center, police_station, fire_station, urgent_care
+    name: str
+    address: str = ""
+    phone: str = ""
+    distance_miles: float = 0.0
+    eta_minutes: int = 0
+    trauma_level: str = ""
+    helipad: bool = False

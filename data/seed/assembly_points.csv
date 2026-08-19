@@ -1,0 +1,4 @@
+point_id,facility_id,name,location_description,capacity,is_primary,accessibility,notes
+ap-field,jefferson,Athletic Field (Primary),Behind the gym past the track 500ft from building,500,true,standard,Primary rally point for all evacuations. Teachers line up by class.
+ap-parking,jefferson,Staff Parking Lot (Alternate),West side staff parking lot far end near Oak Street,200,false,standard,Alternate if athletic field is compromised. Further from east entrance.
+ap-church,jefferson,First Baptist Church (Off-Site),"1300 Oak Street directly across the street from school",400,false,standard,Off-site reunification point for parents. Contact: Pastor Williams 615-555-0200

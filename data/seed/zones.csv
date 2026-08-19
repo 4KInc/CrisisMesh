@@ -1,0 +1,9 @@
+zone_id,facility_id,name,floor,zone_type,primary_exit,alternate_exit,shelter_location,capacity,notes
+east-wing-f1,jefferson,East Wing Floor 1,1,classrooms,Door 3 (East Exit),Door 7 (Gym Exit),Interior hallway A,120,Rooms 101-108
+west-wing-f1,jefferson,West Wing Floor 1,1,classrooms,Door 1 (West Exit),Door 5 (Cafeteria Exit),Interior hallway B,120,Rooms 109-114
+admin-f1,jefferson,Main Office / Admin,1,administrative,Door 2 (Main Entrance),Door 1 (West Exit),Principal inner office,15,Front office area
+cafeteria,jefferson,Cafeteria,1,common,Door 5 (Cafeteria Exit),Door 6 (Kitchen Loading Dock),Kitchen freezer room,200,Also used as assembly hall
+gym,jefferson,Gymnasium,1,common,Door 7 (Gym Exit),Door 8 (Field Exit),Locker rooms (interior),300,PE classes and assemblies
+east-wing-f2,jefferson,East Wing Floor 2,2,classrooms,East Stairwell to Door 3,Central Stairwell to Door 2,Interior hallway C,120,Rooms 201-208
+west-wing-f2,jefferson,West Wing Floor 2,2,classrooms,West Stairwell to Door 1,Central Stairwell to Door 2,Interior hallway D,120,"Rooms 209-216, includes science lab (Room 215)"
+library,jefferson,Library / Media Center,2,common,Central Stairwell to Door 2,West Stairwell to Door 1,Library storage room (interior no windows),60,Floor 2 center of building

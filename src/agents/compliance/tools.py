@@ -11,10 +11,12 @@ from src.config.agent_registry import is_tool_allowed
 # Sensitive fields that must be redacted in general outputs
 SENSITIVE_FIELDS = {
     "medical_notes",
-    "accessibility_flags",
-    "emergency_contact",
+    "mobility_limitations",
+    "emergency_contact_name",
+    "emergency_contact_phone",
     "phone",
     "email",
+    "slack_user_id",
     "ssn",
     "date_of_birth",
 }

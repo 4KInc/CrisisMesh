@@ -1,15 +1,23 @@
-id,name,facility_id,floor,building,capacity,room_type
-room-101,Room 101 - Mrs. Johnson,facility-001,1,Main Building,25,classroom
-room-102,Room 102 - Mr. Davis,facility-001,1,Main Building,25,classroom
-room-103,Room 103 - Ms. Garcia,facility-001,1,Main Building,25,classroom
-room-104,Main Office,facility-001,1,Main Building,10,office
-room-105,Nurse's Office,facility-001,1,Main Building,5,medical
-room-106,Cafeteria,facility-001,1,Main Building,200,cafeteria
-room-201,Room 201 - Mrs. Chen,facility-001,2,Main Building,25,classroom
-room-202,Room 202 - Mr. Brown,facility-001,2,Main Building,25,classroom
-room-203,Science Lab,facility-001,2,Main Building,30,lab
-room-204,Art Room,facility-001,2,Main Building,25,classroom
-room-205,Library,facility-001,2,Main Building,50,library
-gym-001,Gymnasium,facility-001,1,Gymnasium,300,gym
-port-001,Portable 1 - Ms. Lee,facility-001,1,Portable Classrooms,20,classroom
-port-002,Portable 2 - Mr. Wilson,facility-001,1,Portable Classrooms,20,classroom
+room_id,facility_id,name,floor,zone_id,room_type,capacity,notes
+101,jefferson,Room 101,1,east-wing-f1,classroom,25,3rd grade - Mrs. Rodriguez
+102,jefferson,Room 102,1,east-wing-f1,classroom,25,3rd grade - Mr. Chen
+103,jefferson,Room 103,1,east-wing-f1,classroom,25,4th grade - Ms. Williams
+104,jefferson,Room 104,1,east-wing-f1,classroom,25,4th grade - Mrs. Davis
+105,jefferson,Room 105,1,east-wing-f1,classroom,25,5th grade - Mr. Okafor
+106,jefferson,Room 106,1,east-wing-f1,classroom,25,5th grade - Ms. Garcia
+107,jefferson,Room 107,1,east-wing-f1,classroom,25,ESL - Mrs. Lee
+108,jefferson,Room 108,1,east-wing-f1,classroom,25,Nurse office
+109,jefferson,Room 109,1,west-wing-f1,classroom,25,3rd grade - Mr. Brown
+110,jefferson,Room 110,1,west-wing-f1,classroom,25,4th grade - Ms. Taylor
+111,jefferson,Room 111,1,west-wing-f1,classroom,25,5th grade - Mrs. White
+112,jefferson,Room 112,1,west-wing-f1,classroom,25,5th grade - Mr. Scott
+113,jefferson,Room 113,1,west-wing-f1,art_room,30,Art - Ms. Ahmed
+114,jefferson,Room 114,1,west-wing-f1,music_room,30,Music - Mr. Rivera
+201,jefferson,Room 201,2,east-wing-f2,classroom,25,6th grade - Mrs. Nguyen
+202,jefferson,Room 202,2,east-wing-f2,classroom,25,6th grade - Mr. Patel
+203,jefferson,Room 203,2,east-wing-f2,classroom,25,7th grade - Ms. Clark
+204,jefferson,Room 204,2,east-wing-f2,classroom,25,7th grade - Mrs. Thompson
+205,jefferson,Room 205,2,east-wing-f2,classroom,25,8th grade - Mr. Kim
+209,jefferson,Room 209,2,west-wing-f2,classroom,25,6th grade - Ms. Johnson
+210,jefferson,Room 210,2,west-wing-f2,classroom,25,7th grade - Mr. Martinez
+215,jefferson,Room 215 - Science Lab,2,west-wing-f2,laboratory,25,Science - Dr. Franklin

@@ -1,0 +1,7 @@
+service_type,name,address,phone,distance_miles,eta_minutes,trauma_level,helipad
+hospital,Vanderbilt University Medical Center,"1211 Medical Center Dr, Nashville, TN 37232",615-322-5000,3.2,8,Level I,true
+hospital,TriStar Centennial Medical Center,"2300 Patterson St, Nashville, TN 37203",615-342-1000,1.8,5,Level II,false
+trauma_center,Vanderbilt Children's Hospital,"2200 Children's Way, Nashville, TN 37232",615-936-1000,3.4,9,Level I Pediatric,true
+police_station,Metro Nashville Police - Central Precinct,601 Korean Veterans Blvd,615-862-8600,1.5,4,,false
+fire_station,Nashville Fire Station 9,1000 2nd Ave S,615-862-5421,0.8,3,,false
+urgent_care,Vanderbilt Health Walk-In Clinic,1801 West End Ave,615-322-3000,1.2,4,,false

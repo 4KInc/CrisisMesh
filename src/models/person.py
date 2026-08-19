@@ -14,27 +14,22 @@ class PersonStatus(StrEnum):
     SILENT = "silent"
 
 
-class AccessibilityFlag(StrEnum):
-    MOBILITY = "mobility"
-    VISUAL = "visual"
-    HEARING = "hearing"
-    COGNITIVE = "cognitive"
-    MEDICAL_DEVICE = "medical_device"
-    OTHER = "other"
-
-
 class Person(BaseModel):
     id: str
     name: str
+    slack_user_id: str = ""
     role: str = ""
-    email: str = ""
-    phone: str = ""
-    facility_id: str = ""
-    room_id: str = ""
     department: str = ""
-    accessibility_flags: list[AccessibilityFlag] = Field(default_factory=list)
+    default_location: str = ""  # zone_id or room_id
+    floor: int = 1
+    phone: str = ""
+    emergency_contact_name: str = ""
+    emergency_contact_phone: str = ""
     medical_notes: str = ""  # need-to-know only, redacted in general channels
-    emergency_contact: str = ""
-    is_on_call: bool = False
+    mobility_limitations: bool = False
+    trained_first_aid: bool = False
+    trained_cpr: bool = False
+    is_floor_warden: bool = False
+    evacuation_role: str = ""  # Incident Commander, Floor Warden, Medical Lead, etc.
     status: PersonStatus = PersonStatus.UNKNOWN
     last_check_in: str | None = None

@@ -64,8 +64,9 @@ AGENT_REGISTRY: dict[str, AgentRegistryEntry] = {
         owner="crisismesh",
         data_class="internal",
         approved_tools=[
-            "find_safe_routes", "find_blocked_zones", "locate_resource",
-            "find_assembly_point", "find_hazmat", "find_utility_shutoff",
+            "find_safe_routes", "find_zone_info", "find_blocked_zones",
+            "locate_resource", "find_assembly_point", "find_nearby_services",
+            "find_accessible_routes",
         ],
         denied_tools=["send_external_message", "modify_playbook"],
         purpose="Safety and resource intelligence",
