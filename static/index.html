@@ -5,7 +5,7 @@
 <title>CrisisMesh — Incident Command</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
 <script>
 tailwind.config={darkMode:"class",theme:{extend:{
 colors:{
@@ -28,26 +28,29 @@ colors:{
 borderRadius:{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},
 spacing:{"container-padding":"24px","gutter":"16px","unit":"4px"},
 fontFamily:{
-"body-md":["JetBrains Mono"],"headline-lg":["JetBrains Mono"],
-"headline-md":["JetBrains Mono"],"headline-sm":["JetBrains Mono"],
-"label-caps":["JetBrains Mono"],"mono-data":["JetBrains Mono"],
-"display-911":["JetBrains Mono"]
+"sans":["Inter","system-ui","sans-serif"],
+"body-md":["Inter"],"headline-lg":["Inter"],
+"headline-md":["Inter"],"headline-sm":["Inter"],
+"label-caps":["Inter"],"mono-data":["JetBrains Mono"],
+"display-911":["Inter"]
 },
 fontSize:{
-"display-911":["48px",{lineHeight:"1.1",letterSpacing:"-0.05em",fontWeight:"800"}],
-"headline-lg":["32px",{lineHeight:"1.2",fontWeight:"700"}],
-"headline-md":["24px",{lineHeight:"1.2",fontWeight:"700"}],
-"headline-sm":["18px",{lineHeight:"1.4",fontWeight:"700"}],
-"body-md":["14px",{lineHeight:"1.5",fontWeight:"400"}],
-"label-caps":["12px",{lineHeight:"1.2",fontWeight:"700"}],
-"mono-data":["13px",{lineHeight:"1.0",fontWeight:"500"}]
+"display-911":["42px",{lineHeight:"1.1",letterSpacing:"-0.03em",fontWeight:"900"}],
+"headline-lg":["32px",{lineHeight:"1.15",fontWeight:"800",letterSpacing:"-0.02em"}],
+"headline-md":["22px",{lineHeight:"1.25",fontWeight:"700",letterSpacing:"-0.01em"}],
+"headline-sm":["16px",{lineHeight:"1.4",fontWeight:"600"}],
+"body-md":["14px",{lineHeight:"1.55",fontWeight:"400"}],
+"label-caps":["11px",{lineHeight:"1.2",fontWeight:"600",letterSpacing:"0.04em"}],
+"mono-data":["13px",{lineHeight:"1.35",fontWeight:"500"}]
 }
 }}}
 </script>
 <style type="text/tailwindcss">
 @layer utilities{
 .tactical-border{@apply border border-tactical-border}
-.tactical-card{@apply bg-tactical-surface tactical-border rounded}
+.tactical-card{@apply bg-tactical-surface tactical-border rounded shadow-[0_1px_3px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.03)_inset]}
+.card-elevated{@apply bg-tactical-surface tactical-border rounded shadow-[0_4px_12px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.05)_inset]}
+.card-hero{@apply bg-tactical-surface border-2 rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.06)_inset]}
 .chip-safe{@apply border-l-2 border-l-status-safe bg-status-safe/10 text-status-safe}
 .chip-injured{@apply border-l-2 border-l-status-injured bg-status-injured/10 text-status-injured}
 .chip-need_help{@apply border-l-2 border-l-status-need-help bg-status-need-help/10 text-status-need-help}
@@ -61,7 +64,7 @@ fontSize:{
 }
 </style>
 </head>
-<body class="bg-tactical-bg text-on-surface font-body-md antialiased overflow-x-hidden selection:bg-primary/30 selection:text-primary">
+<body class="bg-tactical-bg text-on-surface font-sans text-[14px] leading-relaxed antialiased overflow-x-hidden selection:bg-primary/30 selection:text-primary">
 
 <!-- Top App Bar -->
 <header class="fixed top-0 w-full h-[80px] z-[100] bg-[#ef4444] text-white flex justify-between items-center px-container-padding border-none shadow-[0_0_15px_rgba(239,68,68,0.6)]">
@@ -105,7 +108,7 @@ fontSize:{
 </nav>
 
 <!-- Main Content -->
-<main class="ml-[220px] pt-[130px] p-container-padding min-h-screen">
+<main class="ml-[220px] pt-[130px] p-container-padding min-h-screen" style="background:linear-gradient(180deg,#0a0e17 0%,#0d1117 100%);">
 
 <!-- SCREEN 1: SITREP -->
 <div class="screen on" id="s-sitrep">
@@ -146,9 +149,9 @@ fontSize:{
 
   <!-- Lessons & Declare -->
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-gutter">
-    <div id="sit-lessons" class="tactical-card p-4 lg:col-span-1">
-      <div class="flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-tertiary">history_edu</span><h3 class="text-headline-sm font-headline-sm text-on-surface">PRIOR LESSONS</h3></div>
-      <div class="text-on-surface-variant">—</div>
+    <div id="sit-lessons" class="tactical-card p-4 lg:col-span-1 opacity-80">
+      <div class="flex items-center gap-2 mb-3"><span class="material-symbols-outlined text-on-surface-variant text-[18px]">history_edu</span><h3 class="text-[13px] font-semibold text-on-surface-variant">Prior Lessons</h3></div>
+      <div class="text-on-surface-variant text-[13px]">—</div>
     </div>
     <div class="tactical-card p-5 lg:col-span-2 border-2 border-status-injured bg-[#111827]">
       <div class="flex items-center gap-2 mb-4 border-b border-tactical-border pb-3"><span class="material-symbols-outlined text-status-injured">campaign</span><h3 class="text-headline-sm font-headline-sm text-white">DECLARE INCIDENT</h3></div>
@@ -157,7 +160,7 @@ fontSize:{
         <textarea id="rpt" class="w-full bg-tactical-bg border border-tactical-border text-on-surface font-mono-data p-3 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none rounded" rows="3" placeholder="Smoke near the science lab, floor 2 — kids still inside"></textarea>
       </div>
       <div class="flex flex-wrap gap-4 items-center">
-        <button onclick="declareAgentic()" class="bg-[#36C5F0] hover:bg-[#2EB67D] text-white font-headline-sm text-headline-sm px-6 py-3 rounded flex items-center gap-2 transition-colors border border-[#36C5F0]"><span class="material-symbols-outlined">campaign</span>Declare Incident</button>
+        <button onclick="declareAgentic()" class="bg-gradient-to-b from-[#3dd8f5] to-[#2ea8c7] hover:from-[#5ee0f8] hover:to-[#36C5F0] text-white font-headline-sm text-headline-sm px-6 py-3 rounded flex items-center gap-2 transition-all shadow-[0_1px_2px_rgba(0,0,0,0.3),0_0_0_1px_rgba(255,255,255,0.1)_inset] hover:shadow-[0_2px_8px_rgba(76,215,246,0.3)]"><span class="material-symbols-outlined">campaign</span>Declare Incident</button>
         <button onclick="declareFast()" class="bg-transparent border border-outline hover:border-on-surface text-on-surface font-headline-sm text-headline-sm px-6 py-3 rounded flex items-center gap-2 transition-colors"><span class="material-symbols-outlined">bolt</span>Quick Declare</button>
         <div class="ml-auto text-mono-data font-mono-data text-on-surface-variant flex items-center gap-2"><span class="material-symbols-outlined text-[16px]">lock</span>Secure Channel</div>
       </div>
@@ -208,7 +211,7 @@ fontSize:{
       <span class="text-label-caps font-label-caps text-on-surface-variant">DELEGATION STREAM</span>
       <span id="str-st" class="text-mono-data font-mono-data text-on-surface-variant"></span>
     </div>
-    <div id="str-log" class="p-2 max-h-[420px] overflow-y-auto font-mono-data text-mono-data"></div>
+    <div id="str-log" class="p-2 max-h-[420px] overflow-y-auto text-[13px]"></div>
   </div>
   <div id="str-resp" class="tactical-card overflow-hidden hidden">
     <div class="bg-tactical-surface px-4 py-2 border-b border-tactical-border"><span class="text-label-caps font-label-caps text-on-surface-variant">COORDINATOR FINAL BRIEFING</span></div>
@@ -337,8 +340,9 @@ function renderSit(d){
 
   const lessons=d.prior_lessons?.lessons||[];
   document.getElementById('sit-lessons').innerHTML=`
-    <div class="flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-tertiary">history_edu</span><h3 class="text-headline-sm font-headline-sm text-on-surface">PRIOR LESSONS (${lessons.length})</h3></div>
-    <div class="flex flex-col gap-3">${lessons.map(l=>`<div class="border-l-2 border-l-outline p-2 bg-surface-container-high rounded text-body-md font-body-md"><span class="text-primary font-mono-data text-[11px] block mb-1">${l.source_incident}</span>${l.title}</div>`).join('')||'<div class="text-on-surface-variant">No prior lessons</div>'}</div>`;
+    <div class="flex items-center gap-2 mb-3"><span class="material-symbols-outlined text-on-surface-variant text-[18px]">history_edu</span><h3 class="text-[13px] font-semibold text-on-surface-variant">Prior Lessons (${lessons.length})</h3></div>
+    <div class="flex flex-col gap-2">${lessons.map(l=>`<div class="border-l-2 border-l-outline-variant p-2 bg-surface-container-high/50 rounded text-[13px] text-on-surface-variant"><span class="text-primary/70 font-mono-data text-[10px] block mb-0.5">${l.source_incident}</span>${l.title}</div>`).join('')||'<div class="text-on-surface-variant text-[13px]">No prior lessons</div>'}</div>`;
+  document.getElementById('sit-lessons').className='tactical-card p-4 lg:col-span-1 opacity-80';
   loadAcct();
 }
 
@@ -346,10 +350,11 @@ function renderSit(d){
 async function loadAcct(){
   const id=document.getElementById('acct-iid').value.trim()||incId;if(!id)return;incId=id;
   const d=await(await fetch(API+'/incident/'+encodeURIComponent(id))).json();
+  const unacc=d.unaccounted;
   document.getElementById('acct-stats').innerHTML=`
     <div class="tactical-card p-4 text-center"><div class="text-headline-lg font-headline-lg text-on-surface">${d.total_tracked}</div><div class="text-label-caps text-on-surface-variant mt-1">Total</div></div>
     <div class="tactical-card p-4 text-center"><div class="text-headline-lg font-headline-lg text-status-safe">${d.accounted}</div><div class="text-label-caps text-on-surface-variant mt-1">Accounted</div></div>
-    <div class="tactical-card p-4 text-center"><div class="text-headline-lg font-headline-lg text-status-injured">${d.unaccounted}</div><div class="text-label-caps text-on-surface-variant mt-1">Unaccounted</div></div>
+    <div class="card-hero p-5 text-center ${unacc>0?'border-status-injured shadow-[0_0_20px_rgba(239,68,68,0.15)]':'border-status-safe'}"><div class="font-sans font-black text-[48px] leading-none tracking-tight ${unacc>0?'text-status-injured':'text-status-safe'}">${unacc}</div><div class="text-label-caps ${unacc>0?'text-status-injured':'text-status-safe'} mt-2 font-bold">Unaccounted</div>${unacc>0?'<div class="text-[10px] text-status-injured/70 mt-1">Requires immediate action</div>':''}</div>
     <div class="tactical-card p-4 text-center"><div class="text-headline-lg font-headline-lg text-status-need-help">${mobIds.size}</div><div class="text-label-caps text-on-surface-variant mt-1">Mobility</div></div>`;
   const all=[];for(const[st,ppl]of Object.entries(d.breakdown||{}))for(const p of ppl)all.push({...p,status:st});
   const ord={need_help:0,injured:1,unknown:2,silent:3,evacuated:4,safe:5};
@@ -383,9 +388,9 @@ async function runStream(){
     const e=evts[i],dt=t0?Math.min((new Date(e.timestamp).getTime()-t0)*.04,150):30;
     await new Promise(r=>setTimeout(r,Math.max(dt,25)));
     const ts=new Date(e.timestamp).toISOString().substr(11,12);let h='';
-    if(e.type==='delegation')h=`<div class="ev-anim border-l-2 border-l-[#ec4899] bg-[#ec4899]/5 px-3 py-1.5 mb-1 rounded"><span class="text-on-surface-variant text-[10px] float-right">${ts}</span><span class="text-primary font-bold">${e.author}</span> → <span class="text-[#ec4899] font-bold">delegate ${e.target_agent}</span></div>`;
-    else if(e.type==='tool_call'){const args=e.tool_args?Object.entries(e.tool_args).map(([k,v])=>`${k}=${JSON.stringify(v)}`).join(', '):'';h=`<div class="ev-anim border-l-2 border-l-primary bg-primary/5 px-3 py-1.5 mb-1 rounded"><span class="text-on-surface-variant text-[10px] float-right">${ts}</span><span class="text-primary font-bold">${e.author}</span> → <span class="text-primary">${e.tool_name}</span>${args?`<div class="text-on-surface-variant text-[11px] truncate mt-0.5">${args.substring(0,140)}</div>`:''}</div>`;}
-    else if(e.type==='tool_result')h=`<div class="ev-anim border-l-2 border-l-status-safe bg-status-safe/5 px-3 py-1.5 mb-1 rounded"><span class="text-on-surface-variant text-[10px] float-right">${ts}</span><span class="text-status-safe">${e.tool_name}</span> returned</div>`;
+    if(e.type==='delegation')h=`<div class="ev-anim border-l-2 border-l-[#ec4899] bg-[#ec4899]/5 px-3 py-1.5 mb-1 rounded"><span class="text-on-surface-variant text-[10px] font-mono-data float-right">${ts}</span><span class="text-primary font-semibold">${e.author}</span> <span class="text-on-surface-variant">→</span> <span class="text-[#ec4899] font-semibold">delegate to <span class="font-mono-data">${e.target_agent}</span></span></div>`;
+    else if(e.type==='tool_call'){const args=e.tool_args?Object.entries(e.tool_args).map(([k,v])=>`${k}=${JSON.stringify(v)}`).join(', '):'';h=`<div class="ev-anim border-l-2 border-l-primary bg-primary/5 px-3 py-1.5 mb-1 rounded"><span class="text-on-surface-variant text-[10px] font-mono-data float-right">${ts}</span><span class="text-primary font-semibold">${e.author}</span> <span class="text-on-surface-variant">→</span> <span class="text-primary font-mono-data">${e.tool_name}</span>${args?`<div class="text-on-surface-variant text-[11px] font-mono-data truncate mt-0.5">${args.substring(0,140)}</div>`:''}</div>`;}
+    else if(e.type==='tool_result')h=`<div class="ev-anim border-l-2 border-l-status-safe bg-status-safe/5 px-3 py-1.5 mb-1 rounded"><span class="text-on-surface-variant text-[10px] font-mono-data float-right">${ts}</span><span class="text-status-safe font-mono-data">${e.tool_name}</span> <span class="text-on-surface-variant">returned</span></div>`;
     if(h){log.insertAdjacentHTML('beforeend',h);log.scrollTop=log.scrollHeight;}
   }
   document.getElementById('str-st').innerHTML='<span class="text-status-safe font-bold">Complete</span>';
