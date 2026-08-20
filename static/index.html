@@ -65,7 +65,7 @@ body{font-family:'JetBrains Mono',monospace;}
 <header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 py-2 bg-[#ef4444] border-b-2 border-[#690005] h-[52px]">
   <div class="flex items-center gap-3">
     <span class="material-symbols-outlined text-white" style="font-variation-settings:'FILL' 1;">warning</span>
-    <h1 class="font-head text-head-md md:text-head-lg font-black tracking-tighter text-white uppercase leading-none">CRISISMESH // EMERGENCY</h1>
+    <h1 class="font-head text-head-md md:text-head-lg font-black tracking-tighter text-white uppercase leading-none">CRISISMESH EMERGENCY</h1>
     <span class="w-2 h-2 bg-white rounded-full animate-pulse ml-2"></span>
     <span class="font-mono text-mono-xs text-white/80 uppercase">LIVE</span>
   </div>
@@ -156,7 +156,7 @@ body{font-family:'JetBrains Mono',monospace;}
       </div>
       <div class="flex flex-col gap-2 shrink-0 md:w-64 pt-6">
         <button onclick="declareAgentic()" class="w-full bg-[#ef4444] text-black font-mono text-mono-code font-bold uppercase py-3 hover:bg-white transition-colors border border-[#ef4444] hover:border-white">DECLARE INCIDENT</button>
-        <button onclick="declareFast()" class="w-full bg-transparent text-white font-mono text-mono-code font-bold uppercase py-2 hover:bg-surface-bright transition-colors border-2 border-white">FAST / DETERMINISTIC</button>
+        <button onclick="declareFast()" class="w-full bg-transparent text-white font-mono text-mono-code font-bold uppercase py-2 hover:bg-surface-bright transition-colors border-2 border-white">QUICK DECLARE</button>
       </div>
     </div>
   </div>
@@ -294,7 +294,7 @@ function initRole(){
 
 async function checkHealth(){
   try{const d=await(await fetch(API+'/health')).json();
-    document.getElementById('nav-st').innerHTML=`<span class="material-symbols-outlined text-[16px] text-safe">shield_person</span>${d.model} // ${d.knowledge_base.personnel} STAFF`;
+    document.getElementById('nav-st').innerHTML=`<span class="material-symbols-outlined text-[16px] text-safe">shield_person</span>${d.model} — ${d.knowledge_base.personnel} STAFF`;
   }catch(e){document.getElementById('nav-st').innerHTML='<span class="material-symbols-outlined text-[16px]">link_off</span>OFFLINE';}
 }
 
@@ -354,7 +354,7 @@ function renderSit(d){
   const fs=d.nearby_fire_station?.services?.[0];
   document.getElementById('sit-eta').textContent=fs?`ETA: ${fs.eta_minutes} MIN`:'';
   document.getElementById('sit-svc').innerHTML=`<div class="bg-surface-variant text-on-surface-variant font-mono text-mono-xs px-3 py-1 uppercase border-b border-outline-variant flex justify-between"><span>EXT. RESPONDERS</span><span class="text-tertiary">${fs?'ETA: '+fs.eta_minutes+' MIN':''}</span></div>
-    <div class="p-4 flex items-center gap-3">${fs?`<span class="material-symbols-outlined text-tertiary text-3xl">airport_shuttle</span><div><div class="font-mono text-data-lg text-white uppercase text-sm">${fs.name}</div><div class="font-mono text-[10px] text-on-surface-variant uppercase">${fs.phone} // ${fs.distance_miles} MI</div></div>`:'<div class="text-on-surface-variant">—</div>'}</div>`;
+    <div class="p-4 flex items-center gap-3">${fs?`<span class="material-symbols-outlined text-tertiary text-3xl">airport_shuttle</span><div><div class="font-mono text-data-lg text-white uppercase text-sm">${fs.name}</div><div class="font-mono text-[10px] text-on-surface-variant uppercase">${fs.phone} — ${fs.distance_miles} MI</div></div>`:'<div class="text-on-surface-variant">—</div>'}</div>`;
 
   const lessons=d.prior_lessons?.lessons||[];
   document.getElementById('sit-lessons').innerHTML=`<div class="bg-surface-variant text-on-surface-variant font-mono text-mono-xs px-4 py-2 uppercase border-b border-outline-variant flex justify-between items-center"><span>PRIOR ACTION LESSONS (${lessons.length})</span><span class="material-symbols-outlined text-[16px]">history</span></div>
