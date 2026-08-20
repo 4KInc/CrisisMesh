@@ -155,7 +155,7 @@ body{font-family:'JetBrains Mono',monospace;}
         <input id="rpt" class="w-full bg-background border-2 border-white border-t-0 border-l-0 border-r-0 text-white font-mono text-mono-code p-3 placeholder-on-surface-variant/30" type="text" placeholder=">_ Smoke near the science lab, floor 2 — kids still inside"/>
       </div>
       <div class="flex flex-col gap-2 shrink-0 md:w-64 pt-6">
-        <button onclick="declareAgentic()" class="w-full bg-[#ef4444] text-black font-mono text-mono-code font-bold uppercase py-3 hover:bg-white transition-colors border border-[#ef4444] hover:border-white">DECLARE (GEMINI)</button>
+        <button onclick="declareAgentic()" class="w-full bg-[#ef4444] text-black font-mono text-mono-code font-bold uppercase py-3 hover:bg-white transition-colors border border-[#ef4444] hover:border-white">DECLARE INCIDENT</button>
         <button onclick="declareFast()" class="w-full bg-transparent text-white font-mono text-mono-code font-bold uppercase py-2 hover:bg-surface-bright transition-colors border-2 border-white">FAST / DETERMINISTIC</button>
       </div>
     </div>
@@ -201,7 +201,7 @@ body{font-family:'JetBrains Mono',monospace;}
     <h3 class="font-head text-head-md font-black text-secondary uppercase mb-4 flex items-center gap-2"><span class="material-symbols-outlined">sensors</span>LAUNCH AGENTIC RUN</h3>
     <div class="flex flex-col md:flex-row gap-4">
       <input id="str-rpt" class="flex-grow bg-background border-2 border-white border-t-0 border-l-0 border-r-0 text-white font-mono text-mono-code p-3 placeholder-on-surface-variant/30" placeholder=">_ Incident report..."/>
-      <button id="str-btn" onclick="runStream()" class="bg-secondary text-on-secondary font-mono text-mono-code font-bold uppercase px-6 py-3 hover:bg-white hover:text-black transition-colors shrink-0">RUN GEMINI FLEET</button>
+      <button id="str-btn" onclick="runStream()" class="bg-secondary text-on-secondary font-mono text-mono-code font-bold uppercase px-6 py-3 hover:bg-white hover:text-black transition-colors shrink-0">RUN AGENT FLEET</button>
     </div>
   </div>
   <div id="str-meta" class="col-span-12 bg-surface-container border border-outline-variant p-4 hidden">
@@ -398,10 +398,10 @@ async function runStream(){
   const log=document.getElementById('str-log'),btn=document.getElementById('str-btn');
   log.innerHTML='';document.getElementById('str-meta').classList.add('hidden');document.getElementById('str-resp').classList.add('hidden');
   btn.disabled=true;btn.textContent='RUNNING...';
-  document.getElementById('str-st').innerHTML='<span class="w-2 h-2 bg-secondary rounded-full animate-pulse inline-block mr-1"></span>GEMINI THINKING...';
+  document.getElementById('str-st').innerHTML='<span class="w-2 h-2 bg-secondary rounded-full animate-pulse inline-block mr-1"></span>AGENTS PROCESSING...';
 
   const d=await(await fetch(API+'/incident/agentic',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report:r})})).json();
-  btn.disabled=false;btn.textContent='RUN GEMINI FLEET';
+  btn.disabled=false;btn.textContent='RUN AGENT FLEET';
   if(d.error){log.innerHTML=`<div class="p-2 text-[#ef4444]">ERROR: ${d.error}</div>`;document.getElementById('str-st').textContent='ERROR';return;}
 
   const evts=d.event_log||[],t0=evts.length?new Date(evts[0].timestamp).getTime():0;
