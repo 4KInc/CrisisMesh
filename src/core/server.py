@@ -174,6 +174,11 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
+        # Serve UI
+        if path in ("", "/ui"):
+            self._serve_static("index.html")
+            return
+
         if path == "/health":
             kb = KnowledgeBase.get()
             bus = EventBus.get()
@@ -397,6 +402,23 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
 
         else:
             _json_response(self, {"error": "Not found"}, 404)
+
+    def _serve_static(self, filename: str) -> None:
+        static_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "static",
+        )
+        filepath = os.path.join(static_dir, filename)
+        if not os.path.isfile(filepath):
+            self.send_response(404)
+            self.end_headers()
+            return
+        self.send_response(200)
+        ct = "text/html" if filename.endswith(".html") else "application/octet-stream"
+        self.send_header("Content-Type", ct)
+        self.end_headers()
+        with open(filepath, "rb") as f:
+            self.wfile.write(f.read())
 
     def log_message(self, format, *args):
         pass

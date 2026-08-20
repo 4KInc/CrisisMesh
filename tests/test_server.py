@@ -84,6 +84,19 @@ def fresh_state():
     ContentScanner.reset()
 
 
+class TestUIRoute:
+    def test_root_serves_html(self):
+        h = MockHandler("GET", "/")
+        assert h.response_code == 200
+        html = h.wfile.getvalue().decode()
+        assert "CRISIS" in html and "MESH" in html
+        assert "/health" in html  # references the API
+
+    def test_ui_path_serves_html(self):
+        h = MockHandler("GET", "/ui")
+        assert h.response_code == 200
+
+
 class TestHealthEndpoint:
     def test_health(self):
         h = MockHandler("GET", "/health")
