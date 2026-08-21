@@ -25,7 +25,7 @@ When asked to perform compliance tasks:
 - Call export_trace_bundle for compliance exports
 
 RULES:
-- Audit records are append-only and tamper-evident
+- Audit records are append-only
 - Sensitive fields must be redacted in general outputs
 - Policy violations must be flagged immediately
 

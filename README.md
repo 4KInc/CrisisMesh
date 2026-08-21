@@ -14,17 +14,17 @@ During a fire, active-threat, or severe-weather event, a K-12 school coordinates
 
 ## What It Does
 
-A human sends a message — a Slack `/incident` command, an SMS text, or a console declaration — describing what they see. CrisisMesh's 7-agent fleet activates, coordinates the organizational response, and posts a structured SITREP back to the same channel. The console lights up in real time.
+A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp message, or a console declaration — describing what they see. CrisisMesh's 7-agent fleet activates, coordinates the organizational response, and posts a structured SITREP back to the same channel. The console lights up in real time.
 
 **This is a human sending a message they would already send.** CrisisMesh does not detect or sense incidents. It coordinates the organizational response after a human reports one.
 
-1. **Receives** an incident report via Slack, SMS, or the command console
+1. **Receives** an incident report via Slack, SMS, WhatsApp, or the command console
 2. **Classifies** the report (type, severity, location) and activates the matching playbook
 3. **Delegates** to specialist agents for accountability, safety intel, SITREPs, and learning
 4. **Tracks** who is safe, injured, evacuated, or unaccounted — with mobility-need escalation
 5. **Posts** Block Kit SITREP and responder one-card back to Slack; lights up the command console
-6. **Accepts** one-tap check-ins via Slack reactions or SMS replies (SAFE / HELP / INJURED / EVACUATED)
-7. **Blocks** malicious inputs via Model Armor injection and PII leakage detection
+6. **Accepts** one-tap check-ins via Slack reactions, SMS replies, or WhatsApp messages (SAFE / HELP / INJURED / EVACUATED)
+7. **Blocks** malicious inputs via InjectionGuard content scanner (injection + PII detection)
 8. **Learns** from outcomes and surfaces prior lessons on future incidents
 9. **Audits** every action with an immutable event ledger and observability trace
 
@@ -64,13 +64,19 @@ CrisisMesh has three trigger paths. All three fire the same agent fleet and prod
 
 **Reaction check-ins:** Each emoji reaction posts a public confirmation with the running check-in count and missing personnel list. When all personnel are accounted for, CrisisMesh announces it.
 
-### 2. WhatsApp (Business API)
+### 2. SMS (Twilio Webhook)
+
+Text the CrisisMesh number with an incident description. The system classifies and responds with a TwiML confirmation including the incident ID and a 911 reminder. Reply with `SAFE`, `HELP`, `INJURED`, or `EVACUATED` to check in.
+
+> Requires `TWILIO_AUTH_TOKEN` env var. Without it, the `/sms` endpoint returns HTTP 503 with setup instructions.
+
+### 3. WhatsApp (Business API)
 
 Message the CrisisMesh WhatsApp number with an incident description. The system classifies and responds with a confirmation including the incident ID and a 911 reminder. Reply with `SAFE`, `HELP`, `INJURED`, or `EVACUATED` to check in.
 
 > Requires `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` env vars. Without them, the `/whatsapp` endpoint returns HTTP 503 with setup instructions.
 
-### 3. Command Console
+### 4. Command Console
 
 Open the web console and type a report in the DECLARE INCIDENT panel. "DECLARE INCIDENT" fires the full Gemini-driven Agent Fleet stream. "QUICK DECLARE" runs the deterministic pipeline only.
 
@@ -79,7 +85,7 @@ Open the web console and type a report in the DECLARE INCIDENT panel. "DECLARE I
 ## Architecture
 
 ```
-    Slack /incident     SMS (Twilio)     Command Console (SPA)
+    Slack /incident   SMS (Twilio)  WhatsApp (Meta)  Console (SPA)
     Reactions · /checkin   SAFE/HELP/…    SITREP · Accountability
          │                    │          Agent Stream · Governance
          └────────┬───────────┘                  │
@@ -94,7 +100,7 @@ Open the web console and type a report in the DECLARE INCIDENT panel. "DECLARE I
                     ┌────────────▼─────────────┐
                     │     Content Scanner        │
                     │  InjectionGuard (regex)    │
-                    │  Model Armor (managed)     │
+                    │  Model Armor (IAM-blocked) │
                     └────────────┬─────────────┘
                                  │
                     ┌────────────▼─────────────┐
@@ -130,14 +136,15 @@ Open the web console and type a report in the DECLARE INCIDENT panel. "DECLARE I
 | **Agent Runtime** | Google ADK 2.7.1 + Vertex AI | Coordinator + 6 specialist agent orchestration |
 | **Model** | Gemini 3.5 Flash | Classification, NLU, SITREP synthesis |
 | **Event Bus** | Google Cloud Pub/Sub / in-memory | Async agent-to-agent events |
-| **State** | Firestore / in-memory | Incident state, accountability, tamper-evident ledger |
-| **Content Scanning** | Model Armor API / InjectionGuard (regex) | Prompt injection + PII leakage detection |
+| **State** | Firestore / in-memory | Incident state, accountability, append-only audit log |
+| **Content Scanning** | InjectionGuard (regex) / Model Armor API (wired, IAM-blocked) | Prompt injection + PII leakage detection |
 | **Compute** | Cloud Run | HTTP server, SSE streaming, static SPA |
-| **Slack** | Slack Bolt / SDK (Events API) | Slash commands, reaction check-ins, Block Kit SITREPs |
+| **Slack** | Raw HTTP / Slack Events API | Slash commands, reaction check-ins, Block Kit SITREPs |
 | **SMS** | Twilio webhooks | Inbound SMS incident reports and check-in replies |
+| **WhatsApp** | WhatsApp Business Cloud API (Meta) | Inbound message incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 254 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 281 tests, no GCP required |
 
 ---
 
@@ -285,7 +292,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (254 tests, no GCP required)
+# Run tests (281 tests, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -310,6 +317,7 @@ adk run
 | `ARMOR_TEMPLATE` | template ID | `crisismesh-guard` | Model Armor template name |
 | `SLACK_BOT_TOKEN` | `xoxb-...` | — | Slack Bot OAuth token (for posting messages) |
 | `SLACK_SIGNING_SECRET` | secret | — | Slack request signature verification |
+| `TWILIO_AUTH_TOKEN` | token | — | Twilio webhook signature verification (optional) |
 | `WHATSAPP_VERIFY_TOKEN` | token | — | WhatsApp webhook verification token (optional) |
 | `WHATSAPP_APP_SECRET` | secret | — | WhatsApp app secret for signature verification (optional) |
 | `WHATSAPP_ACCESS_TOKEN` | token | — | WhatsApp Cloud API access token (optional) |
@@ -330,6 +338,7 @@ adk run
 | `GET` | `/incident/latest` | Latest incident (console real-time binding) |
 | `POST` | `/slack/commands` | Slack slash commands (Events API mode) |
 | `POST` | `/slack/events` | Slack event subscriptions (reaction_added) |
+| `POST` | `/sms` | Twilio inbound SMS webhook |
 | `GET` | `/whatsapp` | WhatsApp webhook verification |
 | `POST` | `/whatsapp` | WhatsApp inbound message webhook |
 | `GET` | `/registry` | Agent registry (all 7 agents) |
@@ -415,6 +424,14 @@ The Dockerfile runs `python -m src.core.server` on port 8080 with Vertex AI and 
 - @CrisisMesh mention in any channel triggers the agent fleet
 - DM CrisisMesh to report incidents privately
 - Emoji reactions on SITREP messages for one-tap check-ins with public confirmations
+
+### Twilio SMS Setup (Optional)
+
+1. Get a Twilio phone number at [twilio.com](https://www.twilio.com)
+2. Set the messaging webhook URL to `https://YOUR_CLOUD_RUN_URL/sms` (POST)
+3. Set `TWILIO_AUTH_TOKEN` env var on Cloud Run
+
+Without Twilio credentials, the `/sms` endpoint returns HTTP 503 with setup instructions.
 
 ### WhatsApp Business API Setup (Optional)
 
@@ -512,6 +529,7 @@ CrisisMesh/
 │       ├── firestore_state.py       # Firestore persistence layer
 │       ├── pubsub_bus.py            # Cloud Pub/Sub transport
 │       ├── slack_transport.py       # Slack transport (Events API + Block Kit)
+│       ├── sms_transport.py         # SMS/Twilio inbound webhook + TwiML
 │       └── whatsapp_transport.py     # WhatsApp Business API inbound webhook
 ├── static/
 │   └── index.html                   # 4-screen Command Console SPA
@@ -527,6 +545,7 @@ CrisisMesh/
     ├── test_gemini_entrypoint.py    # ADK agent instruction tests
     ├── test_slack_transport.py      # Slack reaction/user mapping tests
     ├── test_slack_integration.py    # Signature, slash commands, pipeline, events
+    ├── test_sms_transport.py        # Twilio signature, SMS check-in, TwiML
     ├── test_whatsapp_transport.py   # WhatsApp signature, webhook, message handling
     └── agents/
         ├── test_intake_tools.py     # Classification, location, playbook
@@ -538,7 +557,7 @@ CrisisMesh/
 
 ## Test Coverage
 
-254 passing tests covering:
+281 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries
@@ -580,7 +599,7 @@ The `scripts/demo_fire_drill.py` script runs a complete 7-beat demo that proves 
 | 5 | 1:50–2:20 | **Model Armor** injection block, Agent Identity deny, PII redaction (Governance screen) |
 | 6 | 2:20–2:50 | **Agent Fleet stream** — 7 agents delegate: intake → safety → accountability → learning → SITREP |
 | 7 | 2:50–3:20 | **Observability** — span tree, gateway audit, event ledger, Memory Bank recall |
-| 8 | 3:20–4:00 | **SMS check-in** (if Twilio configured) — text SAFE/HELP → accountability updates |
+| 8 | 3:20–4:00 | **SMS/WhatsApp check-in** (if configured) — text SAFE/HELP → accountability updates |
 
 ```bash
 python scripts/demo_fire_drill.py
@@ -624,13 +643,14 @@ FirstResponder is disclosed as prior work per hackathon rules.
 
 - **Google ADK 2.7.1** — Multi-agent orchestration (Coordinator + 6 specialist agents)
 - **Gemini 3.5 Flash** (Vertex AI) — Classification, NLU, SITREP synthesis
-- **Firestore** — Incident state, accountability, tamper-evident event ledger
+- **Firestore** — Incident state, accountability, append-only audit log
 - **Cloud Pub/Sub** — Async agent-to-agent events (18 event types, 4 topics)
 - **Cloud Run** — HTTP server, SSE streaming, webhooks, static SPA hosting
-- **Model Armor** — Prompt injection and PII leakage scanning (managed, IAM-blocked)
+- **Content Scanner** — InjectionGuard regex (active); Model Armor API wired but IAM-blocked
 - **Cloud Storage** — CSV data, approved playbooks, reports
-- **Slack SDK** (Events API) — `/incident` and `/checkin` slash commands, reaction-based one-tap check-ins, Block Kit SITREP messages
+- **Slack** (Events API, raw HTTP) — `/incident` and `/checkin` slash commands, reaction-based one-tap check-ins, Block Kit SITREP messages
 - **Twilio** (optional) — Inbound SMS incident reports and check-in replies via TwiML webhooks
+- **WhatsApp Business API** (optional) — Inbound message incident reports and check-in replies via Meta Cloud API
 - **Python 3.11** / Pydantic v2 / pytest / Tailwind CSS
 
 ## License

@@ -142,7 +142,7 @@ class FirestoreState:
         docs = query.stream()
         return [doc.to_dict() async for doc in docs]
 
-    # ── Audit Log (tamper-evident event ledger) ──
+    # ── Audit Log (append-only) ──
 
     async def _append_audit_log(
         self,

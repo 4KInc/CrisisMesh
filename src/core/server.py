@@ -7,6 +7,7 @@ Endpoints:
   POST /checkin                 — process a check-in
   POST /slack/commands          — Slack slash commands (Events API mode)
   POST /slack/events            — Slack event subscriptions (reaction_added, etc.)
+  POST /sms                     — Twilio inbound SMS webhook
   GET  /whatsapp                 — WhatsApp webhook verification
   POST /whatsapp                 — WhatsApp inbound message webhook
   GET  /incident/{id}           — get incident status + accountability
@@ -59,6 +60,11 @@ from src.services.slack_transport import (
     get_latest_incident,
     set_latest_incident,
     verify_slack_signature,
+)
+from src.services.sms_transport import (
+    handle_inbound_sms,
+    has_twilio_credentials,
+    verify_twilio_signature,
 )
 from src.services.whatsapp_transport import (
     extract_messages,
@@ -486,6 +492,38 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
                 _json_response(self, result)
             else:
                 _json_response(self, {"ok": True})
+
+        elif path == "/sms":
+            if not has_twilio_credentials():
+                self.send_response(503)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(
+                    b"SMS transport not configured. "
+                    b"Set TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER env vars."
+                )
+                return
+
+            raw = _read_raw_body(self)
+            form = _parse_form(raw)
+            auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+            twilio_sig = self.headers.get("X-Twilio-Signature", "")
+            request_url = f"https://{self.headers.get('Host', '')}{self.path}"
+
+            if not verify_twilio_signature(auth_token, request_url, form, twilio_sig):
+                _json_response(self, {"error": "Invalid signature"}, 401)
+                return
+
+            result = handle_inbound_sms(
+                from_number=form.get("From", ""),
+                body=form.get("Body", ""),
+                request_url=request_url,
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "text/xml")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(result["twiml"].encode())
 
         elif path == "/whatsapp":
             if not has_whatsapp_credentials():
