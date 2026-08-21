@@ -10,6 +10,8 @@ Endpoints:
   POST /sms                     — Twilio inbound SMS webhook
   GET  /whatsapp                 — WhatsApp webhook verification
   POST /whatsapp                 — WhatsApp inbound message webhook
+  POST /incident/{id}/approve   — approve a pending gated action
+  POST /incident/{id}/deny      — deny a pending gated action
   GET  /incident/{id}           — get incident status + accountability
   GET  /incident/latest         — latest incident (for console real-time binding)
   GET  /registry                — view agent registry
@@ -53,6 +55,13 @@ from src.agents.safety_intel.tools import (
 )
 from src.agents.sitrep.tools import generate_responder_card, generate_sitrep
 from src.agents.learning.tools import find_similar_incidents, store_lesson
+from src.core.tactical_reasoning import (
+    apply_safety_backstop,
+    build_provenance_record,
+    get_tactical_context,
+    strip_origin_from_payload,
+    validate_routing_directives,
+)
 from src.models.events import EventType
 from src.services.slack_transport import (
     dispatch_slash_command,
@@ -114,10 +123,14 @@ async def _run_agentic(report: str) -> dict[str, Any]:
 
     Returns the delegation log and final response.
     """
+    from google.adk.apps import App
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
     from google.genai.types import Content, Part
     from src.agents.coordinator.agent import coordinator_agent
+    from src.core.agent_gateway import GatewayPlugin
+
+    app = App(name="crisismesh", root_agent=coordinator_agent, plugins=[GatewayPlugin()])
 
     session_service = InMemorySessionService()
     session = await session_service.create_session(
@@ -126,8 +139,7 @@ async def _run_agentic(report: str) -> dict[str, Any]:
     )
 
     runner = Runner(
-        agent=coordinator_agent,
-        app_name="crisismesh",
+        app=app,
         session_service=session_service,
     )
 
@@ -135,6 +147,9 @@ async def _run_agentic(report: str) -> dict[str, Any]:
 
     event_log: list[dict] = []
     final_text = ""
+    incident_type = ""
+    blocked_zones: list[str] = []
+    tactical_origin: dict[str, Any] = {}
 
     async for event in runner.run_async(
         user_id="commander",
@@ -153,42 +168,64 @@ async def _run_agentic(report: str) -> dict[str, Any]:
             for part in event.content.parts:
                 if hasattr(part, "function_call") and part.function_call:
                     fc = part.function_call
+                    fc_name = fc.name if hasattr(fc, "name") else str(fc)
+                    fc_args = _safe_args(fc.args if hasattr(fc, "args") else {})
                     entry = {
                         "author": author,
                         "type": "tool_call",
-                        "tool_name": fc.name if hasattr(fc, "name") else str(fc),
-                        "tool_args": _safe_args(fc.args if hasattr(fc, "args") else {}),
+                        "tool_name": fc_name,
+                        "tool_args": fc_args,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                     event_log.append(entry)
+                    if fc_name == "classify_incident" and isinstance(fc_args, dict):
+                        incident_type = fc_args.get("incident_type", incident_type)
+                    if fc_name == "find_blocked_zones" and isinstance(fc_args, dict):
+                        zone = fc_args.get("incident_zone", "")
+                        if zone:
+                            blocked_zones.append(zone)
 
                 elif hasattr(part, "function_response") and part.function_response:
+                    fr = part.function_response
+                    fr_name = fr.name if hasattr(fr, "name") else ""
                     entry = {
                         "author": author,
                         "type": "tool_result",
-                        "tool_name": part.function_response.name if hasattr(part.function_response, "name") else "",
+                        "tool_name": fr_name,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                     event_log.append(entry)
+                    if fr_name == "classify_incident" and hasattr(fr, "response"):
+                        resp = fr.response if isinstance(fr.response, dict) else {}
+                        incident_type = resp.get("incident_type", incident_type)
+                    if fr_name == "get_tactical_context" and hasattr(fr, "response"):
+                        resp = fr.response if isinstance(fr.response, dict) else {}
+                        tactical_origin = resp
 
                 elif hasattr(part, "text") and part.text and event.is_final_response():
                     final_text = part.text
 
-    delegations = [e for e in event_log if e.get("type") == "delegation"]
-    tool_calls = [e for e in event_log if e.get("type") == "tool_call"]
+    if final_text:
+        final_text = apply_safety_backstop(final_text, incident_type)
+        final_text = validate_routing_directives(final_text, blocked_zones)
 
-    return {
+    delegations = [e for e in event_log if e.get("type") == "delegation"]
+    tool_calls_list = [e for e in event_log if e.get("type") == "tool_call"]
+
+    result: dict[str, Any] = {
         "model": "gemini-3.5-flash",
         "backend": "vertex_ai",
         "orchestration": "model_driven",
         "total_events": len(event_log),
         "delegations": len(delegations),
         "delegation_path": [e["target_agent"] for e in delegations],
-        "tool_calls": len(tool_calls),
-        "tools_invoked": [e["tool_name"] for e in tool_calls],
+        "tool_calls": len(tool_calls_list),
+        "tools_invoked": [e["tool_name"] for e in tool_calls_list],
         "event_log": event_log,
         "final_response": final_text,
     }
+
+    return strip_origin_from_payload(result)
 
 
 def _sse_write(wfile, data: dict) -> None:
@@ -198,10 +235,14 @@ def _sse_write(wfile, data: dict) -> None:
 
 async def _stream_agentic_sse(wfile, report: str) -> None:
     """Stream ADK Runner events as SSE lines."""
+    from google.adk.apps import App
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
     from google.genai.types import Content, Part
     from src.agents.coordinator.agent import coordinator_agent
+    from src.core.agent_gateway import GatewayPlugin
+
+    app = App(name="crisismesh", root_agent=coordinator_agent, plugins=[GatewayPlugin()])
 
     session_service = InMemorySessionService()
     session = await session_service.create_session(
@@ -209,8 +250,7 @@ async def _stream_agentic_sse(wfile, report: str) -> None:
         user_id="commander",
     )
     runner = Runner(
-        agent=coordinator_agent,
-        app_name="crisismesh",
+        app=app,
         session_service=session_service,
     )
     user_message = Content(role="user", parts=[Part(text=report)])
@@ -218,6 +258,8 @@ async def _stream_agentic_sse(wfile, report: str) -> None:
     delegations = 0
     tool_calls = 0
     total_events = 0
+    incident_type = ""
+    blocked_zones: list[str] = []
 
     async for event in runner.run_async(
         user_id="commander",
@@ -241,27 +283,41 @@ async def _stream_agentic_sse(wfile, report: str) -> None:
             for part in event.content.parts:
                 if hasattr(part, "function_call") and part.function_call:
                     fc = part.function_call
+                    fc_name = fc.name if hasattr(fc, "name") else str(fc)
+                    fc_args = _safe_args(fc.args if hasattr(fc, "args") else {})
                     tool_calls += 1
                     total_events += 1
-                    _sse_write(wfile, {
+                    _sse_write(wfile, strip_origin_from_payload({
                         "type": "tool_call",
                         "author": author,
-                        "tool_name": fc.name if hasattr(fc, "name") else str(fc),
-                        "tool_args": _safe_args(fc.args if hasattr(fc, "args") else {}),
+                        "tool_name": fc_name,
+                        "tool_args": fc_args,
                         "timestamp": ts,
-                    })
+                    }))
+                    if fc_name == "find_blocked_zones" and isinstance(fc_args, dict):
+                        zone = fc_args.get("incident_zone", "")
+                        if zone:
+                            blocked_zones.append(zone)
                 elif hasattr(part, "function_response") and part.function_response:
+                    fr = part.function_response
+                    fr_name = fr.name if hasattr(fr, "name") else ""
                     total_events += 1
-                    _sse_write(wfile, {
+                    _sse_write(wfile, strip_origin_from_payload({
                         "type": "tool_result",
                         "author": author,
-                        "tool_name": part.function_response.name if hasattr(part.function_response, "name") else "",
+                        "tool_name": fr_name,
                         "timestamp": ts,
-                    })
+                    }))
+                    if fr_name == "classify_incident" and hasattr(fr, "response"):
+                        resp = fr.response if isinstance(fr.response, dict) else {}
+                        incident_type = resp.get("incident_type", incident_type)
                 elif hasattr(part, "text") and part.text and event.is_final_response():
+                    final_text = part.text
+                    final_text = apply_safety_backstop(final_text, incident_type)
+                    final_text = validate_routing_directives(final_text, blocked_zones)
                     _sse_write(wfile, {
                         "type": "final_response",
-                        "text": part.text,
+                        "text": final_text,
                         "timestamp": ts,
                     })
 
@@ -273,6 +329,22 @@ async def _stream_agentic_sse(wfile, report: str) -> None:
         "total_events": total_events,
     })
     _sse_write(wfile, {"type": "done"})
+
+
+def _run_agentic_background(report: str) -> None:
+    """Fire the agentic pipeline in a background thread. Updates latest incident."""
+    try:
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(_run_agentic(report))
+        loop.close()
+        result["pipeline"] = "agentic"
+        set_latest_incident(result, source="web")
+        logger.info(
+            f"Agentic pipeline complete: {result.get('delegations', 0)} delegations, "
+            f"{result.get('tool_calls', 0)} tool calls"
+        )
+    except Exception as e:
+        logger.error(f"Background agentic pipeline failed: {e}")
 
 
 def _safe_args(obj: Any) -> Any:
@@ -359,10 +431,17 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             gateway = AgentGateway.get()
             _json_response(self, {"denials": gateway.get_deny_log()})
 
+        elif path == "/gateway/pending":
+            gateway = AgentGateway.get()
+            pending = gateway.get_pending_actions()
+            _json_response(self, {
+                "pending": [a.to_dict() for a in pending if a.state == "pending"],
+            })
+
         elif path == "/incident/latest":
             latest = get_latest_incident()
             if latest:
-                _json_response(self, latest)
+                _json_response(self, strip_origin_from_payload(latest))
             else:
                 _json_response(self, {"incident_id": None}, 200)
 
@@ -621,9 +700,17 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             learn_span.set_attribute("lessons_found", lessons["lessons_found"])
             learn_span.end()
 
+            tactical = get_tactical_context(
+                incident_type=classification["incident_type"],
+                playbook_id=playbook.get("playbook_id", ""),
+                severity=classification.get("severity", ""),
+            )
+            provenance = build_provenance_record(tactical, incident_id)
+            root.set_attribute("tactical_origin", provenance["origin"])
+
             loop.close()
 
-            result_data = {
+            result_data: dict[str, Any] = {
                 "incident_id": incident_id,
                 "report": report,
                 "classification": classification,
@@ -639,9 +726,18 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
                 },
                 "prior_lessons": lessons,
                 "trace_id": trace.trace_id,
+                "tactical_provenance": provenance,
             }
+            result_data["pipeline"] = "deterministic"
             set_latest_incident(result_data, source="web")
-            _json_response(self, result_data, 201)
+            _json_response(self, strip_origin_from_payload(result_data), 201)
+
+            import threading
+            threading.Thread(
+                target=_run_agentic_background,
+                args=(report,),
+                daemon=True,
+            ).start()
 
         elif path == "/checkin":
             body = _read_body(self)
@@ -675,6 +771,52 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             text = body.get("text", "")
             result = ContentScanner.get().scan_message(text)
             _json_response(self, result)
+
+        elif path.endswith("/approve") and path.startswith("/incident/"):
+            parts = path.split("/")
+            if len(parts) == 4:
+                body = _read_body(self)
+                action_id = body.get("action_id", "")
+                approver_id = body.get("approver_id", "")
+                if not action_id or not approver_id:
+                    _json_response(self, {"error": "Missing action_id or approver_id"}, 400)
+                    return
+                gateway = AgentGateway.get()
+                loop = asyncio.new_event_loop()
+                result = loop.run_until_complete(
+                    gateway.approve_action(action_id, approver_id)
+                )
+                loop.close()
+                status = result.pop("status", 200)
+                if isinstance(status, int):
+                    _json_response(self, result, status)
+                else:
+                    _json_response(self, {"status": status, **result})
+            else:
+                _json_response(self, {"error": "Not found"}, 404)
+
+        elif path.endswith("/deny") and path.startswith("/incident/"):
+            parts = path.split("/")
+            if len(parts) == 4:
+                body = _read_body(self)
+                action_id = body.get("action_id", "")
+                approver_id = body.get("approver_id", "")
+                if not action_id or not approver_id:
+                    _json_response(self, {"error": "Missing action_id or approver_id"}, 400)
+                    return
+                gateway = AgentGateway.get()
+                loop = asyncio.new_event_loop()
+                result = loop.run_until_complete(
+                    gateway.deny_action(action_id, approver_id)
+                )
+                loop.close()
+                status = result.pop("status", 200)
+                if isinstance(status, int):
+                    _json_response(self, result, status)
+                else:
+                    _json_response(self, {"status": status, **result})
+            else:
+                _json_response(self, {"error": "Not found"}, 404)
 
         else:
             _json_response(self, {"error": "Not found"}, 404)

@@ -26,7 +26,7 @@ A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp
 6. **Accepts** one-tap check-ins via Slack reactions, SMS replies, or WhatsApp messages (SAFE / HELP / INJURED / EVACUATED)
 7. **Blocks** malicious inputs via InjectionGuard content scanner (injection + PII detection)
 8. **Learns** from outcomes and surfaces prior lessons on future incidents
-9. **Audits** every action with an immutable event ledger and observability trace
+9. **Audits** every action with an append-only audit log and observability trace
 
 **Safety guardrail:** CrisisMesh coordinates an organization's internal response **alongside 911 and qualified responders** — it never replaces them. Every incident acknowledgment includes a 911-escalation line. It never provides medical, tactical, or evacuation instructions beyond approved, organization-specific playbooks.
 
@@ -34,7 +34,15 @@ A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp
 
 ## Activation — How Incidents Are Reported
 
-CrisisMesh has three trigger paths. All three fire the same agent fleet and produce the same outputs.
+CrisisMesh has four trigger paths. Each is human-initiated — a person sends a message they would already send.
+
+| Channel | Deterministic Pipeline | Gemini Agent Fleet |
+|---------|:---:|:---:|
+| Slack `/incident` command | Yes (fast ack) | Yes (background) |
+| Slack @mention / DM | Yes (fast ack) | Yes (background) |
+| SMS (Twilio) | Yes | No — TwiML ack only |
+| WhatsApp (Meta) | Yes | No — confirmation only |
+| Command Console | Yes ("Quick Declare") | Yes ("Declare Incident") |
 
 ### 1. Slack `/incident` Command (Primary)
 
@@ -60,19 +68,23 @@ CrisisMesh has three trigger paths. All three fire the same agent fleet and prod
 | `/incident help` | Show all available commands |
 | `/checkin [status]` | Quick check-in alias |
 
-**@mention:** Mention @CrisisMesh in any channel or DM to trigger the agent fleet from natural language.
+**@mention / DM:** Mention @CrisisMesh in any channel or send a DM to trigger the same pipeline as the slash command — deterministic fast ack, then Gemini agent fleet SITREP in the same thread.
 
 **Reaction check-ins:** Each emoji reaction posts a public confirmation with the running check-in count and missing personnel list. When all personnel are accounted for, CrisisMesh announces it.
 
-### 2. SMS (Twilio Webhook)
+### 2. SMS (Twilio Webhook) — Deterministic Only
 
 Text the CrisisMesh number with an incident description. The system classifies and responds with a TwiML confirmation including the incident ID and a 911 reminder. Reply with `SAFE`, `HELP`, `INJURED`, or `EVACUATED` to check in.
 
+SMS runs the deterministic pipeline only (no Gemini agent fleet). The Twilio webhook must return TwiML synchronously; the agentic pipeline's latency exceeds Twilio's response timeout. The same incident is visible in the command console for the Gemini-driven stream.
+
 > Requires `TWILIO_AUTH_TOKEN` env var. Without it, the `/sms` endpoint returns HTTP 503 with setup instructions.
 
-### 3. WhatsApp (Business API)
+### 3. WhatsApp (Business API) — Deterministic Only
 
 Message the CrisisMesh WhatsApp number with an incident description. The system classifies and responds with a confirmation including the incident ID and a 911 reminder. Reply with `SAFE`, `HELP`, `INJURED`, or `EVACUATED` to check in.
+
+WhatsApp runs the deterministic pipeline only (no Gemini agent fleet). The same incident is visible in the command console for the Gemini-driven stream.
 
 > Requires `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` env vars. Without them, the `/whatsapp` endpoint returns HTTP 503 with setup instructions.
 
@@ -144,7 +156,7 @@ Open the web console and type a report in the DECLARE INCIDENT panel. "DECLARE I
 | **WhatsApp** | WhatsApp Business Cloud API (Meta) | Inbound message incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 281 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 427 tests, no GCP required |
 
 ---
 
@@ -154,13 +166,13 @@ CrisisMesh runs 7 agents orchestrated by Google ADK. The Coordinator owns the in
 
 | Agent | Data Class | Tools | Denied Tools | Purpose |
 |-------|-----------|-------|-------------|---------|
-| **Coordinator** | internal | `create_incident`, `update_incident`, `delegate_task`, `monitor_deadlines`, `request_approval`, `resolve_incident` | — | Incident state machine; delegates to specialists; enforces human-approval gates |
-| **Intake** | internal | `classify_incident`, `extract_location`, `select_playbook` | — | Normalizes reports; classifies type (10 types) and severity (4 levels); selects approved playbook |
-| **Accountability** | sensitive | `read_roster`, `process_checkin`, `compute_accountability`, `send_checkin_request`, `escalate_missing` | `send_external_message`, `share_medical_info` | Tracks people, check-in status; escalates missing with mobility-need flagging |
-| **Safety Intel** | internal | `find_safe_routes`, `find_zone_info`, `find_blocked_zones`, `locate_resource`, `find_assembly_point`, `find_nearby_services`, `find_accessible_routes` | `send_external_message`, `modify_playbook` | Answers location-specific operational questions from the knowledge base |
-| **SITREP** | internal | `generate_sitrep`, `generate_responder_card`, `generate_stakeholder_update`, `generate_timeline` | — | IC briefs, responder one-cards, stakeholder updates |
-| **Learning** | internal | `find_similar_incidents`, `produce_aar`, `store_lesson`, `propose_playbook_change` | — | Cross-session lessons, after-action reviews, playbook change proposals |
-| **Compliance** | restricted | `append_audit_log`, `validate_approval`, `redact_sensitive`, `export_trace_bundle`, `check_policy` | — | Immutable audit records, policy checks, PII redaction, audit bundle export |
+| **Coordinator** | internal | `create_incident`, `update_incident`, `delegate_task`, `monitor_deadlines`, `request_approval`, `resolve_incident`, `get_tactical_context`, `transfer_to_agent` | — | Incident state machine; delegates to specialists; produces tactical guidance (grounded or improvised); operationally autonomous but authority-bounded (external comms, medical-data sharing, incident closure require IC approval) |
+| **Intake** | internal | `classify_incident`, `extract_location`, `select_playbook`, `transfer_to_agent` | — | Normalizes reports; classifies type (10 types) and severity (4 levels); selects approved playbook |
+| **Accountability** | sensitive | `read_roster`, `process_checkin`, `compute_accountability_summary`, `send_checkin_request`, `escalate_missing_checkins`, `transfer_to_agent` | `send_external_message`, `share_medical_info` | Tracks people, check-in status; escalates missing with mobility-need flagging |
+| **Safety Intel** | internal | `find_safe_routes`, `find_zone_info`, `find_blocked_zones`, `locate_resource`, `find_assembly_point`, `find_nearby_services`, `find_accessible_routes`, `transfer_to_agent` | `send_external_message`, `modify_playbook` | Answers location-specific operational questions from the knowledge base |
+| **SITREP** | internal | `generate_sitrep`, `generate_responder_card`, `generate_stakeholder_update`, `generate_timeline`, `transfer_to_agent` | — | IC briefs, responder one-cards, stakeholder updates |
+| **Learning** | internal | `find_similar_incidents`, `produce_aar`, `store_lesson`, `propose_playbook_change`, `transfer_to_agent` | — | Cross-session lessons, after-action reviews, playbook change proposals |
+| **Compliance** | restricted | `append_audit_log`, `validate_approval`, `redact_sensitive`, `export_trace_bundle`, `check_policy`, `transfer_to_agent` | — | Append-only audit records, policy checks, PII redaction, audit bundle export |
 
 ### Delegation Sequence
 
@@ -169,8 +181,10 @@ When the Coordinator receives an incident report:
 1. **Intake** — classify type/severity/location, select playbook
 2. **Safety Intel** — zone details, blocked routes, safe routes, resources, assembly points, nearby services, accessible routes
 3. **Accountability** — read roster, send check-in requests, track responses, escalate missing
-4. **Learning** — find prior lessons from similar incidents
-5. **Coordinator synthesizes** — comprehensive incident summary with all agent outputs
+4. **Learning** — find prior lessons from similar incidents (Jaccard confidence + source citations)
+5. **SITREP** — generate IC brief and responder one-card
+6. **Resolve Incident** — requires IC approval via the approval gate before executing
+7. **Coordinator synthesizes** — comprehensive incident summary with all agent outputs
 
 ---
 
@@ -185,7 +199,7 @@ CrisisMesh implements all 7 platform pillars required by the Fortified Enterpris
 | **Agent Identity** | Least-privilege enforcement — out-of-scope tool calls denied and logged as `policy.violation` events | Custom |
 | **Agent Gateway** | 4-layer policy: identity check, rate limiting (100 calls/agent/incident), approval gates, content scanning | Custom |
 | **Content Scanning** | Dual-backend `ContentScanner`: regex `InjectionGuard` (9 injection + 5 PII patterns) or Google Model Armor API | Managed (IAM-blocked) / Custom fallback |
-| **Memory Bank** | Cross-session lesson storage with historical outcome stats; pre-seeded with 5 drill lessons and 2 outcomes | Custom |
+| **Memory Bank** | Cross-session lesson storage with Jaccard tag-overlap confidence scoring, source citations, and historical outcome stats; pre-seeded with 5 drill lessons and 2 outcomes | Custom |
 | **Observability** | Hierarchical span traces per incident with span trees, duration tracking, and audit bundle export | Custom |
 | **Event Bus** | Typed pub/sub events via Google Cloud Pub/Sub (deployed) or in-memory (local); 18 event types | Managed |
 
@@ -204,8 +218,22 @@ The `ContentScanner` facade routes to one of two backends:
 
 1. **Agent Identity** — each agent has a scoped tool allowlist; unauthorized calls are denied and logged
 2. **Rate Limiting** — 100 tool calls per agent per incident; prevents runaway agents
-3. **Approval Gates** — high-impact actions (`generate_responder_card`, `share_medical_info`, `send_external_message`, `propose_playbook_change`, `generate_stakeholder_update`) require Incident Commander approval
+3. **Approval Gates** — three high-consequence actions require IC approval: `send_external_message`, `share_medical_info`, `resolve_incident`. Pending actions are held in a `PendingAction` state machine until an authorized IC approves or denies via REST endpoint. All other actions (including `propose_playbook_change`) execute autonomously
 4. **Content Scanning** — all tool arguments scanned for injection and PII leakage
+
+### Tactical Reasoning + Improvisation
+
+The coordinator produces contextual guidance through two paths:
+
+- **Playbook-grounded (primary):** When an approved playbook covers the incident type, Gemini reasons over the playbook rules against live incident state (blocked zones, missing personnel, available resources). Origin: `playbook_grounded`.
+- **Improvised (fallback):** When no approved rule covers the situation, Gemini reasons from general emergency-management principles rather than going silent. Origin: `improvised`.
+
+**Provenance** (`origin`, `playbook_rule_id`, `grounding_facts`) is stored in the incident record and audit log — never rendered on any occupant/responder-facing surface (SITREP, Slack, console, SMS/WhatsApp).
+
+**Two deterministic safety floors** run as code post-processing (not prompt instructions):
+
+1. **Non-negotiable backstop** — for active-threat/evacuation types, three fixed lines always attach regardless of model text: contact 911, do not send people to search for missing, do not task mobility-limited occupants to search or evacuate unaided.
+2. **Route validation** — any improvised routing directive is checked against loaded blocked/threat zones (reuses Batch F's semantic validator). A directive routing people into a known threat zone is suppressed in code before release.
 
 ### Event Types
 
@@ -292,7 +320,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (281 tests, no GCP required)
+# Run tests (427 tests, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -322,6 +350,8 @@ adk run
 | `WHATSAPP_APP_SECRET` | secret | — | WhatsApp app secret for signature verification (optional) |
 | `WHATSAPP_ACCESS_TOKEN` | token | — | WhatsApp Cloud API access token (optional) |
 | `WHATSAPP_PHONE_NUMBER_ID` | ID | — | WhatsApp phone number ID (optional) |
+| `AUTHORIZED_IC_IDS` | comma-separated IDs | — | Restrict approval-gate access to listed Incident Commander IDs (constant-time compare); if unset, any approver accepted |
+| `DEMO_AUTO_APPROVE` | `1` | — | Auto-approve gated actions immediately (demo mode only; never in production) |
 | `PORT` | port number | `8080` | HTTP server port |
 
 ### API Endpoints
@@ -335,6 +365,8 @@ adk run
 | `POST` | `/incident/agentic/stream` | SSE streaming variant of the agentic pipeline |
 | `POST` | `/checkin` | Process a personnel check-in |
 | `GET` | `/incident/{id}` | Incident status + accountability summary |
+| `POST` | `/incident/{id}/approve` | Approve a pending gated action (requires `action_id` + `approver_id`) |
+| `POST` | `/incident/{id}/deny` | Deny a pending gated action (requires `action_id` + `approver_id`) |
 | `GET` | `/incident/latest` | Latest incident (console real-time binding) |
 | `POST` | `/slack/commands` | Slack slash commands (Events API mode) |
 | `POST` | `/slack/events` | Slack event subscriptions (reaction_added) |
@@ -347,6 +379,7 @@ adk run
 | `GET` | `/audit/{id}` | Export audit bundle (trace + gateway + events) |
 | `GET` | `/gateway/summary` | Gateway policy summary |
 | `GET` | `/gateway/denials` | Gateway deny log |
+| `GET` | `/gateway/pending` | List pending approval-gate actions |
 | `POST` | `/gateway/check` | Test a gateway policy check |
 | `POST` | `/armor/scan` | Test content scanner |
 
@@ -444,16 +477,22 @@ Without WhatsApp credentials, the `/whatsapp` endpoint returns HTTP 503 with set
 
 ---
 
-## Safety & Human-in-the-Loop
+## Safety & Autonomy
 
-| Decision / Action | Default Policy |
-|-------------------|---------------|
-| Call 911 / external emergency services | Human-confirmed |
-| Send responder handoff brief | Requires IC review before external release |
-| Share personal medical/accessibility info | Need-to-know only; redacted in general channels |
-| Alter a playbook or evacuation route | Human approval required; versioned change record |
-| Suggest evacuation / tactical movement | Only display pre-approved routes; never improvise |
-| Tool-call failure on high-impact action | Fail closed; flag to Coordinator; request human review |
+Operationally autonomous but authority-bounded — humans retain the consequential, hard-to-reverse decisions (external comms, medical-data sharing, incident closure).
+
+| Decision / Action | Policy |
+|-------------------|--------|
+| Send external message | **IC approval required** — external comms are hard to reverse once sent |
+| Share medical/accessibility info | **IC approval required** — medical-data sharing is sensitive and hard to retract |
+| Mark incident resolved | **IC approval required** — incident closure is a consequential state transition |
+| Call 911 / external emergency services | Non-negotiable backstop (code, not prompt) — always attached to active-threat/evacuation output |
+| Tactical guidance (playbook-grounded) | Autonomous — Gemini reasons over approved playbook rules |
+| Tactical guidance (improvised) | Autonomous — fires when no approved rule covers the situation; provenance recorded as `improvised` in audit log |
+| Routing directives | Deterministic route validation (code) — directives into known blocked/threat zones are suppressed before release |
+| Send responder handoff brief | Autonomous — PII content scan still runs on output |
+| Propose playbook change | Autonomous — a proposal is low-consequence; applying it is separately gated |
+| Tool-call failure on high-impact action | Fail closed; flag to Coordinator |
 
 ---
 
@@ -509,7 +548,8 @@ CrisisMesh/
 │   │       ├── agent.py             # Compliance & audit agent
 │   │       └── tools.py             # redact_sensitive, check_policy, export_trace_bundle
 │   ├── config/
-│   │   └── agent_registry.py        # 7-agent registry with scopes & denied tools
+│   │   ├── agent_registry.py        # 7-agent registry with scopes & denied tools
+│   │   └── playbooks.py             # Shared playbook content (10 incident types)
 │   ├── core/
 │   │   ├── server.py                # Cloud Run HTTP server (REST + SSE)
 │   │   ├── agent_gateway.py         # 4-layer policy enforcement gateway
@@ -518,6 +558,7 @@ CrisisMesh/
 │   │   ├── knowledge_base.py        # CSV-loaded organizational data store
 │   │   ├── memory_bank.py           # Cross-session lesson & outcome storage
 │   │   ├── observability.py         # Span-based tracing + audit bundle export
+│   │   ├── tactical_reasoning.py    # Playbook-grounded/improvised reasoning + safety floors
 │   │   └── task_manager.py          # Task lifecycle with retry/timeout/escalation
 │   ├── models/
 │   │   ├── events.py                # 18 typed events (Pydantic)
@@ -525,7 +566,7 @@ CrisisMesh/
 │   │   ├── incident.py              # Incident state model
 │   │   └── person.py                # Personnel model
 │   └── services/
-│       ├── csv_ingest.py            # CSV parser for 8 data types
+│       ├── csv_ingest.py            # CSV parser for 8 data types with semantic validation
 │       ├── firestore_state.py       # Firestore persistence layer
 │       ├── pubsub_bus.py            # Cloud Pub/Sub transport
 │       ├── slack_transport.py       # Slack transport (Events API + Block Kit)
@@ -541,7 +582,9 @@ CrisisMesh/
     ├── test_memory_bank.py          # Memory bank tests
     ├── test_observability.py        # Trace/span tests
     ├── test_models.py               # Pydantic model tests
-    ├── test_csv_ingest.py           # CSV ingestion tests
+    ├── test_csv_ingest.py           # CSV ingestion + semantic validation tests
+    ├── test_failure_injection.py    # Failure-injection suite (timeout, malformed output, rate limit, Firestore, prompt injection, invalid CSV)
+    ├── test_tactical_reasoning.py   # Tactical reasoning (grounded/improvised, backstop, route validation, autonomy, origin stripping)
     ├── test_gemini_entrypoint.py    # ADK agent instruction tests
     ├── test_slack_transport.py      # Slack reaction/user mapping tests
     ├── test_slack_integration.py    # Signature, slash commands, pipeline, events
@@ -557,23 +600,25 @@ CrisisMesh/
 
 ## Test Coverage
 
-281 passing tests covering:
+427 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries
 - **Safety Intel:** Route finding with blocked-zone exclusion, resource location by type/zone/floor, accessible routes
 - **SITREP:** IC briefs, responder one-cards with real route/resource/assembly data
 - **Compliance:** PII redaction (general vs commander context), policy checks
-- **Gateway:** Agent Identity least-privilege enforcement, rate limiting, approval gates, content scanning
+- **Gateway:** Agent Identity least-privilege enforcement, rate limiting, approval gates (PendingAction state machine with IC authorization), content scanning
 - **Model Armor:** 9 injection patterns + 5 PII leakage patterns blocked
 - **Observability:** Trace creation, span hierarchies, audit bundle export
-- **Memory Bank:** Lesson storage, retrieval, historical outcome stats
+- **Memory Bank:** Lesson storage, retrieval, Jaccard tag-overlap confidence scoring, source citations with outcome data, cross-session recall, historical outcome stats
 - **Event Bus:** Publish/subscribe, event filtering, history
-- **Slack Transport:** Signature verification (HMAC-SHA256), slash command dispatch, reaction-based check-ins, URL verification challenge, pipeline integration, Block Kit formatting
+- **Slack Transport:** Signature verification (HMAC-SHA256), slash command dispatch, @mention/DM agentic dispatch, reaction-based check-ins, URL verification challenge, pipeline integration, Block Kit formatting
 - **SMS Transport:** Twilio signature verification (HMAC-SHA1), check-in keyword mapping, incident pipeline via SMS, TwiML response formatting, content safety blocking
-- **HTTP Server:** All 18 endpoints (GET + POST), error handling, CORS
-- **CSV Ingestion:** All 8 data types parsed correctly
-- **Task Manager:** Retry, timeout, fallback, escalation
+- **HTTP Server:** All endpoints (GET + POST), error handling, CORS
+- **CSV Ingestion:** All 8 data types parsed correctly, semantic validation (route→blocked zone, resource→valid floor/zone, room→valid facility), row-level reject-and-report with validation reports
+- **Failure Injection:** Sub-agent timeout (retry + escalation), malformed agent output (None-as-success fail-open fix), agent loop rate limiting, transient Firestore failure, prompt injection blocking, invalid CSV row quarantine — 6 injection modes with 4-part fail-closed contract assertions
+- **Tactical Reasoning:** Grounded vs improvised origin determination, no-fabricated-grounding invariant, safety backstop on all evacuation types, route validation against blocked zones, origin stripping from all UI/transport surfaces, provenance records, authority-bounded autonomy (3 human-gated actions), coordinator tool integration
+- **Task Manager:** Retry, timeout, fallback, escalation, result type validation (None rejected)
 - **Models:** Pydantic validation for events, incidents, personnel, facilities
 
 ```bash

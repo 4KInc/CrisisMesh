@@ -156,6 +156,11 @@ class TaskManager:
                 handler(task),
                 timeout=task.timeout_seconds,
             )
+            if not isinstance(result, dict):
+                return await self._handle_failure(
+                    task,
+                    f"Handler returned invalid output (expected dict, got {type(result).__name__})",
+                )
             return await self._complete_task(task, result)
 
         except asyncio.TimeoutError:

@@ -140,3 +140,173 @@ class TestLearningTools:
         )
         assert result["REQUIRES_HUMAN_APPROVAL"] is True
         assert result["status"] == "pending_approval"
+
+
+class TestJaccardConfidence:
+    """Batch D: Jaccard tag-overlap confidence scores."""
+
+    def test_confidence_present_on_every_lesson(self):
+        init_memory_bank()
+        from src.agents.learning.tools import find_similar_incidents
+
+        result = find_similar_incidents("fire", "jefferson")
+        for lesson in result["lessons"]:
+            assert "confidence" in lesson
+            assert isinstance(lesson["confidence"], float)
+            assert 0.0 <= lesson["confidence"] <= 1.0
+
+    def test_results_sorted_by_confidence_descending(self):
+        init_memory_bank()
+        from src.agents.learning.tools import find_similar_incidents
+
+        result = find_similar_incidents("fire", "jefferson")
+        confidences = [l["confidence"] for l in result["lessons"]]
+        assert confidences == sorted(confidences, reverse=True)
+
+    def test_query_tags_included_in_response(self):
+        init_memory_bank()
+        from src.agents.learning.tools import find_similar_incidents
+
+        result = find_similar_incidents("fire", "jefferson", tags="floor2,science_lab")
+        assert "query_tags" in result
+        assert "fire" in result["query_tags"]
+        assert "jefferson" in result["query_tags"]
+        assert "floor2" in result["query_tags"]
+        assert "science_lab" in result["query_tags"]
+
+    def test_extra_tags_boost_confidence(self):
+        init_memory_bank()
+        from src.agents.learning.tools import find_similar_incidents
+
+        broad = find_similar_incidents("fire", "jefferson")
+        narrow = find_similar_incidents("fire", "jefferson", tags="floor2,science_lab,stairwell")
+
+        broad_top = broad["lessons"][0]["confidence"]
+        narrow_top = narrow["lessons"][0]["confidence"]
+        assert narrow_top >= broad_top
+
+    def test_jaccard_math_exact(self):
+        from src.agents.learning.tools import _jaccard
+
+        assert _jaccard({"a", "b", "c"}, {"b", "c", "d"}) == 2 / 4
+        assert _jaccard({"a"}, {"a"}) == 1.0
+        assert _jaccard({"a"}, {"b"}) == 0.0
+        assert _jaccard(set(), set()) == 0.0
+
+
+class TestSourceCitation:
+    """Batch D: Source citations on every recalled lesson."""
+
+    def test_citation_on_every_lesson(self):
+        init_memory_bank()
+        from src.agents.learning.tools import find_similar_incidents
+
+        result = find_similar_incidents("fire", "jefferson")
+        for lesson in result["lessons"]:
+            assert "source" in lesson
+            src = lesson["source"]
+            assert "incident_id" in src
+            assert "lesson_id" in src
+
+    def test_citation_includes_outcome_when_available(self):
+        init_memory_bank()
+        from src.agents.learning.tools import find_similar_incidents
+
+        result = find_similar_incidents("fire", "jefferson")
+        has_outcome = False
+        for lesson in result["lessons"]:
+            src = lesson["source"]
+            if "outcome_summary" in src:
+                has_outcome = True
+                assert src["outcome_summary"]
+                assert "response_time_seconds" in src
+        assert has_outcome, "At least one fire lesson should have a linked outcome"
+
+    def test_citation_without_outcome(self):
+        init_memory_bank()
+        from src.agents.learning.tools import find_similar_incidents
+
+        result = find_similar_incidents("severe_weather", "jefferson")
+        assert result["lessons_found"] >= 1
+        lesson = result["lessons"][0]
+        assert "incident_id" in lesson["source"]
+        assert "outcome_summary" not in lesson["source"]
+
+
+class TestCrossSessionRecall:
+    """Batch D / GAP-08: Lessons stored during incident A surface during incident B."""
+
+    def test_cross_incident_recall_with_citation_and_confidence(self):
+        init_memory_bank()
+        from src.agents.learning.tools import find_similar_incidents, store_lesson
+
+        store_lesson(
+            incident_id="FIRE-2026-INCIDENT-A",
+            incident_type="fire",
+            lesson_title="Cafeteria exit was blocked by delivery truck",
+            lesson_body=(
+                "During FIRE-2026-INCIDENT-A, the cafeteria emergency exit on the "
+                "south side was blocked by a parked delivery truck. The delivery "
+                "schedule overlapped with the incident window. Recommend: no "
+                "deliveries during peak occupancy hours."
+            ),
+            facility_id="jefferson",
+            category="evacuation",
+            tags="fire,cafeteria,blocked_exit,delivery,floor1",
+        )
+
+        result = find_similar_incidents(
+            "fire", "jefferson", tags="cafeteria,blocked_exit"
+        )
+
+        lesson_titles = [l["title"] for l in result["lessons"]]
+        assert "Cafeteria exit was blocked by delivery truck" in lesson_titles
+
+        cross_lesson = next(
+            l for l in result["lessons"]
+            if l["title"] == "Cafeteria exit was blocked by delivery truck"
+        )
+
+        assert cross_lesson["source"]["incident_id"] == "FIRE-2026-INCIDENT-A"
+        assert cross_lesson["source"]["lesson_id"]
+        assert cross_lesson["confidence"] > 0.0
+
+    def test_cross_incident_different_facility(self):
+        """Lessons from facility X surface when querying facility Y if type matches."""
+        init_memory_bank()
+        from src.agents.learning.tools import find_similar_incidents, store_lesson
+
+        store_lesson(
+            incident_id="FIRE-2026-LINCOLN-001",
+            incident_type="fire",
+            lesson_title="Lincoln gym had no working fire extinguisher",
+            lesson_body="The gym fire extinguisher was expired during the drill.",
+            facility_id="lincoln",
+            category="resources",
+            tags="fire,gym,extinguisher",
+        )
+
+        result = find_similar_incidents("fire", "lincoln")
+        titles = [l["title"] for l in result["lessons"]]
+        assert "Lincoln gym had no working fire extinguisher" in titles
+
+    def test_seed_data_preserved(self):
+        """Storing new lessons doesn't corrupt the pre-seeded data."""
+        init_memory_bank()
+        from src.agents.learning.tools import find_similar_incidents, store_lesson
+
+        store_lesson(
+            incident_id="FIRE-2026-NEW",
+            incident_type="fire",
+            lesson_title="New lesson from new incident",
+            lesson_body="A newly stored lesson.",
+            facility_id="jefferson",
+            category="general",
+            tags="fire,new",
+        )
+
+        result = find_similar_incidents("fire", "jefferson")
+        assert result["lessons_found"] >= 4  # 3 seed + 1 new
+        titles = [l["title"] for l in result["lessons"]]
+        assert "Floor 2 west stairwell bottleneck during fire drill" in titles
+        assert "New lesson from new incident" in titles

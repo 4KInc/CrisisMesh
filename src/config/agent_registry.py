@@ -29,6 +29,7 @@ AGENT_REGISTRY: dict[str, AgentRegistryEntry] = {
         approved_tools=[
             "create_incident", "update_incident", "delegate_task",
             "monitor_deadlines", "request_approval", "resolve_incident",
+            "get_tactical_context", "transfer_to_agent",
         ],
         purpose="Incident command orchestration",
     ),
@@ -39,7 +40,7 @@ AGENT_REGISTRY: dict[str, AgentRegistryEntry] = {
         description="Normalizes incident reports; classifies type and severity; selects approved playbook",
         owner="crisismesh",
         data_class="internal",
-        approved_tools=["classify_incident", "select_playbook", "extract_location"],
+        approved_tools=["classify_incident", "select_playbook", "extract_location", "transfer_to_agent"],
         purpose="Incident intake and classification",
     ),
     "accountability": AgentRegistryEntry(
@@ -50,8 +51,8 @@ AGENT_REGISTRY: dict[str, AgentRegistryEntry] = {
         owner="crisismesh",
         data_class="sensitive",
         approved_tools=[
-            "read_roster", "process_checkin", "compute_accountability",
-            "send_checkin_request", "escalate_missing",
+            "read_roster", "process_checkin", "compute_accountability_summary",
+            "send_checkin_request", "escalate_missing_checkins", "transfer_to_agent",
         ],
         denied_tools=["send_external_message", "share_medical_info"],
         purpose="Personnel accountability tracking",
@@ -66,7 +67,7 @@ AGENT_REGISTRY: dict[str, AgentRegistryEntry] = {
         approved_tools=[
             "find_safe_routes", "find_zone_info", "find_blocked_zones",
             "locate_resource", "find_assembly_point", "find_nearby_services",
-            "find_accessible_routes",
+            "find_accessible_routes", "transfer_to_agent",
         ],
         denied_tools=["send_external_message", "modify_playbook"],
         purpose="Safety and resource intelligence",
@@ -81,6 +82,7 @@ AGENT_REGISTRY: dict[str, AgentRegistryEntry] = {
         approved_tools=[
             "generate_sitrep", "generate_responder_card",
             "generate_stakeholder_update", "generate_timeline",
+            "transfer_to_agent",
         ],
         purpose="Situation reports and handoff briefs",
     ),
@@ -93,7 +95,7 @@ AGENT_REGISTRY: dict[str, AgentRegistryEntry] = {
         data_class="internal",
         approved_tools=[
             "find_similar_incidents", "produce_aar", "store_lesson",
-            "propose_playbook_change",
+            "propose_playbook_change", "transfer_to_agent",
         ],
         purpose="Institutional learning and after-action review",
     ),
@@ -106,7 +108,7 @@ AGENT_REGISTRY: dict[str, AgentRegistryEntry] = {
         data_class="restricted",
         approved_tools=[
             "append_audit_log", "validate_approval", "redact_sensitive",
-            "export_trace_bundle", "check_policy",
+            "export_trace_bundle", "check_policy", "transfer_to_agent",
         ],
         purpose="Compliance, audit, and policy enforcement",
     ),

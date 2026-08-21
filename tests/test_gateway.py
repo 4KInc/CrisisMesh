@@ -1,14 +1,24 @@
 """Tests for Agent Gateway, ContentScanner (InjectionGuard), and Agent Identity."""
 
+import os
+
 import pytest
 
-from src.core.agent_gateway import AgentGateway, GatewayDecision
+from src.core.agent_gateway import (
+    APPROVAL_REQUIRED_ACTIONS,
+    AgentGateway,
+    GatewayDecision,
+    PendingAction,
+)
 from src.core.content_scanner import ContentScanner, InjectionGuard
-from src.core.event_bus import EventBus
+from src.core.event_bus import EventBus, create_event
+from src.models.events import EventType
 
 
 @pytest.fixture(autouse=True)
-def fresh_state():
+def fresh_state(monkeypatch):
+    monkeypatch.delenv("DEMO_AUTO_APPROVE", raising=False)
+    monkeypatch.delenv("AUTHORIZED_IC_IDS", raising=False)
     AgentGateway.reset()
     ContentScanner.reset()
     EventBus.reset()
@@ -67,26 +77,316 @@ class TestAgentIdentity:
 
 
 class TestApprovalGates:
-    """Approval gates for high-impact actions."""
+    """Hard approval gates — gated actions are blocked without IC approval."""
+
+    def test_gated_actions_set(self):
+        assert APPROVAL_REQUIRED_ACTIONS == {
+            "send_external_message",
+            "share_medical_info",
+            "resolve_incident",
+        }
 
     @pytest.mark.asyncio
-    async def test_responder_card_flagged(self):
+    async def test_propose_playbook_change_ungated(self):
+        """propose_playbook_change is ungated — a proposal is low-consequence."""
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "learning", "propose_playbook_change", incident_id="INC-001"
+        )
+        assert decision.allowed is True
+
+    @pytest.mark.asyncio
+    def test_send_external_message_in_approval_gates(self):
+        """External comms require IC approval — hard to reverse once sent."""
+        assert "send_external_message" in APPROVAL_REQUIRED_ACTIONS
+
+    def test_share_medical_info_in_approval_gates(self):
+        """Medical-data sharing requires IC approval — sensitive, hard to retract."""
+        assert "share_medical_info" in APPROVAL_REQUIRED_ACTIONS
+
+    @pytest.mark.asyncio
+    async def test_resolve_incident_blocked(self):
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        assert decision.allowed is False
+        assert decision.policy == "approval_gate"
+        assert "requires Incident Commander approval" in decision.reason
+
+    @pytest.mark.asyncio
+    async def test_generate_responder_card_passes(self):
+        """generate_responder_card is content generation, not release — it should not be gated."""
         gw = AgentGateway.get()
         decision = await gw.check_tool_call(
             "sitrep", "generate_responder_card", incident_id="INC-001"
         )
         assert decision.allowed is True
-        assert decision.policy == "approval_gate"
-        assert "Commander approval" in decision.reason
+        assert decision.policy == "allowed"
 
     @pytest.mark.asyncio
-    async def test_stakeholder_update_flagged(self):
+    async def test_generate_stakeholder_update_passes(self):
+        """generate_stakeholder_update is content generation, not release — it should not be gated."""
         gw = AgentGateway.get()
         decision = await gw.check_tool_call(
             "sitrep", "generate_stakeholder_update", incident_id="INC-001"
         )
         assert decision.allowed is True
+        assert decision.policy == "allowed"
+
+    @pytest.mark.asyncio
+    async def test_pending_action_created(self):
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        pending = gw.get_pending_actions(incident_id="INC-001")
+        assert len(pending) == 1
+        assert pending[0].id == decision.pending_action_id
+        assert pending[0].state == "pending"
+        assert pending[0].action == "resolve_incident"
+
+    @pytest.mark.asyncio
+    async def test_approval_requested_event_emitted(self):
+        bus = EventBus.get()
+        events = []
+        bus.subscribe_all(lambda e: events.append(e))
+
+        gw = AgentGateway.get()
+        await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+
+        approval_events = [e for e in events if str(e.type) == "approval.requested"]
+        assert len(approval_events) == 1
+        assert approval_events[0].data["action"] == "resolve_incident"
+
+
+class TestApproveReleasePath:
+    """Approve releases exactly once, deny discards."""
+
+    @pytest.mark.asyncio
+    async def test_approve_releases_action(self):
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        action_id = decision.pending_action_id
+
+        result = await gw.approve_action(action_id, "IC-USER-1")
+        assert result["status"] == "granted"
+        assert result["action"] == "resolve_incident"
+
+        pending = gw.get_pending_actions(incident_id="INC-001")
+        executed = [a for a in pending if a.state == "executed"]
+        assert len(executed) == 1
+
+    @pytest.mark.asyncio
+    async def test_approve_emits_granted_event(self):
+        bus = EventBus.get()
+        events = []
+        bus.subscribe_all(lambda e: events.append(e))
+
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        await gw.approve_action(decision.pending_action_id, "IC-USER-1")
+
+        granted_events = [e for e in events if str(e.type) == "approval.granted"]
+        assert len(granted_events) == 1
+        assert granted_events[0].data["approved_by"] == "IC-USER-1"
+
+    @pytest.mark.asyncio
+    async def test_double_approve_idempotent(self):
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        action_id = decision.pending_action_id
+
+        result1 = await gw.approve_action(action_id, "IC-USER-1")
+        assert result1["status"] == "granted"
+
+        result2 = await gw.approve_action(action_id, "IC-USER-1")
+        assert result2["status"] == 409
+        assert "already executed" in result2["error"]
+
+    @pytest.mark.asyncio
+    async def test_deny_discards_action(self):
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        action_id = decision.pending_action_id
+
+        result = await gw.deny_action(action_id, "IC-USER-1")
+        assert result["status"] == "denied"
+
+        pending = gw.get_pending_actions(incident_id="INC-001")
+        denied = [a for a in pending if a.state == "denied"]
+        assert len(denied) == 1
+
+    @pytest.mark.asyncio
+    async def test_deny_emits_denied_event(self):
+        bus = EventBus.get()
+        events = []
+        bus.subscribe_all(lambda e: events.append(e))
+
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        await gw.deny_action(decision.pending_action_id, "IC-USER-1")
+
+        denied_events = [e for e in events if str(e.type) == "approval.denied"]
+        assert len(denied_events) == 1
+        assert denied_events[0].data["denied_by"] == "IC-USER-1"
+
+    @pytest.mark.asyncio
+    async def test_approve_after_deny_rejected(self):
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        action_id = decision.pending_action_id
+
+        await gw.deny_action(action_id, "IC-USER-1")
+        result = await gw.approve_action(action_id, "IC-USER-1")
+        assert result["status"] == 409
+        assert "already denied" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_approve_nonexistent_action(self):
+        gw = AgentGateway.get()
+        result = await gw.approve_action("nonexistent", "IC-USER-1")
+        assert result["status"] == 404
+
+    @pytest.mark.asyncio
+    async def test_deny_nonexistent_action(self):
+        gw = AgentGateway.get()
+        result = await gw.deny_action("nonexistent", "IC-USER-1")
+        assert result["status"] == 404
+
+
+class TestAuthorizedIC:
+    """Unauthorized approve/deny attempts are rejected."""
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_approve_rejected(self, monkeypatch):
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "IC-CMD-1,IC-CMD-2")
+        AgentGateway.reset()
+        gw = AgentGateway.get()
+
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        result = await gw.approve_action(decision.pending_action_id, "RANDOM-USER")
+        assert result["status"] == 403
+        assert "Unauthorized" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_authorized_ic_can_approve(self, monkeypatch):
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "IC-CMD-1,IC-CMD-2")
+        AgentGateway.reset()
+        gw = AgentGateway.get()
+
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        result = await gw.approve_action(decision.pending_action_id, "IC-CMD-1")
+        assert result["status"] == "granted"
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_deny_rejected(self, monkeypatch):
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "IC-CMD-1")
+        AgentGateway.reset()
+        gw = AgentGateway.get()
+
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        result = await gw.deny_action(decision.pending_action_id, "ATTACKER")
+        assert result["status"] == 403
+
+    @pytest.mark.asyncio
+    async def test_empty_ic_list_allows_anyone(self):
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        result = await gw.approve_action(decision.pending_action_id, "ANY-USER")
+        assert result["status"] == "granted"
+
+
+class TestDemoAutoApprove:
+    """DEMO_AUTO_APPROVE fires only with flag on, emits labeled event."""
+
+    @pytest.mark.asyncio
+    async def test_auto_approve_off_by_default(self):
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        assert decision.allowed is False
         assert decision.policy == "approval_gate"
+
+    @pytest.mark.asyncio
+    async def test_auto_approve_on(self, monkeypatch):
+        monkeypatch.setenv("DEMO_AUTO_APPROVE", "1")
+        gw = AgentGateway.get()
+
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        assert decision.allowed is True
+        assert decision.policy == "approval_gate"
+        assert "DEMO MODE" in decision.reason
+
+    @pytest.mark.asyncio
+    async def test_auto_approve_emits_labeled_event(self, monkeypatch):
+        monkeypatch.setenv("DEMO_AUTO_APPROVE", "1")
+        bus = EventBus.get()
+        events = []
+        bus.subscribe_all(lambda e: events.append(e))
+
+        gw = AgentGateway.get()
+        await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+
+        granted = [e for e in events if str(e.type) == "approval.granted"]
+        assert len(granted) == 1
+        assert "DEMO MODE" in granted[0].data["mode"]
+
+    @pytest.mark.asyncio
+    async def test_auto_approve_not_triggered_when_off(self, monkeypatch):
+        monkeypatch.setenv("DEMO_AUTO_APPROVE", "0")
+        gw = AgentGateway.get()
+
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        assert decision.allowed is False
+
+
+class TestPendingActionStateMachine:
+    """PendingAction state transitions."""
+
+    def test_valid_states(self):
+        assert PendingAction.VALID_STATES == {"pending", "granted", "executed", "denied"}
+
+    def test_initial_state_pending(self):
+        pa = PendingAction("INC-001", "resolve_incident", {}, "coordinator")
+        assert pa.state == "pending"
+
+    def test_to_dict(self):
+        pa = PendingAction("INC-001", "resolve_incident", {}, "coordinator")
+        d = pa.to_dict()
+        assert d["incident_id"] == "INC-001"
+        assert d["action"] == "resolve_incident"
+        assert d["state"] == "pending"
+        assert "id" in d
 
 
 class TestInjectionGuard:
@@ -204,6 +504,146 @@ class TestPolicySummary:
         assert summary["denied"] == 1
         assert summary["allowed"] == 1
         assert "agent_identity" in summary["denials_by_policy"]
+
+    @pytest.mark.asyncio
+    async def test_summary_shows_pending_approvals(self):
+        gw = AgentGateway.get()
+        await gw.check_tool_call("coordinator", "resolve_incident", incident_id="INC-001")
+
+        summary = gw.get_policy_summary()
+        assert summary["pending_approvals"] == 1
+
+
+class TestCardUpdateSeparation:
+    """B.5 item 1: cards are generation (ungated), release is gated."""
+
+    def test_responder_card_returns_data_not_posts(self):
+        import inspect
+        from src.agents.sitrep import tools as sitrep_tools
+        source = inspect.getsource(sitrep_tools.generate_responder_card)
+        assert "slack" not in source.lower()
+        assert "post_message" not in source
+        assert "send_message" not in source
+
+    def test_stakeholder_update_returns_data_not_posts(self):
+        import inspect
+        from src.agents.sitrep import tools as sitrep_tools
+        source = inspect.getsource(sitrep_tools.generate_stakeholder_update)
+        assert "slack" not in source.lower()
+        assert "post_message" not in source
+        assert "send_message" not in source
+
+    def test_responder_card_has_approval_flag(self):
+        from src.agents.sitrep.tools import generate_responder_card
+        card = generate_responder_card(
+            incident_id="INC-TEST", incident_type="fire", severity="high",
+            location="Main Building", time_declared="2026-01-01T00:00:00Z",
+            accountability={"total_tracked": 10, "accounted": 8, "counts": {}},
+        )
+        assert card["REQUIRES_COMMANDER_APPROVAL"] is True
+        assert card["type"] == "RESPONDER_ONE_CARD"
+
+    def test_stakeholder_update_has_approval_flag(self):
+        from src.agents.sitrep.tools import generate_stakeholder_update
+        update = generate_stakeholder_update(
+            incident_id="INC-TEST", incident_type="fire", severity="high",
+            status_summary="All safe",
+        )
+        assert update["REQUIRES_COMMANDER_APPROVAL"] is True
+        assert update["personal_data_included"] is False
+
+    @pytest.mark.asyncio
+    async def test_send_external_message_is_gated(self):
+        """External comms are gated — hard to reverse once sent."""
+        assert "send_external_message" in APPROVAL_REQUIRED_ACTIONS
+
+    @pytest.mark.asyncio
+    async def test_card_generation_ungated_but_release_gated(self):
+        """Generate passes (internal), send blocks (external release)."""
+        gw = AgentGateway.get()
+        gen_decision = await gw.check_tool_call(
+            "sitrep", "generate_responder_card", incident_id="INC-001"
+        )
+        assert gen_decision.allowed is True
+
+        assert "send_external_message" in APPROVAL_REQUIRED_ACTIONS
+
+
+class TestEmptyICWarning:
+    """B.5 item 2: empty IC list emits a warning."""
+
+    @pytest.mark.asyncio
+    async def test_empty_ic_list_logs_warning(self, caplog):
+        import logging
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001"
+        )
+        with caplog.at_level(logging.WARNING):
+            await gw.approve_action(decision.pending_action_id, "ANY-USER")
+        assert "no authorized ICs configured" in caplog.text
+
+
+class TestEndToEndGatePath:
+    """B.5 item 3: full fleet flow through gates without deadlock."""
+
+    @pytest.mark.asyncio
+    async def test_full_flow_demo_auto_approve(self, monkeypatch):
+        monkeypatch.setenv("DEMO_AUTO_APPROVE", "1")
+        AgentGateway.reset()
+        gw = AgentGateway.get()
+        bus = EventBus.get()
+        events = []
+        bus.subscribe_all(lambda e: events.append(e))
+
+        d1 = await gw.check_tool_call("intake", "classify_incident", incident_id="INC-E2E")
+        assert d1.allowed is True
+
+        d2 = await gw.check_tool_call("sitrep", "generate_responder_card", incident_id="INC-E2E")
+        assert d2.allowed is True
+
+        d3 = await gw.check_tool_call("sitrep", "generate_stakeholder_update", incident_id="INC-E2E")
+        assert d3.allowed is True
+
+        d4 = await gw.check_tool_call("coordinator", "resolve_incident", incident_id="INC-E2E")
+        assert d4.allowed is True
+        assert "DEMO MODE" in d4.reason
+
+        pending = gw.get_pending_actions(incident_id="INC-E2E")
+        assert all(a.state != "pending" for a in pending)
+
+    @pytest.mark.asyncio
+    async def test_full_flow_manual_approve(self):
+        gw = AgentGateway.get()
+
+        d1 = await gw.check_tool_call("intake", "classify_incident", incident_id="INC-E2E")
+        assert d1.allowed is True
+
+        d2 = await gw.check_tool_call("sitrep", "generate_responder_card", incident_id="INC-E2E")
+        assert d2.allowed is True
+
+        d3 = await gw.check_tool_call("coordinator", "resolve_incident", incident_id="INC-E2E")
+        assert d3.allowed is False
+        assert d3.pending_action_id != ""
+
+        result = await gw.approve_action(d3.pending_action_id, "IC-CMD")
+        assert result["status"] == "granted"
+
+        pa = gw._pending_actions[d3.pending_action_id]
+        assert pa.state == "executed"
+
+    @pytest.mark.asyncio
+    async def test_fleet_continues_after_gate(self):
+        """Gated action doesn't block subsequent non-gated work."""
+        gw = AgentGateway.get()
+
+        await gw.check_tool_call("coordinator", "resolve_incident", incident_id="INC-E2E")
+
+        d_next = await gw.check_tool_call("intake", "classify_incident", incident_id="INC-E2E")
+        assert d_next.allowed is True
+
+        d_gen = await gw.check_tool_call("sitrep", "generate_sitrep", incident_id="INC-E2E")
+        assert d_gen.allowed is True
 
 
 class TestGatewayEvents:

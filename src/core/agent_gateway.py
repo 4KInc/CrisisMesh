@@ -2,7 +2,7 @@
 
 Intercepts all agent tool calls to enforce:
 1. Agent Identity (least-privilege) — deny out-of-scope tools
-2. Content scanning (Model Armor or InjectionGuard) — block injection + PII leakage
+2. Content scanning (InjectionGuard regex / Model Armor IAM-blocked) — block injection + PII
 3. Rate limiting — prevent runaway agents
 4. Approval gates — block high-impact actions without commander approval
 
@@ -11,7 +11,9 @@ Every decision is logged to the event bus for the observability trace.
 
 from __future__ import annotations
 
+import hmac
 import logging
+import os
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -36,6 +38,7 @@ class GatewayDecision:
         reason: str = "",
         policy: str = "",
         incident_id: str = "",
+        pending_action_id: str = "",
     ) -> None:
         self.id = str(uuid.uuid4())[:8]
         self.allowed = allowed
@@ -44,10 +47,11 @@ class GatewayDecision:
         self.reason = reason
         self.policy = policy
         self.incident_id = incident_id
+        self.pending_action_id = pending_action_id
         self.timestamp = datetime.now(timezone.utc)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "decision_id": self.id,
             "allowed": self.allowed,
             "agent_id": self.agent_id,
@@ -57,16 +61,63 @@ class GatewayDecision:
             "incident_id": self.incident_id,
             "timestamp": self.timestamp.isoformat(),
         }
+        if self.pending_action_id:
+            d["pending_action_id"] = self.pending_action_id
+        return d
 
 
-# Actions that require Incident Commander approval before execution
 APPROVAL_REQUIRED_ACTIONS = {
-    "generate_responder_card",
-    "generate_stakeholder_update",
-    "propose_playbook_change",
-    "share_medical_info",
     "send_external_message",
+    "share_medical_info",
+    "resolve_incident",
 }
+
+AUTHORIZED_IC_IDS: set[str] = set()
+
+
+def _load_authorized_ics() -> None:
+    raw = os.environ.get("AUTHORIZED_IC_IDS", "")
+    AUTHORIZED_IC_IDS.clear()
+    if raw:
+        AUTHORIZED_IC_IDS.update(id.strip() for id in raw.split(",") if id.strip())
+
+
+class PendingAction:
+    """An action queued for Incident Commander approval."""
+
+    VALID_STATES = {"pending", "granted", "executed", "denied"}
+
+    def __init__(
+        self,
+        incident_id: str,
+        action: str,
+        args: dict[str, Any],
+        requesting_agent: str,
+    ) -> None:
+        self.id = str(uuid.uuid4())[:8]
+        self.incident_id = incident_id
+        self.action = action
+        self.args = args
+        self.requesting_agent = requesting_agent
+        self.timestamp = datetime.now(timezone.utc)
+        self.state = "pending"
+        self.decided_by: str = ""
+        self.decided_at: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d = {
+            "id": self.id,
+            "incident_id": self.incident_id,
+            "action": self.action,
+            "requesting_agent": self.requesting_agent,
+            "timestamp": self.timestamp.isoformat(),
+            "state": self.state,
+        }
+        if self.decided_by:
+            d["decided_by"] = self.decided_by
+        if self.decided_at:
+            d["decided_at"] = self.decided_at.isoformat()
+        return d
 
 
 class AgentGateway:
@@ -79,6 +130,8 @@ class AgentGateway:
         self._rate_counts: dict[str, int] = defaultdict(int)
         self._rate_limit = 100
         self._scanner = ContentScanner.get()
+        self._pending_actions: dict[str, PendingAction] = {}
+        _load_authorized_ics()
 
     @classmethod
     def get(cls) -> AgentGateway:
@@ -125,14 +178,54 @@ class AgentGateway:
             await self._log_decision(decision)
             return decision
 
-        # 3. Approval gate for high-impact actions
+        # 3. Approval gate for high-impact actions — hard block
         if tool_name in APPROVAL_REQUIRED_ACTIONS:
+            if os.environ.get("DEMO_AUTO_APPROVE") == "1":
+                decision = GatewayDecision(
+                    allowed=True, agent_id=agent_id, tool_name=tool_name,
+                    reason=f"Action '{tool_name}' auto-approved (DEMO MODE)",
+                    policy="approval_gate", incident_id=incident_id,
+                )
+                await self._log_decision(decision)
+                bus = EventBus.get()
+                await bus.publish(create_event(
+                    EventType.APPROVAL_GRANTED,
+                    incident_id=incident_id,
+                    agent_id=agent_id,
+                    data={
+                        "action": tool_name,
+                        "mode": "auto_granted (DEMO MODE)",
+                    },
+                ))
+                return decision
+
+            pending = PendingAction(
+                incident_id=incident_id,
+                action=tool_name,
+                args=tool_args,
+                requesting_agent=agent_id,
+            )
+            self._pending_actions[pending.id] = pending
+
             decision = GatewayDecision(
-                allowed=True, agent_id=agent_id, tool_name=tool_name,
-                reason=f"Action '{tool_name}' requires Incident Commander approval before external release",
+                allowed=False, agent_id=agent_id, tool_name=tool_name,
+                reason=f"Action '{tool_name}' requires Incident Commander approval — queued as {pending.id}",
                 policy="approval_gate", incident_id=incident_id,
+                pending_action_id=pending.id,
             )
             await self._log_decision(decision)
+
+            bus = EventBus.get()
+            await bus.publish(create_event(
+                EventType.APPROVAL_REQUESTED,
+                incident_id=incident_id,
+                agent_id=agent_id,
+                data={
+                    "pending_action_id": pending.id,
+                    "action": tool_name,
+                    "requesting_agent": agent_id,
+                },
+            ))
             return decision
 
         # 4. Content scanning — check tool arguments for injection/PII
@@ -154,6 +247,102 @@ class AgentGateway:
         )
         await self._log_decision(decision)
         return decision
+
+    async def approve_action(
+        self, action_id: str, approver_id: str,
+    ) -> dict[str, Any]:
+        """Approve a pending action. Returns result dict."""
+        pending = self._pending_actions.get(action_id)
+        if not pending:
+            return {"error": "Action not found", "status": 404}
+
+        if pending.state != "pending":
+            return {"error": f"Action already {pending.state}", "status": 409}
+
+        if not self._is_authorized_ic(approver_id):
+            return {"error": "Unauthorized — not a recognized Incident Commander", "status": 403}
+
+        pending.state = "granted"
+        pending.decided_by = approver_id
+        pending.decided_at = datetime.now(timezone.utc)
+
+        bus = EventBus.get()
+        await bus.publish(create_event(
+            EventType.APPROVAL_GRANTED,
+            incident_id=pending.incident_id,
+            agent_id=pending.requesting_agent,
+            data={
+                "pending_action_id": pending.id,
+                "action": pending.action,
+                "approved_by": approver_id,
+            },
+        ))
+
+        pending.state = "executed"
+
+        return {
+            "status": "granted",
+            "action_id": pending.id,
+            "action": pending.action,
+            "incident_id": pending.incident_id,
+        }
+
+    async def deny_action(
+        self, action_id: str, approver_id: str,
+    ) -> dict[str, Any]:
+        """Deny a pending action. Returns result dict."""
+        pending = self._pending_actions.get(action_id)
+        if not pending:
+            return {"error": "Action not found", "status": 404}
+
+        if pending.state != "pending":
+            return {"error": f"Action already {pending.state}", "status": 409}
+
+        if not self._is_authorized_ic(approver_id):
+            return {"error": "Unauthorized — not a recognized Incident Commander", "status": 403}
+
+        pending.state = "denied"
+        pending.decided_by = approver_id
+        pending.decided_at = datetime.now(timezone.utc)
+
+        bus = EventBus.get()
+        await bus.publish(create_event(
+            EventType.APPROVAL_DENIED,
+            incident_id=pending.incident_id,
+            agent_id=pending.requesting_agent,
+            data={
+                "pending_action_id": pending.id,
+                "action": pending.action,
+                "denied_by": approver_id,
+            },
+        ))
+
+        return {
+            "status": "denied",
+            "action_id": pending.id,
+            "action": pending.action,
+            "incident_id": pending.incident_id,
+        }
+
+    def _is_authorized_ic(self, approver_id: str) -> bool:
+        if not AUTHORIZED_IC_IDS:
+            logger.warning(
+                "WARN: no authorized ICs configured — approval gates are OPEN. "
+                "Set AUTHORIZED_IC_IDS to restrict approvals."
+            )
+            return True
+        return any(
+            hmac.compare_digest(approver_id, ic_id)
+            for ic_id in AUTHORIZED_IC_IDS
+        )
+
+    def get_pending_actions(
+        self, incident_id: str = "",
+    ) -> list[PendingAction]:
+        actions = list(self._pending_actions.values())
+        if incident_id:
+            actions = [a for a in actions if a.incident_id == incident_id]
+        return actions
 
     async def _log_decision(self, decision: GatewayDecision) -> None:
         self._decisions.append(decision)
@@ -198,14 +387,77 @@ class AgentGateway:
         for d in self._decisions:
             if not d.allowed:
                 by_policy[d.policy] += 1
+        pending = [a for a in self._pending_actions.values() if a.state == "pending"]
         return {
             "total_checks": total,
             "denied": denied,
             "allowed": total - denied,
             "denials_by_policy": dict(by_policy),
+            "pending_approvals": len(pending),
             "scanner_backend": self._scanner.backend,
             "policies_active": [
                 "agent_identity", "rate_limit", "approval_gate",
                 f"content_scanner ({self._scanner.backend})",
             ],
         }
+
+
+try:
+    from google.adk.plugins.base_plugin import BasePlugin as _BasePlugin
+except ImportError:
+    class _BasePlugin:
+        def __init__(self, *, name: str = "") -> None:
+            self.name = name
+
+
+class GatewayPlugin(_BasePlugin):
+    """ADK Runner plugin that routes tool calls through the Agent Gateway.
+
+    Intercepts all tool calls in the agentic pipeline and enforces the same
+    policy layer (identity, rate limit, approval gates, content scan) as the
+    deterministic path.
+
+    Usage:
+        app = App(name="crisismesh", root_agent=agent, plugins=[GatewayPlugin()])
+    """
+
+    def __init__(self, incident_id: str = "") -> None:
+        super().__init__(name="gateway")
+        self.incident_id = incident_id
+
+    async def before_tool_callback(
+        self,
+        *,
+        tool: Any,
+        tool_args: dict[str, Any],
+        tool_context: Any,
+    ) -> dict[str, Any] | None:
+        gw = AgentGateway.get()
+        tool_name = getattr(tool, "name", str(tool))
+        agent_id = getattr(tool_context, "agent_name", "unknown")
+        incident_id = tool_args.get("incident_id", self.incident_id)
+
+        decision = await gw.check_tool_call(
+            agent_id, tool_name, tool_args, incident_id=incident_id,
+        )
+
+        if not decision.allowed:
+            if decision.policy == "approval_gate":
+                return {
+                    "blocked": True,
+                    "status": "pending_approval",
+                    "reason": decision.reason,
+                    "pending_action_id": decision.pending_action_id,
+                    "instruction": (
+                        "This action requires Incident Commander approval. "
+                        f"Use '/incident approve {decision.pending_action_id}' to proceed. "
+                        "Do NOT retry this action — report its pending status in the SITREP."
+                    ),
+                }
+            return {
+                "blocked": True,
+                "reason": decision.reason,
+                "policy": decision.policy,
+            }
+
+        return None

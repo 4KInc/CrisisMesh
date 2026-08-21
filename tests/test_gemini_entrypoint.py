@@ -130,6 +130,115 @@ class TestLearningAgentTools:
         assert result["lessons_found"] >= 3
 
 
+class TestCoordinatorResolveToolAndGateway:
+    """Batch C: Coordinator has resolve_incident tool wired through the gateway."""
+
+    def test_coordinator_has_resolve_tool(self):
+        from src.agents.coordinator.agent import coordinator_agent
+
+        tool_names = [t.__name__ for t in coordinator_agent.tools]
+        assert "resolve_incident" in tool_names
+
+    def test_coordinator_instruction_includes_resolve_step(self):
+        from src.agents.coordinator.agent import coordinator_agent
+
+        assert "resolve_incident" in coordinator_agent.instruction
+        assert "pending ic approval" in coordinator_agent.instruction.lower()
+
+    def test_coordinator_instruction_forbids_retry(self):
+        from src.agents.coordinator.agent import coordinator_agent
+
+        assert "do not retry" in coordinator_agent.instruction.lower()
+
+    def test_resolve_tool_returns_status(self):
+        from src.agents.coordinator.tools import resolve_incident
+
+        result = resolve_incident("INC-TEST")
+        assert result["status"] == "resolved"
+        assert result["incident_id"] == "INC-TEST"
+
+    @pytest.mark.asyncio
+    async def test_gateway_plugin_blocks_gated_tool(self):
+        from src.core.agent_gateway import AgentGateway, GatewayPlugin
+        from src.core.event_bus import EventBus
+
+        AgentGateway.reset()
+        EventBus.reset()
+
+        class FakeTool:
+            name = "resolve_incident"
+
+        class FakeContext:
+            agent_name = "coordinator"
+
+        plugin = GatewayPlugin()
+        result = await plugin.before_tool_callback(
+            tool=FakeTool(),
+            tool_args={"incident_id": "INC-001"},
+            tool_context=FakeContext(),
+        )
+        assert result is not None
+        assert result["blocked"] is True
+        assert result["status"] == "pending_approval"
+        assert "pending_action_id" in result
+        assert "/incident approve" in result["instruction"]
+
+        AgentGateway.reset()
+        EventBus.reset()
+
+    @pytest.mark.asyncio
+    async def test_gateway_plugin_allows_ungated_tool(self):
+        from src.core.agent_gateway import AgentGateway, GatewayPlugin
+        from src.core.event_bus import EventBus
+
+        AgentGateway.reset()
+        EventBus.reset()
+
+        class FakeTool:
+            name = "classify_incident"
+
+        class FakeContext:
+            agent_name = "intake"
+
+        plugin = GatewayPlugin()
+        result = await plugin.before_tool_callback(
+            tool=FakeTool(),
+            tool_args={"report_text": "Fire in west wing"},
+            tool_context=FakeContext(),
+        )
+        assert result is None
+
+        AgentGateway.reset()
+        EventBus.reset()
+
+    @pytest.mark.asyncio
+    async def test_gateway_plugin_auto_approve_demo(self, monkeypatch):
+        from src.core.agent_gateway import AgentGateway, GatewayPlugin
+        from src.core.event_bus import EventBus
+
+        monkeypatch.setenv("DEMO_AUTO_APPROVE", "1")
+        AgentGateway.reset()
+        EventBus.reset()
+
+        class FakeTool:
+            name = "resolve_incident"
+
+        class FakeContext:
+            agent_name = "coordinator"
+
+        plugin = GatewayPlugin()
+        result = await plugin.before_tool_callback(
+            tool=FakeTool(),
+            tool_args={"incident_id": "INC-001"},
+            tool_context=FakeContext(),
+        )
+        assert result is None
+
+        AgentGateway.reset()
+        EventBus.reset()
+        monkeypatch.delenv("DEMO_AUTO_APPROVE", raising=False)
+
+
 class TestAgentInstructionsRequireTransferBack:
     """Verify all sub-agents have 'transfer back to coordinator' in their instructions."""
 

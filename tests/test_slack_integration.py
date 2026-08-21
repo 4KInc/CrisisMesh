@@ -363,6 +363,69 @@ class TestSubcommands:
         assert "Incident ID:" in result["text"]
 
 
+class TestApproveSubcommand:
+    """Batch C: /incident approve and /incident deny subcommands."""
+
+    def test_approve_no_id_lists_pending(self):
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "approve",
+        })
+        assert "No pending actions" in result["text"] or "Pending Actions" in result["text"]
+        assert result["response_type"] == "ephemeral"
+
+    def test_deny_no_id_shows_usage(self):
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "deny",
+        })
+        assert "Usage:" in result["text"]
+
+    def test_approve_nonexistent_action(self):
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "approve badid123",
+        })
+        assert "Action not found" in result["text"]
+
+    def test_help_includes_approve_deny(self):
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "help",
+        })
+        assert "/incident approve" in result["text"]
+        assert "/incident deny" in result["text"]
+
+
+class TestFastAckPattern:
+    """Batch C: Fast-ack pattern — incident ack includes 911 line, labels deterministic."""
+
+    def test_fast_ack_includes_911(self):
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL",
+            "text": "Smoke detected in kitchen",
+        })
+        assert "911" in result["text"]
+        assert "Incident Report Received" in result["text"]
+
+    def test_deterministic_block_kit_labeled(self):
+        from src.services.slack_transport import _post_incident_block_kit
+        import src.services.slack_transport as st
+
+        blocks_captured = []
+        class FakeClient:
+            def chat_postMessage(self, channel, text, blocks):
+                blocks_captured.extend(blocks)
+
+        result = st.run_incident_pipeline("Fire in the auditorium", source="slack")
+        _post_incident_block_kit(FakeClient(), "C123", result)
+
+        context_blocks = [b for b in blocks_captured if b.get("type") == "context"]
+        assert any("Deterministic pipeline" in str(b) for b in context_blocks)
+        assert any("fast fallback" in str(b) for b in context_blocks)
+
+
 class TestPlaybookFormatting:
     def test_all_playbooks_exist(self):
         from src.services.slack_transport import PLAYBOOKS, PLAYBOOK_MAP
@@ -447,3 +510,85 @@ class TestAppMention:
             },
         })
         assert result is None
+
+
+class TestMentionAgenticDispatch:
+    """@mention and DM fire the agentic Gemini fleet in a background thread."""
+
+    def test_mention_spawns_agentic_thread(self):
+        """_run_mention_pipeline must call _run_agentic_and_post."""
+        import src.services.slack_transport as st
+
+        targets = []
+        original_thread = st.threading.Thread
+
+        class CapturingThread:
+            def __init__(self, *, target, args, daemon=False):
+                targets.append(target.__name__)
+                self._t = original_thread(target=target, args=args, daemon=daemon)
+            def start(self):
+                pass
+
+        st.threading.Thread = CapturingThread
+        try:
+            st._run_mention_pipeline("C123", "U_PRINCIPAL", "Smoke in the hallway")
+        finally:
+            st.threading.Thread = original_thread
+
+        assert "_run_agentic_and_post" in targets
+
+    def test_slash_command_also_spawns_agentic_thread(self):
+        """Slash command _start_incident must also call _run_agentic_and_post."""
+        import src.services.slack_transport as st
+
+        targets = []
+        original_thread = st.threading.Thread
+
+        class CapturingThread:
+            def __init__(self, *, target, args, daemon=False):
+                targets.append(target.__name__)
+                self._t = original_thread(target=target, args=args, daemon=daemon)
+            def start(self):
+                pass
+
+        st.threading.Thread = CapturingThread
+        try:
+            st.dispatch_slash_command("/incident", {
+                "channel_id": "C123",
+                "user_id": "U_PRINCIPAL",
+                "text": "Fire in the kitchen",
+            })
+        finally:
+            st.threading.Thread = original_thread
+
+        assert "_run_agentic_and_post" in targets
+
+    def test_mention_ack_includes_911(self):
+        """The @mention fast ack must include the 911 line."""
+        import src.services.slack_transport as st
+
+        messages = []
+        original_post = st._post_bot_message
+
+        def capture_post(channel_id, text):
+            messages.append(text)
+
+        st._post_bot_message = capture_post
+        original_thread = st.threading.Thread
+
+        class NoopThread:
+            def __init__(self, **kw):
+                pass
+            def start(self):
+                pass
+
+        st.threading.Thread = NoopThread
+        try:
+            st._run_mention_pipeline("C123", "U_PRINCIPAL", "Gas leak in basement")
+        finally:
+            st._post_bot_message = original_post
+            st.threading.Thread = original_thread
+
+        ack_text = " ".join(messages)
+        assert "911" in ack_text
+        assert "Incident Report Received" in ack_text

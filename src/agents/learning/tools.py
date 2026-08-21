@@ -12,39 +12,81 @@ from typing import Any
 from src.core.memory_bank import MemoryBank
 
 
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a and not b:
+        return 0.0
+    union = a | b
+    if not union:
+        return 0.0
+    return len(a & b) / len(union)
+
+
 def find_similar_incidents(
     incident_type: str,
     facility_id: str = "",
+    tags: str = "",
     limit: int = 5,
 ) -> dict[str, Any]:
     """Find similar past incidents and their lessons from the Memory Bank.
 
+    Returns lessons ranked by Jaccard tag-overlap confidence, each with a
+    source citation (which incident/lesson, its recorded outcome).
+
     Args:
         incident_type: Type of incident to match (e.g. 'fire').
         facility_id: Optional facility filter.
+        tags: Comma-separated query tags for similarity ranking.
         limit: Max number of results.
 
     Returns:
-        List of lessons from similar past incidents.
+        List of lessons with confidence scores and source citations.
     """
     mb = MemoryBank.get()
-    lessons = mb.find_lessons(incident_type=incident_type, facility_id=facility_id, limit=limit)
+    lessons = mb.find_lessons(incident_type=incident_type, facility_id=facility_id, limit=50)
     stats = mb.get_outcome_stats(incident_type)
+
+    query_tags = {incident_type}
+    if facility_id:
+        query_tags.add(facility_id)
+    if tags:
+        query_tags.update(t.strip() for t in tags.split(",") if t.strip())
+
+    outcome_by_incident: dict[str, dict[str, Any]] = {}
+    for o in mb.incident_outcomes:
+        outcome_by_incident[o["incident_id"]] = o
+
+    scored = []
+    for lesson in lessons:
+        lesson_tags = set(lesson.get("tags", []))
+        confidence = _jaccard(query_tags, lesson_tags)
+
+        outcome = outcome_by_incident.get(lesson["incident_id"])
+        citation: dict[str, Any] = {
+            "incident_id": lesson["incident_id"],
+            "lesson_id": lesson["id"],
+        }
+        if outcome:
+            citation["outcome_summary"] = outcome.get("summary", "")
+            citation["response_time_seconds"] = outcome.get("response_time_seconds")
+
+        scored.append({
+            "title": lesson["title"],
+            "body": lesson["body"],
+            "category": lesson["category"],
+            "tags": lesson.get("tags", []),
+            "confidence": round(confidence, 3),
+            "source": citation,
+        })
+
+    scored.sort(key=lambda x: x["confidence"], reverse=True)
+    scored = scored[:limit]
 
     return {
         "incident_type": incident_type,
         "facility_id": facility_id,
-        "lessons_found": len(lessons),
-        "lessons": [
-            {
-                "title": l["title"],
-                "body": l["body"],
-                "category": l["category"],
-                "source_incident": l["incident_id"],
-                "tags": l.get("tags", []),
-            }
-            for l in lessons
-        ],
+        "query_tags": sorted(query_tags),
+        "lessons_found": len(scored),
+        "lessons": scored,
         "historical_stats": stats,
         "source": "memory_bank",
     }

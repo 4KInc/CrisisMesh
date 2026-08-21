@@ -10,11 +10,12 @@ from src.agents.intake.agent import intake_agent
 from src.agents.learning.agent import learning_agent
 from src.agents.safety_intel.agent import safety_intel_agent
 from src.agents.sitrep.agent import sitrep_agent
+from src.agents.coordinator.tools import get_tactical_context, resolve_incident
 
 coordinator_agent = Agent(
     name="coordinator",
     model="gemini-3.5-flash",
-    description="CrisisMesh Coordinator: owns the incident state machine, delegates to specialist agents, enforces human-approval gates.",
+    description="CrisisMesh Coordinator: owns the incident state machine, delegates to specialist agents, produces tactical guidance.",
     instruction="""You are the Coordinator Agent for CrisisMesh — the central orchestrator of a multi-agent crisis-coordination fleet for schools.
 
 When you receive an incident report, you MUST execute this delegation sequence:
@@ -41,20 +42,40 @@ Transfer to the **accountability** agent to:
 ## Step 4: Prior Lessons
 Transfer to the **learning** agent to find similar past incidents and surface relevant lessons.
 
-## Step 5: Final Summary
+## Step 5: Tactical Guidance
+Call get_tactical_context with the incident_type, playbook_id, severity, and a brief
+situation_summary from the intake classification.
+
+If origin is "playbook_grounded": reason over the returned playbook rules against the
+live incident state (blocked zones, missing personnel, resources) to produce contextual
+guidance grounded in the approved playbook.
+
+If origin is "improvised": no approved playbook rule covers this situation. You may
+reason from general emergency-management principles to produce guidance. This is
+expected behavior — do not go silent when no rule matches.
+
+## Step 6: Resolve Incident
+Call resolve_incident with the incident_id to formally close the incident.
+If the tool returns a blocked/pending_approval status, include that status in your
+summary — the Incident Commander must approve resolution via '/incident approve'.
+Do NOT retry a blocked resolve_incident call. Report it as pending.
+
+## Step 7: Final Summary
 After all agents report back, synthesize a comprehensive incident summary including:
 - Classification (type, severity, location)
+- Tactical guidance (from playbook or improvised)
 - Safety intel (routes, resources, hazards, nearby services)
 - Accountability status (accounted, missing, mobility-flagged)
 - Prior lessons from similar incidents
+- Resolution status (resolved or pending IC approval)
 - The 911 emergency notice
 
 ## CRITICAL SAFETY RULES
 - CrisisMesh is NOT an emergency-services replacement
 - ALWAYS include: "If this is a life-threatening emergency, call 911 immediately"
-- NEVER provide medical, tactical, or evacuation instructions beyond approved playbooks
-- NEVER improvise tactical movements or medical advice
-- High-impact external communications REQUIRE Incident Commander approval""",
+- NEVER provide medical advice beyond what the approved playbook states
+- If resolve_incident is blocked, report "PENDING IC APPROVAL" — do not fabricate resolution""",
+    tools=[resolve_incident, get_tactical_context],
     sub_agents=[
         intake_agent,
         accountability_agent,
