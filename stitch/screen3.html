@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SITREP / Incident Command Console - CrisisMesh</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary-fixed-variant": "#6a3b00",
+                      "primary": "#4cd7f6",
+                      "on-secondary-fixed": "#002109",
+                      "tertiary": "#ffb873",
+                      "on-secondary": "#003915",
+                      "tertiary-fixed-dim": "#ffb873",
+                      "secondary-fixed": "#6bff8f",
+                      "on-tertiary-container": "#5b3200",
+                      "on-primary-fixed-variant": "#004e5c",
+                      "on-secondary-container": "#004119",
+                      "secondary": "#4ae176",
+                      "outline-variant": "#3d494c",
+                      "on-tertiary-fixed": "#2d1600",
+                      "tertiary-container": "#e89337",
+                      "outline": "#869397",
+                      "surface-dim": "#0e1416",
+                      "primary-fixed-dim": "#4cd7f6",
+                      "on-surface": "#dee3e6",
+                      "on-surface-variant": "#bcc9cd",
+                      "primary-container": "#06b6d4",
+                      "secondary-container": "#00b954",
+                      "inverse-surface": "#dee3e6",
+                      "primary-fixed": "#acedff",
+                      "inverse-on-surface": "#2b3133",
+                      "surface-container": "#1b2122",
+                      "on-primary": "#003640",
+                      "error": "#ffb4ab",
+                      "surface-tint": "#4cd7f6",
+                      "on-tertiary": "#4b2800",
+                      "surface-container-lowest": "#090f11",
+                      "tertiary-fixed": "#ffdcbf",
+                      "surface-container-highest": "#303638",
+                      "on-background": "#dee3e6",
+                      "on-secondary-fixed-variant": "#005321",
+                      "inverse-primary": "#00687a",
+                      "on-primary-container": "#00424f",
+                      "on-primary-fixed": "#001f26",
+                      "surface-container-low": "#171d1e",
+                      "surface": "#0e1416",
+                      "on-error": "#690005",
+                      "surface-container-high": "#252b2d",
+                      "surface-bright": "#343a3c",
+                      "surface-variant": "#303638",
+                      "secondary-fixed-dim": "#4ae176",
+                      "background": "#0e1416",
+                      "error-container": "#93000a",
+                      "on-error-container": "#ffdad6",
+                      
+                      // Explicit requirements overrides
+                      "tactical-bg": "#0a0e17",
+                      "tactical-surface": "#111827",
+                      "tactical-border": "#1f2937",
+                      "status-safe": "#22c55e",
+                      "status-injured": "#ef4444",
+                      "status-need-help": "#f97316",
+                      "status-evacuated": "#06b6d4",
+                      "status-unknown": "#9ca3af"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "container-padding": "24px",
+                      "stack-sm": "8px",
+                      "stack-lg": "32px",
+                      "gutter": "16px",
+                      "unit": "4px",
+                      "stack-md": "16px"
+              },
+              "fontFamily": {
+                      "body-lg": ["JetBrains Mono"],
+                      "headline-md": ["JetBrains Mono"],
+                      "body-md": ["JetBrains Mono"],
+                      "label-caps": ["JetBrains Mono"],
+                      "headline-sm": ["JetBrains Mono"],
+                      "mono-data": ["JetBrains Mono"],
+                      "headline-lg-mobile": ["JetBrains Mono"],
+                      "display-911": ["JetBrains Mono"],
+                      "headline-lg": ["JetBrains Mono"]
+              },
+              "fontSize": {
+                      "body-lg": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                      "headline-md": ["24px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                      "body-md": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                      "label-caps": ["12px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                      "headline-sm": ["18px", {"lineHeight": "1.4", "fontWeight": "700"}],
+                      "mono-data": ["13px", {"lineHeight": "1.0", "fontWeight": "500"}],
+                      "headline-lg-mobile": ["24px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                      "display-911": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.05em", "fontWeight": "800"}],
+                      "headline-lg": ["32px", {"lineHeight": "1.2", "fontWeight": "700"}]
+              }
+            }
+          }
+        }
+    </script>
+<style type="text/tailwindcss">
+        @layer utilities {
+            .tactical-border {
+                @apply border border-tactical-border;
+            }
+            .tactical-card {
+                @apply bg-tactical-surface tactical-border rounded;
+            }
+            .chip-safe { @apply border-l-2 border-l-status-safe bg-status-safe/10 text-status-safe; }
+            .chip-injured { @apply border-l-2 border-l-status-injured bg-status-injured/10 text-status-injured; }
+            .chip-need-help { @apply border-l-2 border-l-status-need-help bg-status-need-help/10 text-status-need-help; }
+            .chip-evacuated { @apply border-l-2 border-l-status-evacuated bg-status-evacuated/10 text-status-evacuated; }
+            .chip-unknown { @apply border-l-2 border-l-status-unknown bg-status-unknown/10 text-status-unknown; }
+            
+            .blinking-live {
+                animation: blinker 1.5s linear infinite;
+            }
+            @keyframes blinker {
+                50% { opacity: 0.3; }
+            }
+        }
+    </style>
+</head>
+<body class="bg-tactical-bg text-on-surface font-body-md antialiased overflow-x-hidden selection:bg-primary/30 selection:text-primary">
+<!-- TopAppBar JSON Component -->
+<header class="fixed top-0 w-full h-[80px] z-[100] bg-[#ef4444] text-white flex justify-between items-center px-container-padding border-none shadow-[0_0_15px_rgba(239,68,68,0.6)] animate-pulse">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[32px]" data-icon="emergency" style="font-variation-settings: 'FILL' 1;">emergency</span>
+<div class="flex items-center gap-4">
+<h1 class="text-display-911 font-display-911 text-white uppercase tracking-tighter">EMERGENCY INCIDENT LIVE</h1>
+<span class="bg-white text-[#ef4444] px-2 py-1 rounded text-label-caps font-label-caps font-bold blinking-live">LIVE</span>
+</div>
+</div>
+<button class="border-2 border-white px-4 py-2 text-white font-label-caps text-label-caps hover:bg-white hover:text-[#ef4444] transition-colors scale-95 active:scale-90 flex items-center gap-2">
+            End Incident
+        </button>
+</header>
+<!-- Alert Banner from Prompt (Below main app bar) -->
+<div class="fixed top-[80px] w-full z-40 bg-status-injured text-white text-center py-2 font-mono-data text-mono-data font-bold border-b-2 border-white/20 tracking-widest shadow-[0_4px_10px_rgba(239,68,68,0.3)]">
+<span class="material-symbols-outlined align-middle text-[16px] mr-2">warning</span>
+        IF THIS IS A LIFE-THREATENING EMERGENCY, CALL 911 IMMEDIATELY
+    </div>
+<!-- SideNavBar JSON Component -->
+<nav class="fixed left-0 top-0 h-full w-[220px] z-50 bg-surface-container-lowest border-r border-outline-variant flex flex-col pt-[120px] transition-transform translate-x-1 duration-150">
+<div class="px-container-padding mb-8">
+<h2 class="text-headline-md font-headline-md font-bold text-primary tracking-widest">CRISISMESH</h2>
+<p class="text-mono-data font-mono-data text-on-surface-variant mt-1 opacity-70">COMMAND CONSOLE</p>
+</div>
+<div class="flex-1 flex flex-col gap-1">
+<a class="text-primary font-bold border-l-4 border-primary bg-primary/10 px-4 py-3 flex items-center gap-3 text-headline-sm font-headline-sm hover:bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+                SITREP
+            </a>
+<a class="text-on-surface-variant font-mono-data px-4 py-3 opacity-70 flex items-center gap-3 hover:bg-surface-container-high hover:text-primary transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+                Accountability
+            </a>
+<a class="text-on-surface-variant font-mono-data px-4 py-3 opacity-70 flex items-center gap-3 hover:bg-surface-container-high hover:text-primary transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="sensors">sensors</span>
+                Agent Stream
+            </a>
+<a class="text-on-surface-variant font-mono-data px-4 py-3 opacity-70 flex items-center gap-3 hover:bg-surface-container-high hover:text-primary transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="gavel">gavel</span>
+                Governance
+            </a>
+</div>
+<div class="mt-auto flex flex-col gap-1 border-t border-outline-variant pt-4 mb-4">
+<div class="px-4 mb-2">
+<span class="inline-block px-2 py-1 bg-surface-container-high border border-outline-variant text-primary text-label-caps font-label-caps rounded w-full text-center">Role: Commander</span>
+</div>
+<a class="text-on-surface-variant font-mono-data px-4 py-2 opacity-70 flex items-center gap-3 hover:bg-surface-container-high hover:text-primary transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+                Settings
+            </a>
+<a class="text-on-surface-variant font-mono-data px-4 py-2 opacity-70 flex items-center gap-3 hover:bg-surface-container-high hover:text-primary transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+                Support
+            </a>
+<div class="px-4 mt-4 flex items-center gap-2 text-mono-data font-mono-data text-on-surface-variant">
+<div class="w-2 h-2 rounded-full bg-status-safe shadow-[0_0_8px_#22c55e]"></div>
+                System Online
+            </div>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="ml-[220px] pt-[130px] p-container-padding min-h-screen">
+<!-- Header Controls Row -->
+<div class="flex justify-between items-center mb-6">
+<h2 class="text-headline-md font-headline-md text-on-surface flex items-center gap-3">
+<span class="material-symbols-outlined text-primary">target</span>
+                 SITUATION REPORT
+             </h2>
+<!-- Toggle Switch -->
+<div class="flex bg-tactical-surface p-1 rounded-full tactical-border">
+<button class="px-4 py-1.5 rounded-full bg-primary text-on-primary text-label-caps font-label-caps font-bold transition-all shadow-[0_0_10px_rgba(76,215,246,0.3)]">Commander</button>
+<button class="px-4 py-1.5 rounded-full text-on-surface-variant text-label-caps font-label-caps hover:text-on-surface transition-all">Stakeholder</button>
+</div>
+</div>
+<!-- Stat Cards Row -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-gutter mb-6">
+<!-- Stat 1 -->
+<div class="tactical-card p-4 relative overflow-hidden group">
+<div class="absolute inset-0 bg-status-injured/5 group-hover:bg-status-injured/10 transition-colors pointer-events-none"></div>
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-status-injured"></div>
+<div class="flex justify-between items-start mb-2">
+<span class="text-label-caps font-label-caps text-on-surface-variant">INCIDENT TYPE</span>
+<span class="material-symbols-outlined text-status-injured">local_fire_department</span>
+</div>
+<div class="text-headline-lg font-headline-lg text-status-injured font-bold tracking-tight">FIRE</div>
+<div class="text-mono-data font-mono-data text-on-surface-variant mt-2 flex items-center gap-2">
+<span class="w-1.5 h-1.5 bg-status-injured rounded-full blinking-live"></span> Active Alarm
+                </div>
+</div>
+<!-- Stat 2 -->
+<div class="tactical-card p-4 relative overflow-hidden group">
+<div class="absolute inset-0 bg-status-need-help/5 group-hover:bg-status-need-help/10 transition-colors pointer-events-none"></div>
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-status-need-help"></div>
+<div class="flex justify-between items-start mb-2">
+<span class="text-label-caps font-label-caps text-on-surface-variant">SEVERITY LEVEL</span>
+<span class="material-symbols-outlined text-status-need-help">warning</span>
+</div>
+<div class="text-headline-lg font-headline-lg text-status-need-help font-bold tracking-tight">HIGH</div>
+<div class="text-mono-data font-mono-data text-on-surface-variant mt-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]">arrow_upward</span> Escalating
+                </div>
+</div>
+<!-- Stat 3 -->
+<div class="tactical-card p-4 relative overflow-hidden group">
+<div class="absolute inset-0 bg-status-evacuated/5 group-hover:bg-status-evacuated/10 transition-colors pointer-events-none"></div>
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-status-evacuated"></div>
+<div class="flex justify-between items-start mb-2">
+<span class="text-label-caps font-label-caps text-on-surface-variant">PERSONNEL TRACKED</span>
+<span class="material-symbols-outlined text-status-evacuated">badge</span>
+</div>
+<div class="text-headline-lg font-headline-lg text-status-evacuated font-bold tracking-tight">34</div>
+<div class="flex gap-2 mt-2">
+<span class="chip-safe px-2 py-0.5 text-[10px] uppercase font-bold">20 Safe</span>
+<span class="chip-unknown px-2 py-0.5 text-[10px] uppercase font-bold">14 Unk</span>
+</div>
+</div>
+</div>
+<!-- Main 2-Column Data Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter mb-6">
+<!-- Location Details Panel -->
+<div class="tactical-card p-5 flex flex-col">
+<div class="flex items-center gap-2 mb-4 border-b border-tactical-border pb-3">
+<span class="material-symbols-outlined text-primary">my_location</span>
+<h3 class="text-headline-sm font-headline-sm text-on-surface">LOCATION DETAILS</h3>
+</div>
+<div class="grid grid-cols-[120px_1fr] gap-y-4 text-body-md font-body-md flex-1">
+<div class="text-on-surface-variant font-mono-data text-mono-data">INCIDENT ID</div>
+<div class="text-primary font-mono-data text-mono-data bg-primary/10 px-2 py-1 rounded inline-block w-fit border border-primary/30">FIRE-2026-001</div>
+<div class="text-on-surface-variant font-mono-data text-mono-data mt-2">LOCATION</div>
+<div class="mt-2 text-on-surface">
+<div class="font-bold">West Wing Floor 2</div>
+<div class="text-on-surface-variant">Room 215 - Science Lab</div>
+</div>
+<div class="text-on-surface-variant font-mono-data text-mono-data mt-2">PLAYBOOK</div>
+<div class="mt-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-status-safe">check_circle</span>
+<span class="font-mono-data text-mono-data border-b border-dashed border-status-safe text-status-safe">playbook-fire-v1</span>
+</div>
+</div>
+</div>
+<!-- Evacuation Routes Panel -->
+<div class="tactical-card p-5 flex flex-col">
+<div class="flex items-center justify-between mb-4 border-b border-tactical-border pb-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-status-evacuated">directions_run</span>
+<h3 class="text-headline-sm font-headline-sm text-on-surface">EVACUATION ROUTES</h3>
+</div>
+<span class="bg-status-safe/20 text-status-safe px-2 py-1 rounded text-[10px] font-bold border border-status-safe/50 flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">verified</span> NO BLOCKED ROUTES
+                    </span>
+</div>
+<div class="flex flex-col gap-3 flex-1">
+<!-- Route 1 -->
+<div class="bg-surface-container-high p-3 border-l-2 border-l-status-evacuated flex items-center justify-between hover:bg-surface-bright transition-colors cursor-pointer">
+<div class="flex items-center gap-3">
+<div class="bg-tactical-bg p-2 rounded text-status-evacuated flex items-center justify-center">
+<span class="material-symbols-outlined">exit_to_app</span>
+</div>
+<div>
+<div class="font-bold text-body-md font-body-md">Primary: Stairwell B</div>
+<div class="text-mono-data font-mono-data text-on-surface-variant">Clear - Direct to Athletic Field</div>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+</div>
+<!-- Route 2 -->
+<div class="bg-surface-container-high p-3 border-l-2 border-l-status-evacuated flex items-center justify-between hover:bg-surface-bright transition-colors cursor-pointer">
+<div class="flex items-center gap-3">
+<div class="bg-tactical-bg p-2 rounded text-primary flex items-center justify-center relative">
+<span class="material-symbols-outlined">accessible_forward</span>
+</div>
+<div>
+<div class="font-bold text-body-md font-body-md">ADA Route: Elevator West</div>
+<div class="text-mono-data font-mono-data text-on-surface-variant text-status-need-help">Manual override required</div>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Secondary Info Row -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-gutter mb-6">
+<!-- Assembly Point -->
+<div class="tactical-card p-4 border-l-2 border-l-primary flex items-center gap-4">
+<div class="bg-primary/10 p-3 rounded-full text-primary">
+<span class="material-symbols-outlined text-[24px]">groups</span>
+</div>
+<div>
+<div class="text-label-caps font-label-caps text-on-surface-variant mb-1">ASSEMBLY POINT</div>
+<div class="text-headline-sm font-headline-sm text-on-surface">Athletic Field</div>
+<div class="text-mono-data font-mono-data text-primary mt-1">Capacity: 500</div>
+</div>
+</div>
+<!-- Fire Station -->
+<div class="tactical-card p-4 border-l-2 border-l-status-injured flex items-center gap-4">
+<div class="bg-status-injured/10 p-3 rounded-full text-status-injured">
+<span class="material-symbols-outlined text-[24px]">fire_truck</span>
+</div>
+<div>
+<div class="text-label-caps font-label-caps text-on-surface-variant mb-1">NEAREST FIRE STATION</div>
+<div class="text-headline-sm font-headline-sm text-on-surface">Nashville Fire Station 9</div>
+<div class="text-mono-data font-mono-data text-status-injured mt-1 flex items-center gap-1 font-bold">
+<span class="material-symbols-outlined text-[14px]">timer</span> ETA: 3 min
+                    </div>
+</div>
+</div>
+</div>
+<!-- Actions & Lessons Row -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-gutter">
+<!-- Prior Lessons (Takes up 1/3) -->
+<div class="tactical-card p-4 lg:col-span-1">
+<div class="flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined text-tertiary">history_edu</span>
+<h3 class="text-headline-sm font-headline-sm text-on-surface">PRIOR LESSONS</h3>
+</div>
+<div class="flex flex-col gap-3">
+<div class="border-l-2 border-l-outline p-2 bg-surface-container-high text-body-md font-body-md">
+<span class="text-primary font-mono-data text-[11px] block mb-1">2024 Drill</span>
+                        Science lab ventilation delayed smoke clearing. Ensure manual override is engaged.
+                    </div>
+<div class="border-l-2 border-l-outline p-2 bg-surface-container-high text-body-md font-body-md">
+<span class="text-primary font-mono-data text-[11px] block mb-1">2023 Drill</span>
+                        West stairwell door stuck open; send maintenance immediately to check latch.
+                    </div>
+<div class="border-l-2 border-l-outline p-2 bg-surface-container-high text-body-md font-body-md">
+<span class="text-primary font-mono-data text-[11px] block mb-1">2022 Drill</span>
+                        ADA ramp at west exit slippery when wet; caution required.
+                    </div>
+</div>
+</div>
+<!-- Declare Incident CTA Area (Takes up 2/3) -->
+<div class="tactical-card p-5 lg:col-span-2 border-2 border-status-injured bg-[#111827]">
+<div class="flex items-center gap-2 mb-4 border-b border-tactical-border pb-3">
+<span class="material-symbols-outlined text-status-injured">campaign</span>
+<h3 class="text-headline-sm font-headline-sm text-white">DECLARE INCIDENT</h3>
+</div>
+<div class="mb-4">
+<label class="block text-label-caps font-label-caps text-on-surface-variant mb-2">BROADCAST MESSAGE</label>
+<textarea class="w-full bg-tactical-bg border border-tactical-border text-on-surface font-mono-data p-3 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none rounded" rows="3">INCIDENT ACTIVE: FIRE reported in West Wing, Floor 2. Initiate evacuation to Athletic Field immediately.</textarea>
+</div>
+<div class="flex flex-wrap gap-4 items-center">
+<button class="bg-[#36C5F0] hover:bg-[#2EB67D] text-white font-headline-sm text-headline-sm px-6 py-3 rounded flex items-center gap-2 transition-colors border border-[#36C5F0]">
+<span class="material-symbols-outlined">forum</span>
+                        Declare via Slack
+                    </button>
+<button class="bg-transparent border border-outline hover:border-on-surface text-on-surface font-headline-sm text-headline-sm px-6 py-3 rounded flex items-center gap-2 transition-colors">
+<span class="material-symbols-outlined">language</span>
+                        Web Fallback
+                    </button>
+<div class="ml-auto text-mono-data font-mono-data text-on-surface-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">lock</span> Secure Channel
+                    </div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

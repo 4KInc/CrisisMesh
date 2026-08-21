@@ -1,14 +1,19 @@
 """Cloud Run HTTP server — exposes CrisisMesh APIs for incident management.
 
 Endpoints:
-  POST /incident          — deterministic incident pipeline (fast, no Gemini)
-  POST /incident/agentic  — Gemini-driven ADK Runner pipeline (model-driven delegation)
-  POST /checkin            — process a check-in
-  GET  /incident/{id}      — get incident status + accountability
-  GET  /registry           — view agent registry
-  GET  /trace/{id}         — get observability trace
-  GET  /audit/{id}         — export audit bundle
-  GET  /health             — health check
+  POST /incident                — deterministic incident pipeline (fast, no Gemini)
+  POST /incident/agentic        — Gemini-driven ADK Runner pipeline (model-driven delegation)
+  POST /incident/agentic/stream — SSE streaming variant of the agentic pipeline
+  POST /checkin                 — process a check-in
+  POST /slack/commands          — Slack slash commands (Events API mode)
+  POST /slack/events            — Slack event subscriptions (reaction_added, etc.)
+  POST /sms                     — Twilio inbound SMS webhook
+  GET  /incident/{id}           — get incident status + accountability
+  GET  /incident/latest         — latest incident (for console real-time binding)
+  GET  /registry                — view agent registry
+  GET  /trace/{id}              — get observability trace
+  GET  /audit/{id}              — export audit bundle
+  GET  /health                  — health check
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ import os
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from src.config.agent_registry import AGENT_REGISTRY
 from src.core.agent_gateway import AgentGateway
@@ -47,6 +52,18 @@ from src.agents.safety_intel.tools import (
 from src.agents.sitrep.tools import generate_responder_card, generate_sitrep
 from src.agents.learning.tools import find_similar_incidents, store_lesson
 from src.models.events import EventType
+from src.services.slack_transport import (
+    dispatch_slash_command,
+    dispatch_slack_event,
+    get_latest_incident,
+    set_latest_incident,
+    verify_slack_signature,
+)
+from src.services.sms_transport import (
+    handle_inbound_sms,
+    has_twilio_credentials,
+    verify_twilio_signature,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +85,18 @@ def _read_body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
     if length == 0:
         return {}
     return json.loads(handler.rfile.read(length))
+
+
+def _read_raw_body(handler: BaseHTTPRequestHandler) -> str:
+    length = int(handler.headers.get("Content-Length", 0))
+    if length == 0:
+        return ""
+    return handler.rfile.read(length).decode("utf-8")
+
+
+def _parse_form(raw: str) -> dict[str, str]:
+    parsed = parse_qs(raw, keep_blank_values=True)
+    return {k: v[0] for k, v in parsed.items()}
 
 
 async def _run_agentic(report: str) -> dict[str, Any]:
@@ -150,6 +179,90 @@ async def _run_agentic(report: str) -> dict[str, Any]:
         "event_log": event_log,
         "final_response": final_text,
     }
+
+
+def _sse_write(wfile, data: dict) -> None:
+    wfile.write(f"data: {json.dumps(data, default=str)}\n\n".encode())
+    wfile.flush()
+
+
+async def _stream_agentic_sse(wfile, report: str) -> None:
+    """Stream ADK Runner events as SSE lines."""
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai.types import Content, Part
+    from src.agents.coordinator.agent import coordinator_agent
+
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name="crisismesh",
+        user_id="commander",
+    )
+    runner = Runner(
+        agent=coordinator_agent,
+        app_name="crisismesh",
+        session_service=session_service,
+    )
+    user_message = Content(role="user", parts=[Part(text=report)])
+
+    delegations = 0
+    tool_calls = 0
+    total_events = 0
+
+    async for event in runner.run_async(
+        user_id="commander",
+        session_id=session.id,
+        new_message=user_message,
+    ):
+        author = getattr(event, "author", "")
+        ts = datetime.now(timezone.utc).isoformat()
+
+        if event.actions and event.actions.transfer_to_agent:
+            delegations += 1
+            total_events += 1
+            _sse_write(wfile, {
+                "type": "delegation",
+                "author": author,
+                "target_agent": event.actions.transfer_to_agent,
+                "timestamp": ts,
+            })
+
+        elif event.content and event.content.parts:
+            for part in event.content.parts:
+                if hasattr(part, "function_call") and part.function_call:
+                    fc = part.function_call
+                    tool_calls += 1
+                    total_events += 1
+                    _sse_write(wfile, {
+                        "type": "tool_call",
+                        "author": author,
+                        "tool_name": fc.name if hasattr(fc, "name") else str(fc),
+                        "tool_args": _safe_args(fc.args if hasattr(fc, "args") else {}),
+                        "timestamp": ts,
+                    })
+                elif hasattr(part, "function_response") and part.function_response:
+                    total_events += 1
+                    _sse_write(wfile, {
+                        "type": "tool_result",
+                        "author": author,
+                        "tool_name": part.function_response.name if hasattr(part.function_response, "name") else "",
+                        "timestamp": ts,
+                    })
+                elif hasattr(part, "text") and part.text and event.is_final_response():
+                    _sse_write(wfile, {
+                        "type": "final_response",
+                        "text": part.text,
+                        "timestamp": ts,
+                    })
+
+    _sse_write(wfile, {
+        "type": "summary",
+        "model": "gemini-3.5-flash",
+        "delegations": delegations,
+        "tool_calls": tool_calls,
+        "total_events": total_events,
+    })
+    _sse_write(wfile, {"type": "done"})
 
 
 def _safe_args(obj: Any) -> Any:
@@ -236,11 +349,17 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             gateway = AgentGateway.get()
             _json_response(self, {"denials": gateway.get_deny_log()})
 
+        elif path == "/incident/latest":
+            latest = get_latest_incident()
+            if latest:
+                _json_response(self, latest)
+            else:
+                _json_response(self, {"incident_id": None}, 200)
+
         elif path.startswith("/incident/"):
-            # Check it's not /incident/agentic (POST only)
             incident_id = path.split("/incident/")[1]
-            if incident_id == "agentic":
-                _json_response(self, {"error": "Use POST for /incident/agentic"}, 405)
+            if incident_id.startswith("agentic"):
+                _json_response(self, {"error": "Use POST for this endpoint"}, 405)
             else:
                 summary = compute_accountability_summary(incident_id)
                 _json_response(self, summary)
@@ -252,7 +371,39 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
-        if path == "/incident/agentic":
+        if path == "/incident/agentic/stream":
+            body = _read_body(self)
+            report = body.get("report", "")
+
+            if not report:
+                _json_response(self, {"error": "Missing 'report' field"}, 400)
+                return
+
+            scan = ContentScanner.get().scan_message(report)
+            if scan["blocked"]:
+                _json_response(self, {
+                    "blocked": True,
+                    "reason": scan["reason"],
+                    "policy": scan["policy"],
+                    "quarantined_text": scan.get("quarantined_text", ""),
+                }, 403)
+                return
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            try:
+                loop = asyncio.new_event_loop()
+                loop.run_until_complete(_stream_agentic_sse(self.wfile, report))
+                loop.close()
+            except Exception as e:
+                logger.exception("Streaming endpoint error")
+                _sse_write(self.wfile, {"type": "error", "message": str(e)})
+
+        elif path == "/incident/agentic":
             body = _read_body(self)
             report = body.get("report", "")
 
@@ -283,6 +434,70 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
                     "error": str(e),
                     "hint": "Ensure GOOGLE_GENAI_USE_VERTEXAI=TRUE and GOOGLE_CLOUD_PROJECT are set",
                 }, 500)
+
+        elif path == "/slack/commands":
+            raw = _read_raw_body(self)
+            signing_secret = os.environ.get("SLACK_SIGNING_SECRET", "")
+            ts = self.headers.get("X-Slack-Request-Timestamp", "")
+            sig = self.headers.get("X-Slack-Signature", "")
+
+            if signing_secret and not verify_slack_signature(signing_secret, ts, raw, sig):
+                _json_response(self, {"error": "Invalid signature"}, 401)
+                return
+
+            form = _parse_form(raw)
+            command = form.get("command", "")
+            result = dispatch_slash_command(command, form)
+            _json_response(self, result)
+
+        elif path == "/slack/events":
+            raw = _read_raw_body(self)
+            signing_secret = os.environ.get("SLACK_SIGNING_SECRET", "")
+            ts = self.headers.get("X-Slack-Request-Timestamp", "")
+            sig = self.headers.get("X-Slack-Signature", "")
+
+            if signing_secret and not verify_slack_signature(signing_secret, ts, raw, sig):
+                _json_response(self, {"error": "Invalid signature"}, 401)
+                return
+
+            payload = json.loads(raw) if raw else {}
+            result = dispatch_slack_event(payload)
+            if result:
+                _json_response(self, result)
+            else:
+                _json_response(self, {"ok": True})
+
+        elif path == "/sms":
+            if not has_twilio_credentials():
+                self.send_response(503)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(
+                    b"SMS transport not configured. "
+                    b"Set TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER env vars."
+                )
+                return
+
+            raw = _read_raw_body(self)
+            form = _parse_form(raw)
+            auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+            twilio_sig = self.headers.get("X-Twilio-Signature", "")
+            request_url = f"https://{self.headers.get('Host', '')}{self.path}"
+
+            if not verify_twilio_signature(auth_token, request_url, form, twilio_sig):
+                _json_response(self, {"error": "Invalid signature"}, 401)
+                return
+
+            result = handle_inbound_sms(
+                from_number=form.get("From", ""),
+                body=form.get("Body", ""),
+                request_url=request_url,
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "text/xml")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(result["twiml"].encode())
 
         elif path == "/incident":
             body = _read_body(self)
@@ -350,8 +565,9 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
 
             loop.close()
 
-            _json_response(self, {
+            result_data = {
                 "incident_id": incident_id,
+                "report": report,
                 "classification": classification,
                 "location": location,
                 "playbook": playbook,
@@ -365,7 +581,9 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
                 },
                 "prior_lessons": lessons,
                 "trace_id": trace.trace_id,
-            }, 201)
+            }
+            set_latest_incident(result_data, source="web")
+            _json_response(self, result_data, 201)
 
         elif path == "/checkin":
             body = _read_body(self)
