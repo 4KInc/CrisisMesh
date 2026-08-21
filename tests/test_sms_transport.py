@@ -119,3 +119,146 @@ class TestInboundSMS:
         assert CHECKIN_KEYWORDS["hurt"] == "injured"
         assert CHECKIN_KEYWORDS["evacuated"] == "evacuated"
         assert CHECKIN_KEYWORDS["out"] == "evacuated"
+
+
+class TestOutboundSMS:
+    def test_can_send_sms_false_without_creds(self, monkeypatch):
+        monkeypatch.delenv("TWILIO_ACCOUNT_SID", raising=False)
+        monkeypatch.delenv("TWILIO_AUTH_TOKEN", raising=False)
+        monkeypatch.delenv("TWILIO_PHONE_NUMBER", raising=False)
+        from src.services.sms_transport import can_send_sms
+        assert can_send_sms() is False
+
+    def test_can_send_sms_true_with_creds(self, monkeypatch):
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_TEST")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "test_token")
+        monkeypatch.setenv("TWILIO_PHONE_NUMBER", "+15550001234")
+        from src.services.sms_transport import can_send_sms
+        assert can_send_sms() is True
+
+    def test_send_sms_no_creds(self, monkeypatch):
+        monkeypatch.delenv("TWILIO_ACCOUNT_SID", raising=False)
+        from src.services.sms_transport import send_sms
+        result = send_sms("+15551234567", "Test message")
+        assert result["delivered"] is False
+        assert "not configured" in result["detail"]
+
+    def test_send_sms_success(self, monkeypatch):
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_TEST")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "test_token")
+        monkeypatch.setenv("TWILIO_PHONE_NUMBER", "+15550001234")
+
+        import src.services.sms_transport as sms_mod
+
+        class FakeResponse:
+            ok = True
+            status_code = 201
+            def json(self):
+                return {"sid": "SM_FAKE_123", "status": "queued"}
+
+        captured = {}
+
+        def fake_post(url, auth, data, timeout):
+            captured["url"] = url
+            captured["auth"] = auth
+            captured["data"] = data
+            return FakeResponse()
+
+        import requests as req_mod
+        original_post = req_mod.post
+        req_mod.post = fake_post
+        try:
+            result = sms_mod.send_sms("+15559876543", "SITREP text")
+        finally:
+            req_mod.post = original_post
+
+        assert result["delivered"] is True
+        assert result["provider_id"] == "SM_FAKE_123"
+        assert "AC_TEST" in captured["url"]
+        assert captured["data"]["To"] == "+15559876543"
+        assert captured["data"]["From"] == "+15550001234"
+
+    def test_send_sms_twilio_rejects(self, monkeypatch):
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_TEST")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "test_token")
+        monkeypatch.setenv("TWILIO_PHONE_NUMBER", "+15550001234")
+
+        import src.services.sms_transport as sms_mod
+
+        class FakeResponse:
+            ok = False
+            status_code = 400
+            text = "Invalid To number"
+            def json(self):
+                return {"message": "Invalid To number"}
+
+        import requests as req_mod
+        original_post = req_mod.post
+        req_mod.post = lambda *a, **kw: FakeResponse()
+        try:
+            result = sms_mod.send_sms("+15559876543", "test")
+        finally:
+            req_mod.post = original_post
+
+        assert result["delivered"] is False
+        assert "rejected" in result["detail"].lower()
+
+
+class TestSMSAgenticDispatch:
+    def test_incident_spawns_agentic_thread_with_creds(self, monkeypatch):
+        """SMS incident spawns background agentic thread when outbound creds set."""
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_TEST")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "test_token")
+        monkeypatch.setenv("TWILIO_PHONE_NUMBER", "+15550001234")
+
+        import src.services.sms_transport as sms_mod
+
+        targets = []
+        original_thread = sms_mod.threading.Thread
+
+        class CapturingThread:
+            def __init__(self, *, target, args, daemon=False):
+                targets.append(target.__name__)
+            def start(self):
+                pass
+
+        sms_mod.threading.Thread = CapturingThread
+        try:
+            result = sms_mod.handle_inbound_sms("+15559876543", "Fire in the gym")
+        finally:
+            sms_mod.threading.Thread = original_thread
+
+        assert result["action"] == "incident"
+        assert "_run_agentic_and_sms" in targets
+
+    def test_incident_no_agentic_without_creds(self, monkeypatch):
+        """SMS incident does NOT spawn agentic thread when no outbound creds."""
+        monkeypatch.delenv("TWILIO_ACCOUNT_SID", raising=False)
+        monkeypatch.delenv("TWILIO_PHONE_NUMBER", raising=False)
+
+        import src.services.sms_transport as sms_mod
+
+        targets = []
+        original_thread = sms_mod.threading.Thread
+
+        class CapturingThread:
+            def __init__(self, *, target, args, daemon=False):
+                targets.append(target.__name__)
+            def start(self):
+                pass
+
+        sms_mod.threading.Thread = CapturingThread
+        try:
+            result = sms_mod.handle_inbound_sms("+15559876543", "Earthquake felt strongly")
+        finally:
+            sms_mod.threading.Thread = original_thread
+
+        assert result["action"] == "incident"
+        assert "_run_agentic_and_sms" not in targets
+
+    def test_sms_sitrep_includes_911(self, monkeypatch):
+        """The immediate TwiML ack must include the 911 line."""
+        from src.services.sms_transport import handle_inbound_sms
+        result = handle_inbound_sms("+15559876543", "Gas leak in the basement")
+        assert result["action"] == "incident"
+        assert "911" in result["twiml"]

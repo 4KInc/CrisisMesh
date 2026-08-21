@@ -40,7 +40,7 @@ CrisisMesh has four trigger paths. Each is human-initiated — a person sends a 
 |---------|:---:|:---:|
 | Slack `/incident` command | Yes (fast ack) | Yes (background) |
 | Slack @mention / DM | Yes (fast ack) | Yes (background) |
-| SMS (Twilio) | Yes | No — TwiML ack only |
+| SMS (Twilio) | Yes (TwiML ack) | Yes (background, follow-up SMS) |
 | WhatsApp (Meta) | Yes | No — confirmation only |
 | Command Console | Yes ("Quick Declare") | Yes ("Declare Incident") |
 
@@ -72,13 +72,13 @@ CrisisMesh has four trigger paths. Each is human-initiated — a person sends a 
 
 **Reaction check-ins:** Each emoji reaction posts a public confirmation with the running check-in count and missing personnel list. When all personnel are accounted for, CrisisMesh announces it.
 
-### 2. SMS (Twilio Webhook) — Deterministic Only
+### 2. SMS (Twilio Webhook)
 
-Text the CrisisMesh number with an incident description. The system classifies and responds with a TwiML confirmation including the incident ID and a 911 reminder. Reply with `SAFE`, `HELP`, `INJURED`, or `EVACUATED` to check in.
+Text the CrisisMesh number with an incident description. The system classifies and responds with an immediate TwiML confirmation including the incident ID and a 911 reminder. The Gemini agent fleet runs in the background; when it finishes, a follow-up SMS delivers the fleet SITREP. Reply with `SAFE`, `HELP`, `INJURED`, or `EVACUATED` to check in.
 
-SMS runs the deterministic pipeline only (no Gemini agent fleet). The Twilio webhook must return TwiML synchronously; the agentic pipeline's latency exceeds Twilio's response timeout. The same incident is visible in the command console for the Gemini-driven stream.
+The immediate TwiML ack uses the deterministic pipeline (fast). The background agentic fleet + follow-up SMS require outbound credentials (`TWILIO_ACCOUNT_SID` + `TWILIO_PHONE_NUMBER`). Without outbound creds, the agentic thread does not spawn and SMS is deterministic-only. Uses the Twilio REST API directly via `requests` — no Twilio SDK needed.
 
-> Requires `TWILIO_AUTH_TOKEN` env var. Without it, the `/sms` endpoint returns HTTP 503 with setup instructions.
+> Requires `TWILIO_AUTH_TOKEN` env var for inbound. Add `TWILIO_ACCOUNT_SID` and `TWILIO_PHONE_NUMBER` for outbound follow-up. Without `TWILIO_AUTH_TOKEN`, the `/sms` endpoint returns HTTP 503.
 
 ### 3. WhatsApp (Business API) — Deterministic Only
 
@@ -156,7 +156,7 @@ Open the web console and type a report in the DECLARE INCIDENT panel. "DECLARE I
 | **WhatsApp** | WhatsApp Business Cloud API (Meta) | Inbound message incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 427 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 435 tests, no GCP required |
 
 ---
 
@@ -320,7 +320,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (427 tests, no GCP required)
+# Run tests (435 tests, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -600,7 +600,7 @@ CrisisMesh/
 
 ## Test Coverage
 
-427 passing tests covering:
+435 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries
@@ -613,7 +613,7 @@ CrisisMesh/
 - **Memory Bank:** Lesson storage, retrieval, Jaccard tag-overlap confidence scoring, source citations with outcome data, cross-session recall, historical outcome stats
 - **Event Bus:** Publish/subscribe, event filtering, history
 - **Slack Transport:** Signature verification (HMAC-SHA256), slash command dispatch, @mention/DM agentic dispatch, reaction-based check-ins, URL verification challenge, pipeline integration, Block Kit formatting
-- **SMS Transport:** Twilio signature verification (HMAC-SHA1), check-in keyword mapping, incident pipeline via SMS, TwiML response formatting, content safety blocking
+- **SMS Transport:** Twilio signature verification (HMAC-SHA1), check-in keyword mapping, incident pipeline via SMS, TwiML response formatting, content safety blocking, outbound SMS via Twilio REST API, background agentic dispatch + follow-up SITREP
 - **HTTP Server:** All endpoints (GET + POST), error handling, CORS
 - **CSV Ingestion:** All 8 data types parsed correctly, semantic validation (route→blocked zone, resource→valid floor/zone, room→valid facility), row-level reject-and-report with validation reports
 - **Failure Injection:** Sub-agent timeout (retry + escalation), malformed agent output (None-as-success fail-open fix), agent loop rate limiting, transient Firestore failure, prompt injection blocking, invalid CSV row quarantine — 6 injection modes with 4-part fail-closed contract assertions
