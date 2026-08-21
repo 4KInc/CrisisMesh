@@ -64,11 +64,11 @@ CrisisMesh has three trigger paths. All three fire the same agent fleet and prod
 
 **Reaction check-ins:** Each emoji reaction posts a public confirmation with the running check-in count and missing personnel list. When all personnel are accounted for, CrisisMesh announces it.
 
-### 2. SMS (Twilio Webhook)
+### 2. WhatsApp (Business API)
 
-Text the CrisisMesh number with an incident description. The system classifies and responds with a TwiML confirmation including the incident ID and a 911 reminder. Reply with `SAFE`, `HELP`, `INJURED`, or `EVACUATED` to check in.
+Message the CrisisMesh WhatsApp number with an incident description. The system classifies and responds with a confirmation including the incident ID and a 911 reminder. Reply with `SAFE`, `HELP`, `INJURED`, or `EVACUATED` to check in.
 
-> Requires `TWILIO_AUTH_TOKEN` and `TWILIO_PHONE_NUMBER` env vars. Without them, the `/sms` endpoint returns HTTP 503 with setup instructions.
+> Requires `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` env vars. Without them, the `/whatsapp` endpoint returns HTTP 503 with setup instructions.
 
 ### 3. Command Console
 
@@ -137,7 +137,7 @@ Open the web console and type a report in the DECLARE INCIDENT panel. "DECLARE I
 | **SMS** | Twilio webhooks | Inbound SMS incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 246 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 254 tests, no GCP required |
 
 ---
 
@@ -285,7 +285,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (246 tests, no GCP required)
+# Run tests (254 tests, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -310,8 +310,10 @@ adk run
 | `ARMOR_TEMPLATE` | template ID | `crisismesh-guard` | Model Armor template name |
 | `SLACK_BOT_TOKEN` | `xoxb-...` | — | Slack Bot OAuth token (for posting messages) |
 | `SLACK_SIGNING_SECRET` | secret | — | Slack request signature verification |
-| `TWILIO_AUTH_TOKEN` | token | — | Twilio webhook signature verification (optional) |
-| `TWILIO_PHONE_NUMBER` | `+1...` | — | Twilio phone number (optional) |
+| `WHATSAPP_VERIFY_TOKEN` | token | — | WhatsApp webhook verification token (optional) |
+| `WHATSAPP_APP_SECRET` | secret | — | WhatsApp app secret for signature verification (optional) |
+| `WHATSAPP_ACCESS_TOKEN` | token | — | WhatsApp Cloud API access token (optional) |
+| `WHATSAPP_PHONE_NUMBER_ID` | ID | — | WhatsApp phone number ID (optional) |
 | `PORT` | port number | `8080` | HTTP server port |
 
 ### API Endpoints
@@ -328,7 +330,8 @@ adk run
 | `GET` | `/incident/latest` | Latest incident (console real-time binding) |
 | `POST` | `/slack/commands` | Slack slash commands (Events API mode) |
 | `POST` | `/slack/events` | Slack event subscriptions (reaction_added) |
-| `POST` | `/sms` | Twilio inbound SMS webhook |
+| `GET` | `/whatsapp` | WhatsApp webhook verification |
+| `POST` | `/whatsapp` | WhatsApp inbound message webhook |
 | `GET` | `/registry` | Agent registry (all 7 agents) |
 | `GET` | `/trace/{id}` | Observability trace for an incident |
 | `GET` | `/traces` | List all traces |
@@ -413,13 +416,14 @@ The Dockerfile runs `python -m src.core.server` on port 8080 with Vertex AI and 
 - DM CrisisMesh to report incidents privately
 - Emoji reactions on SITREP messages for one-tap check-ins with public confirmations
 
-### Twilio SMS Setup (Optional)
+### WhatsApp Business API Setup (Optional)
 
-1. Get a Twilio phone number at [twilio.com](https://www.twilio.com)
-2. Set the messaging webhook URL to `https://YOUR_CLOUD_RUN_URL/sms` (POST)
-3. Set `TWILIO_AUTH_TOKEN` and `TWILIO_PHONE_NUMBER` env vars on Cloud Run
+1. Create a Meta app at [developers.facebook.com](https://developers.facebook.com) with WhatsApp product
+2. Set the webhook URL to `https://YOUR_CLOUD_RUN_URL/whatsapp` and verify with your `WHATSAPP_VERIFY_TOKEN`
+3. Subscribe to the `messages` webhook field
+4. Set `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_ACCESS_TOKEN`, and `WHATSAPP_PHONE_NUMBER_ID` env vars on Cloud Run
 
-Without Twilio credentials, the `/sms` endpoint returns HTTP 503 with setup instructions.
+Without WhatsApp credentials, the `/whatsapp` endpoint returns HTTP 503 with setup instructions.
 
 ---
 
@@ -508,7 +512,7 @@ CrisisMesh/
 │       ├── firestore_state.py       # Firestore persistence layer
 │       ├── pubsub_bus.py            # Cloud Pub/Sub transport
 │       ├── slack_transport.py       # Slack transport (Events API + Block Kit)
-│       └── sms_transport.py         # SMS/Twilio inbound webhook + TwiML
+│       └── whatsapp_transport.py     # WhatsApp Business API inbound webhook
 ├── static/
 │   └── index.html                   # 4-screen Command Console SPA
 └── tests/
@@ -523,7 +527,7 @@ CrisisMesh/
     ├── test_gemini_entrypoint.py    # ADK agent instruction tests
     ├── test_slack_transport.py      # Slack reaction/user mapping tests
     ├── test_slack_integration.py    # Signature, slash commands, pipeline, events
-    ├── test_sms_transport.py        # Twilio signature, SMS check-in, TwiML
+    ├── test_whatsapp_transport.py   # WhatsApp signature, webhook, message handling
     └── agents/
         ├── test_intake_tools.py     # Classification, location, playbook
         ├── test_accountability_tools.py  # Roster, check-in, escalation
@@ -534,7 +538,7 @@ CrisisMesh/
 
 ## Test Coverage
 
-246 passing tests covering:
+254 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries

@@ -7,7 +7,8 @@ Endpoints:
   POST /checkin                 — process a check-in
   POST /slack/commands          — Slack slash commands (Events API mode)
   POST /slack/events            — Slack event subscriptions (reaction_added, etc.)
-  POST /sms                     — Twilio inbound SMS webhook
+  GET  /whatsapp                 — WhatsApp webhook verification
+  POST /whatsapp                 — WhatsApp inbound message webhook
   GET  /incident/{id}           — get incident status + accountability
   GET  /incident/latest         — latest incident (for console real-time binding)
   GET  /registry                — view agent registry
@@ -59,10 +60,13 @@ from src.services.slack_transport import (
     set_latest_incident,
     verify_slack_signature,
 )
-from src.services.sms_transport import (
-    handle_inbound_sms,
-    has_twilio_credentials,
-    verify_twilio_signature,
+from src.services.whatsapp_transport import (
+    extract_messages,
+    handle_inbound_message,
+    has_whatsapp_credentials,
+    send_reply_async,
+    verify_webhook_challenge,
+    verify_webhook_signature,
 )
 
 logger = logging.getLogger(__name__)
@@ -356,6 +360,22 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             else:
                 _json_response(self, {"incident_id": None}, 200)
 
+        elif path == "/whatsapp":
+            query = parse_qs(parsed.query)
+            mode = query.get("hub.mode", [""])[0]
+            token = query.get("hub.verify_token", [""])[0]
+            challenge = query.get("hub.challenge", [""])[0]
+
+            result = verify_webhook_challenge(mode, token, challenge)
+            if result:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(result.encode())
+            else:
+                self.send_response(403)
+                self.end_headers()
+
         elif path.startswith("/incident/"):
             incident_id = path.split("/incident/")[1]
             if incident_id.startswith("agentic"):
@@ -467,37 +487,37 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             else:
                 _json_response(self, {"ok": True})
 
-        elif path == "/sms":
-            if not has_twilio_credentials():
+        elif path == "/whatsapp":
+            if not has_whatsapp_credentials():
                 self.send_response(503)
                 self.send_header("Content-Type", "text/plain")
                 self.end_headers()
                 self.wfile.write(
-                    b"SMS transport not configured. "
-                    b"Set TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER env vars."
+                    b"WhatsApp transport not configured. "
+                    b"Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID env vars."
                 )
                 return
 
             raw = _read_raw_body(self)
-            form = _parse_form(raw)
-            auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-            twilio_sig = self.headers.get("X-Twilio-Signature", "")
-            request_url = f"https://{self.headers.get('Host', '')}{self.path}"
+            app_secret = os.environ.get("WHATSAPP_APP_SECRET", "")
+            hub_sig = self.headers.get("X-Hub-Signature-256", "")
 
-            if not verify_twilio_signature(auth_token, request_url, form, twilio_sig):
-                _json_response(self, {"error": "Invalid signature"}, 401)
-                return
+            if app_secret and hub_sig:
+                if not verify_webhook_signature(app_secret, raw, hub_sig):
+                    _json_response(self, {"error": "Invalid signature"}, 401)
+                    return
 
-            result = handle_inbound_sms(
-                from_number=form.get("From", ""),
-                body=form.get("Body", ""),
-                request_url=request_url,
-            )
-            self.send_response(200)
-            self.send_header("Content-Type", "text/xml")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(result["twiml"].encode())
+            payload = json.loads(raw) if raw else {}
+            messages = extract_messages(payload)
+
+            for msg in messages:
+                result = handle_inbound_message(
+                    from_number=msg["from"],
+                    body=msg["body"],
+                )
+                send_reply_async(msg["from"], result["reply"])
+
+            _json_response(self, {"status": "ok"})
 
         elif path == "/incident":
             body = _read_body(self)

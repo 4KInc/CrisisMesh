@@ -498,14 +498,14 @@ async function loadTrace(){
     ${(d.spans||[]).map(s=>`<div class="py-1 font-mono">${s.parent_span_id?'&nbsp;&nbsp;├─ ':''}<span class="text-primary">${s.name}</span> [<span class="text-on-surface-variant">${s.agent_id}</span>] <span class="text-${s.status==='ok'?'status-safe':'tertiary'}">${s.status}</span> <span class="text-on-surface-variant text-[11px]">${s.duration_ms?s.duration_ms.toFixed(0)+'ms':''}</span></div>`).join('')}`;
 }
 
-/* REAL-TIME BINDING — polls for Slack/SMS-triggered incidents */
+/* REAL-TIME BINDING — polls for Slack/WhatsApp-triggered incidents */
 let _pollId='';
 function pollLatest(){
   fetch(API+'/incident/latest').then(r=>r.json()).then(d=>{
     if(d.incident_id && d.incident_id!==_pollId){
       _pollId=d.incident_id;
       renderSit(d);
-      if(d.source==='slack'||d.source==='sms'){
+      if(d.source==='slack'||d.source==='whatsapp'){
         document.getElementById('str-rpt').value=d.report||'';
         document.querySelectorAll('.nav-link')[2].click();
         runStream();
