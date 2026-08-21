@@ -4,7 +4,7 @@ Two integration modes:
 
   1. Events API (recommended for Cloud Run):
      - POST /slack/commands — slash commands (/incident, /checkin)
-     - POST /slack/events  — event subscriptions (reaction_added for one-tap check-ins)
+     - POST /slack/events  — event subscriptions (reaction_added, app_mention)
      - Mounted on the existing HTTP server in server.py
 
   2. Socket Mode (via create_slack_app):
@@ -21,6 +21,7 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 import threading
 import time
 from typing import Any
@@ -37,6 +38,7 @@ except ImportError:
     AsyncWebClient = None  # type: ignore[assignment,misc]
 
 from src.agents.accountability.tools import (
+    compute_accountability_summary,
     process_checkin,
     read_roster,
     send_checkin_request,
@@ -78,6 +80,202 @@ REACTION_STATUS_MAP = {
 _slack_to_person: dict[str, str] = {}
 _active_incident_id: str = ""
 _latest_incident: dict[str, Any] = {}
+_incident_channel: str = ""
+_incident_declared_by: str = ""
+_incident_start_time: float = 0.0
+
+INCIDENT_TYPES = {
+    "earthquake": {"label": "Earthquake", "emoji": "earth_americas"},
+    "fire": {"label": "Fire", "emoji": "fire"},
+    "flood": {"label": "Flood", "emoji": "ocean"},
+    "active_threat": {"label": "Active Threat", "emoji": "rotating_light"},
+    "cyberattack": {"label": "Cyber Attack", "emoji": "skull_and_crossbones"},
+    "data_breach": {"label": "Data Breach", "emoji": "lock"},
+    "outage": {"label": "Service Outage", "emoji": "electric_plug"},
+    "weather": {"label": "Severe Weather", "emoji": "thunder_cloud_and_rain"},
+    "medical": {"label": "Medical Emergency", "emoji": "ambulance"},
+    "other": {"label": "Other Incident", "emoji": "warning"},
+}
+
+PLAYBOOKS = {
+    "earthquake": {
+        "title": "Earthquake Response Playbook",
+        "immediate_actions": [
+            "Drop, Cover, Hold On — do not evacuate during shaking",
+            "Once shaking stops: check for injuries, assess structural damage",
+            "Evacuate if building damage is visible — use stairs, not elevators",
+            "Move to designated assembly point",
+            "Account for all personnel — check in with your team lead",
+        ],
+        "roles": [
+            {"role": "Incident Commander", "resp": "Overall coordination, communication with emergency services"},
+            {"role": "Safety Officer", "resp": "Building damage assessment, evacuation decisions"},
+            {"role": "Communications Lead", "resp": "Internal updates, external notifications, family contact"},
+            {"role": "Medical Lead", "resp": "First aid triage, coordinate with EMS"},
+        ],
+        "resources": ["First aid kits", "Emergency radios", "Flashlights and batteries", "Water and emergency supplies", "Building evacuation maps"],
+    },
+    "fire": {
+        "title": "Fire Response Playbook",
+        "immediate_actions": [
+            "Activate fire alarm if not already triggered",
+            "Call 911 / local fire department immediately",
+            "Evacuate via nearest safe exit — do NOT use elevators",
+            "Close doors behind you to slow fire spread",
+            "Assemble at designated rally point for headcount",
+        ],
+        "roles": [
+            {"role": "Incident Commander", "resp": "Coordinate evacuation, liaise with fire department"},
+            {"role": "Floor Wardens", "resp": "Sweep assigned areas, confirm all clear"},
+            {"role": "Communications Lead", "resp": "Notify all staff, update stakeholders"},
+            {"role": "Assembly Point Lead", "resp": "Conduct headcount, report missing persons"},
+        ],
+        "resources": ["Fire extinguishers (know locations)", "Evacuation route maps", "Emergency contact list", "First aid supplies", "Megaphone or communication device"],
+    },
+    "flood": {
+        "title": "Flood Response Playbook",
+        "immediate_actions": [
+            "Monitor weather alerts and water levels",
+            "Move to higher ground if water is rising",
+            "Disconnect electrical equipment in flood-risk areas",
+            "Secure important documents and equipment",
+            "Do NOT walk or drive through flood waters",
+        ],
+        "roles": [
+            {"role": "Incident Commander", "resp": "Monitor conditions, evacuation decisions"},
+            {"role": "Facilities Lead", "resp": "Sandbags, equipment protection, utility shutoff"},
+            {"role": "Communications Lead", "resp": "Weather monitoring, staff notifications"},
+            {"role": "Logistics Lead", "resp": "Transportation, temporary relocation coordination"},
+        ],
+        "resources": ["Sandbags and barriers", "Water pumps", "Waterproof containers for documents", "Emergency power supply", "Evacuation transportation"],
+    },
+    "active_threat": {
+        "title": "Active Threat Response Playbook",
+        "immediate_actions": [
+            "RUN: Evacuate if safe path exists — leave belongings behind",
+            "HIDE: If evacuation impossible, find secure room, lock/barricade door",
+            "FIGHT: Last resort only — act with aggression, improvise weapons",
+            "Call 911 when safe to do so — provide location and description",
+            "Do NOT pull fire alarm — it causes people to gather in open areas",
+        ],
+        "roles": [
+            {"role": "Incident Commander", "resp": "Coordinate with law enforcement, account for personnel"},
+            {"role": "Communications Lead", "resp": "Send lockdown alerts, maintain communication with police"},
+            {"role": "Medical Lead", "resp": "Triage injuries once scene is secured"},
+            {"role": "Recovery Lead", "resp": "Post-incident support, counseling resources"},
+        ],
+        "resources": ["Lockdown notification system", "Room barricade capability", "First aid / trauma kits", "Law enforcement direct contact numbers", "Crisis counseling resources"],
+    },
+    "cyberattack": {
+        "title": "Cyber Attack Response Playbook",
+        "immediate_actions": [
+            "Identify affected systems and scope of compromise",
+            "Isolate compromised systems from the network immediately",
+            "Preserve forensic evidence — do NOT reboot affected machines",
+            "Activate incident response team communication channel",
+            "Notify legal, compliance, and executive leadership",
+        ],
+        "roles": [
+            {"role": "Incident Commander", "resp": "Overall response coordination, stakeholder communication"},
+            {"role": "Technical Lead", "resp": "Containment, forensic analysis, system recovery"},
+            {"role": "Communications Lead", "resp": "Internal/external notifications, regulatory reporting"},
+            {"role": "Legal/Compliance Lead", "resp": "Regulatory obligations, evidence preservation, breach notification"},
+        ],
+        "resources": ["Incident response toolkit (forensic tools)", "Network diagrams and asset inventory", "Backup systems and recovery procedures", "Legal counsel contact", "Regulatory notification templates"],
+    },
+    "data_breach": {
+        "title": "Data Breach Response Playbook",
+        "immediate_actions": [
+            "Confirm the breach — identify what data was exposed",
+            "Contain the breach — revoke access, patch vulnerability",
+            "Document everything — timestamps, affected records, actions taken",
+            "Notify legal counsel and compliance team",
+            "Begin regulatory breach notification timeline (72h GDPR, varies by jurisdiction)",
+        ],
+        "roles": [
+            {"role": "Incident Commander", "resp": "Response coordination, executive briefings"},
+            {"role": "Security Lead", "resp": "Containment, investigation, remediation"},
+            {"role": "Legal/Privacy Lead", "resp": "Breach notification, regulatory compliance"},
+            {"role": "Communications Lead", "resp": "Customer notification, media response"},
+        ],
+        "resources": ["Data classification inventory", "Breach notification templates", "Forensic investigation tools", "External legal counsel", "Customer communication channels"],
+    },
+    "outage": {
+        "title": "Service Outage Response Playbook",
+        "immediate_actions": [
+            "Confirm outage scope — which services, which users affected",
+            "Check monitoring dashboards for root cause indicators",
+            "Engage on-call engineers for affected systems",
+            "Post status page update within 15 minutes",
+            "Establish communication cadence (every 30 min until resolved)",
+        ],
+        "roles": [
+            {"role": "Incident Commander", "resp": "Coordination, stakeholder updates, escalation decisions"},
+            {"role": "Technical Lead", "resp": "Root cause analysis, remediation, failover"},
+            {"role": "Communications Lead", "resp": "Status page updates, customer notifications"},
+            {"role": "Support Lead", "resp": "Customer impact assessment, support queue management"},
+        ],
+        "resources": ["Monitoring and alerting dashboards", "Runbooks for common failure modes", "Escalation contact list", "Status page access", "Post-incident review template"],
+    },
+    "weather": {
+        "title": "Severe Weather Response Playbook",
+        "immediate_actions": [
+            "Monitor official weather alerts (NWS, local emergency management)",
+            "Activate early dismissal or shelter-in-place protocol as warranted",
+            "Secure outdoor equipment and close windows",
+            "Identify interior safe rooms away from windows",
+            "Account for all personnel in building",
+        ],
+        "roles": [
+            {"role": "Incident Commander", "resp": "Weather monitoring, shelter/evacuation decisions"},
+            {"role": "Facilities Lead", "resp": "Building preparation, utility management"},
+            {"role": "Communications Lead", "resp": "Staff alerts, closure decisions"},
+            {"role": "Transportation Lead", "resp": "Safe commute assessment, remote work activation"},
+        ],
+        "resources": ["NOAA weather radio", "Emergency supplies (water, food, flashlights)", "Interior safe room designations", "Remote work capability", "Emergency contact tree"],
+    },
+    "medical": {
+        "title": "Medical Emergency Response Playbook",
+        "immediate_actions": [
+            "Call 911 immediately — provide exact location and nature of emergency",
+            "Administer first aid if trained — CPR, AED, bleeding control",
+            "Clear the area around the patient",
+            "Send someone to meet and guide EMS to the patient",
+            "Do NOT move the patient unless in immediate danger",
+        ],
+        "roles": [
+            {"role": "Incident Commander", "resp": "Coordinate response, communicate with EMS"},
+            {"role": "First Responder", "resp": "Administer first aid, stabilize patient"},
+            {"role": "Guide", "resp": "Meet EMS at entrance, direct to patient location"},
+            {"role": "Communications Lead", "resp": "Notify relevant parties, manage information flow"},
+        ],
+        "resources": ["First aid kit (with AED location known)", "Emergency medical information", "AED (Automated External Defibrillator)", "Emergency contact information", "Incident documentation forms"],
+    },
+    "generic": {
+        "title": "General Incident Response Playbook",
+        "immediate_actions": [
+            "Assess the situation — determine scope and severity",
+            "Ensure immediate safety of all personnel",
+            "Notify relevant leadership and stakeholders",
+            "Document the incident — what happened, when, who is affected",
+            "Establish communication cadence for updates",
+        ],
+        "roles": [
+            {"role": "Incident Commander", "resp": "Overall coordination, decision authority"},
+            {"role": "Operations Lead", "resp": "Execute response actions, manage resources"},
+            {"role": "Communications Lead", "resp": "Internal/external updates, stakeholder management"},
+            {"role": "Documentation Lead", "resp": "Record timeline, actions, decisions for after-action review"},
+        ],
+        "resources": ["Incident documentation template", "Emergency contact list", "Communication tools (backup channels)", "Relevant SOPs and procedures", "Post-incident review template"],
+    },
+}
+
+PLAYBOOK_MAP = {
+    "earthquake": "earthquake", "fire": "fire", "flood": "flood",
+    "active_threat": "active_threat", "cyberattack": "cyberattack",
+    "data_breach": "data_breach", "outage": "outage",
+    "weather": "weather", "medical": "medical", "other": "generic",
+}
 
 
 def _build_slack_map() -> None:
@@ -235,46 +433,212 @@ def run_incident_pipeline(
 def dispatch_slash_command(command: str, form_data: dict[str, str]) -> dict[str, Any]:
     """Dispatch a Slack slash command. Returns the immediate ack response.
 
-    For /incident, pipeline work runs in a background thread.
-    For /checkin, the result is returned directly.
+    /incident supports subcommands:
+      /incident <description>     — declare a new incident (bare text)
+      /incident status            — view active incident status
+      /incident checkin [status]  — check in to the active incident
+      /incident resolve           — resolve the active incident
+      /incident playbook [type]   — view a response playbook
+      /incident help              — show all commands
     """
     channel_id = form_data.get("channel_id", "")
     user_id = form_data.get("user_id", "")
-    text = form_data.get("text", "")
+    text = form_data.get("text", "").strip()
     response_url = form_data.get("response_url", "")
 
     if command == "/incident":
         if not text:
-            return {
-                "response_type": "ephemeral",
-                "text": "Usage: `/incident <description>` — e.g. `/incident Smoke near science lab floor 2`",
-            }
-        result = run_incident_pipeline(text, source="slack")
-        if result.get("blocked"):
-            return {
-                "response_type": "ephemeral",
-                "text": f":no_entry: *Blocked by content safety:* {result.get('reason', '')}",
-            }
-        threading.Thread(
-            target=_post_slack_results,
-            args=(channel_id, result),
-            daemon=True,
-        ).start()
-        return {
-            "response_type": "in_channel",
-            "text": (
-                ":rotating_light: *Incident Report Received*\n"
-                f"> {text}\n\n"
-                f"Reported by <@{user_id}>. CrisisMesh agent fleet is activating.\n"
-                f"Incident ID: `{result.get('incident_id', '')}`\n"
-                ":telephone_receiver: *If this is a life-threatening emergency, call 911 immediately.*"
-            ),
-        }
+            return _handle_help(user_id)
+
+        parts = text.split(maxsplit=1)
+        subcommand = parts[0].lower()
+
+        if subcommand == "help":
+            return _handle_help(user_id)
+        elif subcommand == "status":
+            return _handle_status(channel_id, user_id)
+        elif subcommand == "checkin":
+            status_text = parts[1] if len(parts) > 1 else "safe"
+            return _handle_checkin_command(channel_id, user_id, status_text)
+        elif subcommand == "resolve":
+            return _handle_resolve(channel_id, user_id)
+        elif subcommand == "playbook":
+            playbook_type = parts[1].strip().lower() if len(parts) > 1 else ""
+            return _handle_playbook(channel_id, user_id, playbook_type)
+        else:
+            return _start_incident(channel_id, user_id, text)
 
     elif command == "/checkin":
         return _handle_checkin_command(channel_id, user_id, text)
 
     return {"response_type": "ephemeral", "text": f"Unknown command: {command}"}
+
+
+def _start_incident(channel_id: str, user_id: str, text: str) -> dict[str, Any]:
+    """Declare a new incident from the full text."""
+    global _incident_channel, _incident_declared_by, _incident_start_time
+
+    result = run_incident_pipeline(text, source="slack")
+    if result.get("blocked"):
+        return {
+            "response_type": "ephemeral",
+            "text": f":no_entry: *Blocked by content safety:* {result.get('reason', '')}",
+        }
+
+    _incident_channel = channel_id
+    _incident_declared_by = user_id
+    _incident_start_time = time.time()
+
+    threading.Thread(
+        target=_post_slack_results,
+        args=(channel_id, result),
+        daemon=True,
+    ).start()
+    return {
+        "response_type": "in_channel",
+        "text": (
+            ":rotating_light: *Incident Report Received*\n"
+            f"> {text}\n\n"
+            f"Reported by <@{user_id}>. CrisisMesh agent fleet is activating.\n"
+            f"Incident ID: `{result.get('incident_id', '')}`\n"
+            ":telephone_receiver: *If this is a life-threatening emergency, call 911 immediately.*"
+        ),
+    }
+
+
+def _handle_help(user_id: str) -> dict[str, Any]:
+    types_list = ", ".join(INCIDENT_TYPES.keys())
+    return {
+        "response_type": "ephemeral",
+        "text": (
+            "*CrisisMesh — Incident Coordination Commands*\n\n"
+            "`/incident <description>` — Declare a new incident\n"
+            "`/incident status` — View active incident status\n"
+            "`/incident checkin [safe|injured|need_help|evacuated]` — Check in\n"
+            "`/incident resolve` — Resolve the active incident\n"
+            "`/incident playbook <type>` — View a response playbook\n"
+            "`/incident help` — Show this help message\n"
+            "`/checkin [status]` — Quick check-in (alias)\n\n"
+            f"*Incident types:* {types_list}\n\n"
+            ":telephone_receiver: *CrisisMesh coordinates alongside 911 — it never replaces emergency services.*"
+        ),
+    }
+
+
+def _handle_status(channel_id: str, user_id: str) -> dict[str, Any]:
+    if not _active_incident_id or not _latest_incident:
+        return {
+            "response_type": "ephemeral",
+            "text": ":white_check_mark: No active incidents.",
+        }
+
+    inc = _latest_incident
+    classification = inc.get("classification", {})
+    incident_type = classification.get("incident_type", "other")
+    type_info = INCIDENT_TYPES.get(incident_type, INCIDENT_TYPES["other"])
+
+    summary = compute_accountability_summary(_active_incident_id)
+    duration_min = int((time.time() - _incident_start_time) / 60) if _incident_start_time else 0
+
+    missing_names = []
+    breakdown = summary.get("breakdown", {})
+    for person in breakdown.get("unknown", []):
+        missing_names.append(person.get("name", person.get("person_id", "?")))
+    for person in breakdown.get("silent", []):
+        missing_names.append(person.get("name", person.get("person_id", "?")))
+
+    status_text = (
+        f":{type_info['emoji']}: *{_active_incident_id} — {type_info['label']}*\n\n"
+        f"*Severity:* `{classification.get('severity', '—').upper()}`\n"
+        f"*Duration:* {duration_min} minutes\n"
+        f"*Declared by:* {'<@' + _incident_declared_by + '>' if _incident_declared_by else '—'}\n"
+        f"*Check-ins:* {summary['accounted']}/{summary['total_tracked']}\n"
+    )
+
+    if missing_names:
+        status_text += f"\n:red_circle: *Missing ({len(missing_names)}):* " + ", ".join(missing_names[:10])
+        if len(missing_names) > 10:
+            status_text += f" and {len(missing_names) - 10} more"
+
+    status_text += (
+        f"\n\n:telephone_receiver: *If 911 has not been called, do so immediately.*"
+    )
+
+    return {"response_type": "in_channel", "text": status_text}
+
+
+def _handle_resolve(channel_id: str, user_id: str) -> dict[str, Any]:
+    global _active_incident_id, _latest_incident, _incident_start_time
+
+    if not _active_incident_id:
+        return {
+            "response_type": "ephemeral",
+            "text": ":warning: No active incidents to resolve.",
+        }
+
+    incident_id = _active_incident_id
+    inc = _latest_incident
+    classification = inc.get("classification", {})
+    incident_type = classification.get("incident_type", "other")
+    type_info = INCIDENT_TYPES.get(incident_type, INCIDENT_TYPES["other"])
+
+    summary = compute_accountability_summary(incident_id)
+    duration_min = int((time.time() - _incident_start_time) / 60) if _incident_start_time else 0
+
+    lessons = inc.get("prior_lessons", {})
+
+    report_text = (
+        f":heavy_check_mark: *Incident {incident_id} RESOLVED*\n\n"
+        f"*Type:* {type_info['label']}\n"
+        f"*Severity:* `{classification.get('severity', '—').upper()}`\n"
+        f"*Duration:* {duration_min} minutes\n"
+        f"*Resolved by:* <@{user_id}>\n\n"
+        f"---\n\n"
+        f"*Personnel Accountability*\n"
+        f"- Total tracked: {summary['total_tracked']}\n"
+        f"- Accounted: {summary['accounted']}\n"
+        f"- Unaccounted: {summary['unaccounted']}\n"
+    )
+
+    counts = summary.get("counts", {})
+    for status, count in counts.items():
+        if count > 0 and status not in ("unknown", "silent"):
+            emoji = {"safe": ":white_check_mark:", "injured": ":ambulance:",
+                     "need_help": ":warning:", "evacuated": ":runner:"}.get(status, ":grey_question:")
+            report_text += f"  {emoji} {status}: {count}\n"
+
+    if lessons.get("lessons_found", 0) > 0:
+        report_text += "\n*Lessons from Prior Incidents:*\n"
+        for lesson in lessons.get("lessons", [])[:3]:
+            report_text += f"  :brain: {lesson.get('title', '')}\n"
+
+    _active_incident_id = ""
+    _latest_incident = {}
+    _incident_start_time = 0.0
+
+    return {"response_type": "in_channel", "text": report_text}
+
+
+def _handle_playbook(channel_id: str, user_id: str, playbook_type: str) -> dict[str, Any]:
+    if not playbook_type:
+        types_list = ", ".join(f"`{k}`" for k in INCIDENT_TYPES.keys())
+        return {
+            "response_type": "ephemeral",
+            "text": f":warning: Usage: `/incident playbook <type>`\nTypes: {types_list}",
+        }
+
+    playbook_key = PLAYBOOK_MAP.get(playbook_type, "")
+    if not playbook_key:
+        types_list = ", ".join(f"`{k}`" for k in INCIDENT_TYPES.keys())
+        return {
+            "response_type": "ephemeral",
+            "text": f":warning: Unknown type `{playbook_type}`. Available: {types_list}",
+        }
+
+    return {
+        "response_type": "ephemeral",
+        "text": format_playbook_message(playbook_key),
+    }
 
 
 def dispatch_slack_event(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -287,8 +651,15 @@ def dispatch_slack_event(payload: dict[str, Any]) -> dict[str, Any] | None:
 
     if payload.get("type") == "event_callback":
         event = payload.get("event", {})
-        if event.get("type") == "reaction_added":
+        event_type = event.get("type", "")
+
+        if event_type == "reaction_added":
             _handle_reaction_event(event)
+        elif event_type == "app_mention":
+            _handle_app_mention(event)
+        elif event_type == "message" and event.get("channel_type") == "im":
+            if not event.get("subtype") and not event.get("bot_id"):
+                _handle_app_mention(event)
 
     return None
 
@@ -334,10 +705,14 @@ def _handle_checkin_command(
 
 
 def _handle_reaction_event(event: dict[str, Any]) -> None:
-    """Handle reaction_added event for one-tap check-ins."""
+    """Handle reaction_added event for one-tap check-ins.
+
+    Posts a confirmation message to the channel with check-in count and missing list.
+    """
     _build_slack_map()
     reaction = event.get("reaction", "")
     user_id = event.get("user", "")
+    channel_id = event.get("item", {}).get("channel", "")
 
     status = REACTION_STATUS_MAP.get(reaction)
     if not status:
@@ -350,6 +725,151 @@ def _handle_reaction_event(event: dict[str, Any]) -> None:
     incident_id = _active_incident_id or "active"
     result = process_checkin(incident_id, person_id, status)
     logger.info(f"Reaction check-in: {result['name']} -> {status} (incident: {incident_id})")
+
+    if channel_id:
+        threading.Thread(
+            target=_post_checkin_confirmation,
+            args=(channel_id, user_id, result["name"], status, incident_id),
+            daemon=True,
+        ).start()
+
+
+def _post_checkin_confirmation(
+    channel_id: str, user_id: str, name: str, status: str, incident_id: str,
+) -> None:
+    """Post a check-in confirmation to the channel (background thread)."""
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    if not HAS_SLACK or not bot_token:
+        return
+
+    status_emoji = {
+        "safe": ":white_check_mark:",
+        "injured": ":ambulance:",
+        "need_help": ":warning:",
+        "evacuated": ":runner:",
+    }
+
+    summary = compute_accountability_summary(incident_id)
+    accounted = summary["accounted"]
+    total = summary["total_tracked"]
+
+    msg = f"{status_emoji.get(status, ':white_check_mark:')} <@{user_id}> checked in as *{status}* ({accounted}/{total})"
+
+    if accounted == total and total > 0:
+        msg += "\n:tada: *All personnel accounted for!*"
+    else:
+        missing_names = []
+        breakdown = summary.get("breakdown", {})
+        for person in breakdown.get("unknown", []):
+            missing_names.append(person.get("name", "?"))
+        for person in breakdown.get("silent", []):
+            missing_names.append(person.get("name", "?"))
+        if missing_names:
+            msg += f"\n:red_circle: Still missing: " + ", ".join(missing_names[:5])
+            if len(missing_names) > 5:
+                msg += f" and {len(missing_names) - 5} more"
+
+    try:
+        client = WebClient(token=bot_token)
+        client.chat_postMessage(channel=channel_id, text=msg)
+    except Exception as e:
+        logger.error(f"Failed to post check-in confirmation: {e}")
+
+
+def _handle_app_mention(event: dict[str, Any]) -> None:
+    """Handle app_mention or DM — trigger the incident pipeline from a natural message.
+
+    Runs the pipeline in a background thread and posts the SITREP back to the channel.
+    """
+    channel_id = event.get("channel", "")
+    user_id = event.get("user", "")
+    text = event.get("text", "")
+
+    cleaned = re.sub(r"<@[A-Z0-9]+>", "", text).strip()
+    if not cleaned:
+        _post_bot_message(
+            channel_id,
+            ":rotating_light: *CrisisMesh standing by.* Tell me what's happening and I'll coordinate the response.\n"
+            ":telephone_receiver: *If this is a life-threatening emergency, call 911 immediately.*",
+        )
+        return
+
+    threading.Thread(
+        target=_run_mention_pipeline,
+        args=(channel_id, user_id, cleaned),
+        daemon=True,
+    ).start()
+
+
+def _run_mention_pipeline(channel_id: str, user_id: str, text: str) -> None:
+    """Run the incident pipeline from an @mention (background thread)."""
+    global _incident_channel, _incident_declared_by, _incident_start_time
+
+    result = run_incident_pipeline(text, source="slack")
+    if result.get("blocked"):
+        _post_bot_message(
+            channel_id,
+            f":no_entry: *Blocked by content safety:* {result.get('reason', '')}",
+        )
+        return
+
+    _incident_channel = channel_id
+    _incident_declared_by = user_id
+    _incident_start_time = time.time()
+
+    _post_bot_message(
+        channel_id,
+        (
+            f":rotating_light: *Incident Report Received*\n"
+            f"> {text}\n\n"
+            f"Reported by <@{user_id}>. CrisisMesh agent fleet is activating.\n"
+            f"Incident ID: `{result.get('incident_id', '')}`\n"
+            ":telephone_receiver: *If this is a life-threatening emergency, call 911 immediately.*"
+        ),
+    )
+
+    _post_slack_results(channel_id, result)
+
+
+def _post_bot_message(channel_id: str, text: str) -> None:
+    """Post a message as the bot to the given channel."""
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    if not HAS_SLACK or not bot_token:
+        logger.info("SLACK_BOT_TOKEN not set — skipping bot message")
+        return
+    try:
+        client = WebClient(token=bot_token)
+        client.chat_postMessage(channel=channel_id, text=text)
+    except Exception as e:
+        logger.error(f"Failed to post bot message: {e}")
+
+
+# ── Playbook formatting ──
+
+
+def format_playbook_message(playbook_key: str) -> str:
+    """Format a playbook as a Slack message."""
+    playbook = PLAYBOOKS.get(playbook_key, PLAYBOOKS["generic"])
+
+    lines = [f"*{playbook['title']}*\n"]
+
+    lines.append("*Immediate Actions:*")
+    for i, action in enumerate(playbook["immediate_actions"], 1):
+        lines.append(f">{i}. {action}")
+
+    lines.append("\n*Roles Needed:*")
+    for role in playbook["roles"]:
+        lines.append(f">*{role['role']}* — {role['resp']}")
+
+    lines.append("\n*Resources:*")
+    for resource in playbook["resources"]:
+        lines.append(f">- {resource}")
+
+    lines.append(
+        "\n:telephone_receiver: *CrisisMesh coordinates alongside 911 — it never replaces emergency services.*"
+    )
+
+    return "\n".join(lines)
 
 
 # ── Block Kit formatting ──

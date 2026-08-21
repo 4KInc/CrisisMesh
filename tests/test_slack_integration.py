@@ -73,12 +73,13 @@ class TestSlackSignature:
 
 
 class TestSlashCommandDispatch:
-    def test_incident_no_text(self):
+    def test_incident_no_text_shows_help(self):
         from src.services.slack_transport import dispatch_slash_command
         result = dispatch_slash_command("/incident", {
             "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "",
         })
-        assert "Usage:" in result["text"]
+        assert "Coordination Commands" in result["text"]
+        assert "/incident" in result["text"]
         assert result["response_type"] == "ephemeral"
 
     def test_incident_with_text(self):
@@ -274,3 +275,175 @@ class TestReactionCheckin:
             "reaction": "white_check_mark",
             "user": "U_NONEXISTENT",
         })
+
+
+class TestSubcommands:
+    def test_help_subcommand(self):
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "help",
+        })
+        assert "Coordination Commands" in result["text"]
+        assert "/incident playbook" in result["text"]
+        assert result["response_type"] == "ephemeral"
+
+    def test_status_no_active_incident(self):
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "status",
+        })
+        assert "No active incidents" in result["text"]
+
+    def test_status_with_active_incident(self):
+        from src.services.slack_transport import dispatch_slash_command, run_incident_pipeline
+        run_incident_pipeline("Gas leak in cafeteria", source="slack")
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "status",
+        })
+        assert "Check-ins:" in result["text"]
+        assert result["response_type"] == "in_channel"
+
+    def test_resolve_no_active_incident(self):
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "resolve",
+        })
+        assert "No active incidents" in result["text"]
+
+    def test_resolve_active_incident(self):
+        from src.services.slack_transport import dispatch_slash_command, run_incident_pipeline
+        run_incident_pipeline("Water pipe burst in basement", source="slack")
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "resolve",
+        })
+        assert "RESOLVED" in result["text"]
+        assert "Personnel Accountability" in result["text"]
+        assert result["response_type"] == "in_channel"
+
+    def test_playbook_fire(self):
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "playbook fire",
+        })
+        assert "Fire Response Playbook" in result["text"]
+        assert "Immediate Actions" in result["text"]
+        assert "Roles Needed" in result["text"]
+        assert result["response_type"] == "ephemeral"
+
+    def test_playbook_unknown_type(self):
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "playbook zombie",
+        })
+        assert "Unknown type" in result["text"]
+
+    def test_playbook_no_type(self):
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "playbook",
+        })
+        assert "Usage:" in result["text"]
+
+    def test_checkin_subcommand(self):
+        from src.services.slack_transport import dispatch_slash_command, run_incident_pipeline
+        run_incident_pipeline("Fire alarm in gym", source="slack")
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "checkin safe",
+        })
+        assert "Check-in recorded" in result["text"]
+
+    def test_bare_text_starts_incident(self):
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/incident", {
+            "channel_id": "C123",
+            "user_id": "U_PRINCIPAL",
+            "text": "Earthquake felt on second floor",
+        })
+        assert "Incident Report Received" in result["text"]
+        assert "Incident ID:" in result["text"]
+
+
+class TestPlaybookFormatting:
+    def test_all_playbooks_exist(self):
+        from src.services.slack_transport import PLAYBOOKS, PLAYBOOK_MAP
+        for incident_type, key in PLAYBOOK_MAP.items():
+            assert key in PLAYBOOKS, f"Missing playbook for {incident_type}"
+
+    def test_format_playbook_message(self):
+        from src.services.slack_transport import format_playbook_message
+        msg = format_playbook_message("earthquake")
+        assert "Earthquake Response Playbook" in msg
+        assert "Drop, Cover, Hold On" in msg
+        assert "Incident Commander" in msg
+        assert "911" in msg
+
+    def test_format_generic_playbook(self):
+        from src.services.slack_transport import format_playbook_message
+        msg = format_playbook_message("generic")
+        assert "General Incident Response Playbook" in msg
+
+    def test_playbook_has_all_sections(self):
+        from src.services.slack_transport import PLAYBOOKS
+        for key, pb in PLAYBOOKS.items():
+            assert "title" in pb, f"Missing title in {key}"
+            assert "immediate_actions" in pb, f"Missing actions in {key}"
+            assert len(pb["immediate_actions"]) >= 3, f"Too few actions in {key}"
+            assert "roles" in pb, f"Missing roles in {key}"
+            assert "resources" in pb, f"Missing resources in {key}"
+
+
+class TestAppMention:
+    def test_dispatch_app_mention_event(self):
+        from src.services.slack_transport import dispatch_slack_event
+        result = dispatch_slack_event({
+            "type": "event_callback",
+            "event": {
+                "type": "app_mention",
+                "user": "U_PRINCIPAL",
+                "text": "<@UBOTID> smoke in the hallway",
+                "channel": "C123",
+            },
+        })
+        assert result is None
+
+    def test_dispatch_dm_event(self):
+        from src.services.slack_transport import dispatch_slack_event
+        result = dispatch_slack_event({
+            "type": "event_callback",
+            "event": {
+                "type": "message",
+                "channel_type": "im",
+                "user": "U_PRINCIPAL",
+                "text": "fire in the gym",
+                "channel": "D123",
+            },
+        })
+        assert result is None
+
+    def test_dm_bot_message_ignored(self):
+        from src.services.slack_transport import dispatch_slack_event
+        result = dispatch_slack_event({
+            "type": "event_callback",
+            "event": {
+                "type": "message",
+                "channel_type": "im",
+                "bot_id": "B123",
+                "text": "some bot message",
+                "channel": "D123",
+            },
+        })
+        assert result is None
+
+    def test_dm_subtype_ignored(self):
+        from src.services.slack_transport import dispatch_slack_event
+        result = dispatch_slack_event({
+            "type": "event_callback",
+            "event": {
+                "type": "message",
+                "channel_type": "im",
+                "subtype": "message_changed",
+                "text": "edited message",
+                "channel": "D123",
+            },
+        })
+        assert result is None

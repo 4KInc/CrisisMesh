@@ -48,7 +48,21 @@ CrisisMesh has three trigger paths. All three fire the same agent fleet and prod
 4. Personnel react with emoji to check in: :white_check_mark: :thumbsup: :ok_hand: Safe · :runner: :door: Evacuated · :warning: :raised_hand: Need Help · :ambulance: :hospital: Injured
 5. The command console auto-discovers the incident and streams the Agent Fleet in real time
 
-**Check-in:** `/checkin safe` or react to the SITREP message.
+**Subcommands:**
+
+| Command | Description |
+|---------|-------------|
+| `/incident <description>` | Declare a new incident |
+| `/incident status` | View active incident — type, severity, duration, check-in count, missing list |
+| `/incident checkin [status]` | Check in (safe, injured, need_help, evacuated) |
+| `/incident resolve` | Resolve the active incident with an after-action summary |
+| `/incident playbook <type>` | View the formatted playbook for any of 10 crisis types |
+| `/incident help` | Show all available commands |
+| `/checkin [status]` | Quick check-in alias |
+
+**@mention:** Mention @CrisisMesh in any channel or DM to trigger the agent fleet from natural language.
+
+**Reaction check-ins:** Each emoji reaction posts a public confirmation with the running check-in count and missing personnel list. When all personnel are accounted for, CrisisMesh announces it.
 
 ### 2. SMS (Twilio Webhook)
 
@@ -123,7 +137,7 @@ Open the web console and type a report in the DECLARE INCIDENT panel. "DECLARE I
 | **SMS** | Twilio webhooks | Inbound SMS incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 228 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 246 tests, no GCP required |
 
 ---
 
@@ -271,7 +285,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (228 tests, no GCP required)
+# Run tests (246 tests, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -383,13 +397,21 @@ The Dockerfile runs `python -m src.core.server` on port 8080 with Vertex AI and 
 ### Slack App Setup
 
 1. Create a new Slack app at [api.slack.com/apps](https://api.slack.com/apps)
+   - Use **From a manifest** and paste `manifest.json` from this repo, or configure manually:
 2. Under **Slash Commands**, add:
-   - `/incident` → `https://YOUR_CLOUD_RUN_URL/slack/commands`
+   - `/incident` → `https://YOUR_CLOUD_RUN_URL/slack/commands` (usage hint: `<description> | status | checkin | resolve | playbook <type> | help`)
    - `/checkin` → `https://YOUR_CLOUD_RUN_URL/slack/commands`
-3. Under **Event Subscriptions**, set Request URL to `https://YOUR_CLOUD_RUN_URL/slack/events` and subscribe to `reaction_added`
-4. Under **OAuth & Permissions**, add scopes: `chat:write`, `commands`, `reactions:read`
+3. Under **Event Subscriptions**, set Request URL to `https://YOUR_CLOUD_RUN_URL/slack/events` and subscribe to: `app_mention`, `message.im`, `reaction_added`
+4. Under **OAuth & Permissions**, add bot scopes: `app_mentions:read`, `channels:history`, `channels:read`, `chat:write`, `chat:write.public`, `commands`, `groups:history`, `groups:read`, `im:history`, `im:read`, `im:write`, `reactions:read`, `users:read`
 5. Install to workspace, copy the Bot Token (`xoxb-...`) and Signing Secret
 6. Set `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` env vars on Cloud Run
+
+**Features after setup:**
+- `/incident` with subcommands (declare, status, resolve, playbook, help)
+- `/checkin` for quick check-ins
+- @CrisisMesh mention in any channel triggers the agent fleet
+- DM CrisisMesh to report incidents privately
+- Emoji reactions on SITREP messages for one-tap check-ins with public confirmations
 
 ### Twilio SMS Setup (Optional)
 
@@ -421,6 +443,7 @@ CrisisMesh/
 ├── agent.py                    # ADK entry point (exports root_agent for `adk run`)
 ├── app.py                      # Standalone runner (asyncio main)
 ├── Dockerfile                  # Cloud Run container
+├── manifest.json               # Slack app manifest (import into api.slack.com)
 ├── pyproject.toml              # Python 3.11+, hatchling build
 ├── data/
 │   └── seed/                   # 8 CSV files for Jefferson Elementary
@@ -511,7 +534,7 @@ CrisisMesh/
 
 ## Test Coverage
 
-228 passing tests covering:
+246 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries
