@@ -17,3 +17,6 @@ venv/
 node_modules/
 credentials.json
 service-account*.json
+
+# SMS consent audit log (contains personal data — never commit)
+data/consent/

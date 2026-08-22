@@ -10,9 +10,14 @@ How it works:
   2. Twilio forwards the message to POST /sms
   3. CrisisMesh classifies it as an incident report or a check-in reply
   4. Incident reports fire the deterministic pipeline + background agentic fleet
-  5. Check-in replies (SAFE, HELP, INJURED, EVACUATED) update accountability
+  5. Check-in replies (SAFE, SOS, INJURED, EVACUATED) update accountability
   6. TwiML response acknowledges the message immediately
   7. When the agentic fleet finishes, a follow-up SMS delivers the Gemini SITREP
+
+Carrier-mandated keywords (STOP / HELP / START) are handled first, before any
+incident logic, per A2P 10DLC requirements. HELP returns program information —
+it is NOT an emergency status. The emergency "I need assistance" check-in is
+SOS / NEEDHELP, because HELP is reserved by the carriers.
 
 Outbound SMS uses the Twilio REST API directly via `requests` (no SDK needed),
 following the same pattern as anbu-care's transport.py.
@@ -36,18 +41,40 @@ from urllib.parse import urlencode
 
 from src.agents.accountability.tools import process_checkin
 from src.core.knowledge_base import KnowledgeBase
+from src.services.sms_consent import (
+    INFO_KEYWORDS,
+    OPT_IN_KEYWORDS,
+    OPT_OUT_KEYWORDS,
+    confirm_optin,
+    is_opted_out,
+    record_optout,
+)
 
 logger = logging.getLogger(__name__)
 
+# NOTE: "help" is deliberately absent — it is a carrier-reserved keyword that
+# must return program info (see INFO_KEYWORDS). SOS / NEEDHELP carry the
+# "I need assistance" check-in status instead.
 CHECKIN_KEYWORDS: dict[str, str] = {
     "safe": "safe",
     "ok": "safe",
     "evacuated": "evacuated",
     "out": "evacuated",
-    "help": "need_help",
+    "sos": "need_help",
+    "needhelp": "need_help",
+    "need help": "need_help",
+    "assist": "need_help",
     "injured": "injured",
     "hurt": "injured",
 }
+
+# Surfaced in the carrier-mandated HELP reply. Override per deployment.
+PUBLIC_BASE_URL = os.environ.get(
+    "CRISISMESH_PUBLIC_URL", "https://crisismesh-1031148889398.us-central1.run.app"
+).rstrip("/")
+SUPPORT_EMAIL = os.environ.get("CRISISMESH_SUPPORT_EMAIL", "support@crisismesh.app")
+TERMS_URL = f"{PUBLIC_BASE_URL}/sms-terms"
+PRIVACY_URL = f"{PUBLIC_BASE_URL}/privacy"
 
 _phone_to_person: dict[str, str] = {}
 
@@ -84,7 +111,19 @@ def send_sms(to_number: str, body: str) -> dict[str, Any]:
 
     Uses raw `requests.post` — no Twilio SDK needed. Same pattern as
     anbu-care's transport.py.
+
+    Numbers that have replied STOP are suppressed before the request is made.
+    Proactive (CrisisMesh-initiated) broadcasts must additionally check
+    `sms_consent.has_consent` first; replies to an inbound message do not.
     """
+    if is_opted_out(to_number):
+        logger.info(f"Outbound SMS suppressed — {to_number} has opted out")
+        return {
+            "delivered": False,
+            "suppressed": True,
+            "detail": "Recipient has opted out of CrisisMesh SMS (replied STOP).",
+        }
+
     account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
     auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
     from_number = os.environ.get("TWILIO_PHONE_NUMBER", "")
@@ -158,15 +197,64 @@ def handle_inbound_sms(
     """Handle an inbound SMS. Returns a result dict with a TwiML response body.
 
     Classifies the message as:
-      - Check-in reply (single keyword: SAFE, HELP, INJURED, etc.)
+      - Carrier compliance keyword (STOP / HELP / START) — always handled first
+      - Check-in reply (single keyword: SAFE, SOS, INJURED, etc.)
       - Incident report (anything else — fires the deterministic pipeline)
     """
-    word = body.strip().lower()
+    word = body.strip().lower().strip(".!?")
+
+    compliance = _handle_compliance_keyword(from_number, word)
+    if compliance:
+        return compliance
 
     if word in CHECKIN_KEYWORDS:
         return _handle_sms_checkin(from_number, CHECKIN_KEYWORDS[word])
 
     return _handle_sms_incident(from_number, body)
+
+
+def _handle_compliance_keyword(from_number: str, word: str) -> dict[str, Any] | None:
+    """Handle carrier-mandated STOP / HELP / START keywords.
+
+    Returns None when the message is not a compliance keyword. These take
+    precedence over every other classification — A2P 10DLC requires that STOP
+    always unsubscribes and HELP always returns program info, even mid-incident.
+    """
+    if word in OPT_OUT_KEYWORDS:
+        record_optout(from_number)
+        return {
+            "twiml": _twiml_response(
+                "You have been unsubscribed from CrisisMesh emergency alerts and "
+                "will receive no further messages. Reply START to resubscribe. "
+                "In an emergency, call 911."
+            ),
+            "action": "opt_out",
+        }
+
+    if word in OPT_IN_KEYWORDS:
+        confirm_optin(from_number)
+        return {
+            "twiml": _twiml_response(
+                "You are subscribed to CrisisMesh emergency coordination alerts "
+                "for your organization. Msg frequency varies by incident. "
+                "Msg & data rates may apply. Reply HELP for help, STOP to cancel. "
+                "In an emergency, call 911."
+            ),
+            "action": "opt_in",
+        }
+
+    if word in INFO_KEYWORDS:
+        return {
+            "twiml": _twiml_response(
+                "CrisisMesh emergency coordination alerts. Msg frequency varies "
+                "by incident. Msg & data rates may apply. Reply STOP to cancel. "
+                f"Support: {SUPPORT_EMAIL}. Terms: {TERMS_URL} "
+                f"Privacy: {PRIVACY_URL} In an emergency, call 911."
+            ),
+            "action": "info",
+        }
+
+    return None
 
 
 def _handle_sms_checkin(from_number: str, status: str) -> dict[str, Any]:
@@ -236,7 +324,8 @@ def _handle_sms_incident(from_number: str, body: str) -> dict[str, Any]:
             f"Incident reported: {incident_type} ({severity}). "
             f"ID: {incident_id}. "
             f"CrisisMesh agent fleet is coordinating response. "
-            f"Reply SAFE, HELP, INJURED, or EVACUATED to check in. "
+            f"Reply SAFE, SOS, INJURED, or EVACUATED to check in. "
+            f"Reply STOP to unsubscribe, HELP for help. "
             f"If 911 has not been called, do so immediately."
         ),
         "action": "incident",

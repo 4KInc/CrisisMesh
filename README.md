@@ -23,7 +23,7 @@ A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp
 3. **Delegates** to specialist agents for accountability, safety intel, SITREPs, and learning
 4. **Tracks** who is safe, injured, evacuated, or unaccounted — with mobility-need escalation
 5. **Posts** Block Kit SITREP and responder one-card back to Slack; lights up the command console
-6. **Accepts** one-tap check-ins via Slack reactions, SMS replies, or WhatsApp messages (SAFE / HELP / INJURED / EVACUATED)
+6. **Accepts** one-tap check-ins via Slack reactions, SMS replies, or WhatsApp messages (SAFE / SOS / INJURED / EVACUATED)
 7. **Blocks** malicious inputs via InjectionGuard content scanner (injection + PII detection)
 8. **Learns** from outcomes and surfaces prior lessons on future incidents
 9. **Audits** every action with an append-only audit log and observability trace
@@ -74,7 +74,9 @@ CrisisMesh has four trigger paths. Each is human-initiated — a person sends a 
 
 ### 2. SMS (Twilio Webhook)
 
-Text the CrisisMesh number with an incident description. The system classifies and responds with an immediate TwiML confirmation including the incident ID and a 911 reminder. The Gemini agent fleet runs in the background; when it finishes, a follow-up SMS delivers the fleet SITREP. Reply with `SAFE`, `HELP`, `INJURED`, or `EVACUATED` to check in.
+Text the CrisisMesh number with an incident description. The system classifies and responds with an immediate TwiML confirmation including the incident ID and a 911 reminder. The Gemini agent fleet runs in the background; when it finishes, a follow-up SMS delivers the fleet SITREP. Reply with `SAFE`, `SOS`, `INJURED`, or `EVACUATED` to check in.
+
+SMS is an A2P 10DLC program, so the carrier-reserved keywords take precedence over everything else: `STOP` unsubscribes, `START` resubscribes, and `HELP` returns program info — which is why the "I need assistance" check-in is `SOS`, not `HELP`. Numbers enroll at [`/sms-optin`](docs/A2P_10DLC_RESUBMISSION.md) with a double opt-in confirmation; consent records live in `src/services/sms_consent.py`. See [docs/A2P_10DLC_RESUBMISSION.md](docs/A2P_10DLC_RESUBMISSION.md).
 
 The immediate TwiML ack uses the deterministic pipeline (fast). The background agentic fleet + follow-up SMS require outbound credentials (`TWILIO_ACCOUNT_SID` + `TWILIO_PHONE_NUMBER`). Without outbound creds, the agentic thread does not spawn and SMS is deterministic-only. Uses the Twilio REST API directly via `requests` — no Twilio SDK needed.
 
@@ -82,7 +84,7 @@ The immediate TwiML ack uses the deterministic pipeline (fast). The background a
 
 ### 3. WhatsApp (Business API) — Deterministic Only
 
-Message the CrisisMesh WhatsApp number with an incident description. The system classifies and responds with a confirmation including the incident ID and a 911 reminder. Reply with `SAFE`, `HELP`, `INJURED`, or `EVACUATED` to check in.
+Message the CrisisMesh WhatsApp number with an incident description. The system classifies and responds with a confirmation including the incident ID and a 911 reminder. Reply with `SAFE`, `HELP`, `INJURED`, or `EVACUATED` to check in. (WhatsApp is a Meta channel, not A2P 10DLC, so `HELP` remains a check-in keyword there.)
 
 WhatsApp runs the deterministic pipeline only (no Gemini agent fleet). The same incident is visible in the command console for the Gemini-driven stream.
 
@@ -98,7 +100,7 @@ Open the web console and type a report in the DECLARE INCIDENT panel. "DECLARE I
 
 ```
     Slack /incident   SMS (Twilio)  WhatsApp (Meta)  Console (SPA)
-    Reactions · /checkin   SAFE/HELP/…    SITREP · Accountability
+    Reactions · /checkin   SAFE/SOS/…     SITREP · Accountability
          │                    │          Agent Stream · Governance
          └────────┬───────────┘                  │
                   │                              │
@@ -644,7 +646,7 @@ The `scripts/demo_fire_drill.py` script runs a complete 7-beat demo that proves 
 | 5 | 1:50–2:20 | **Model Armor** injection block, Agent Identity deny, PII redaction (Governance screen) |
 | 6 | 2:20–2:50 | **Agent Fleet stream** — 7 agents delegate: intake → safety → accountability → learning → SITREP |
 | 7 | 2:50–3:20 | **Observability** — span tree, gateway audit, event ledger, Memory Bank recall |
-| 8 | 3:20–4:00 | **SMS/WhatsApp check-in** (if configured) — text SAFE/HELP → accountability updates |
+| 8 | 3:20–4:00 | **SMS/WhatsApp check-in** (if configured) — text SAFE/SOS → accountability updates |
 
 ```bash
 python scripts/demo_fire_drill.py

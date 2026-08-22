@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SMS Alert Sign-Up — CrisisMesh</title>
+<style>
+:root{--bg:#0e1416;--panel:#161d20;--line:#283236;--text:#dee3e6;--muted:#9fb0b5;--accent:#7fd4e8;--ok:#7fe8a6;--err:#ffb4a9;--flag:#ffb4a9}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.6}
+.wrap{max-width:680px;margin:0 auto;padding:48px 24px 96px}
+header{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:28px}
+.brand{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+h1{font-size:30px;margin:12px 0 8px;line-height:1.2}
+h2{font-size:17px;margin:32px 0 10px}
+p,li{font-size:16px}
+a{color:var(--accent)}
+label{display:block;font-size:14px;color:var(--muted);margin:18px 0 6px;font-weight:600}
+input[type=text],input[type=tel]{width:100%;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:4px;color:var(--text);font-size:16px}
+input[type=text]:focus,input[type=tel]:focus{outline:none;border-color:var(--accent)}
+.consent{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:16px;margin:26px 0 8px}
+.consent input{margin-top:4px;width:18px;height:18px;flex:0 0 auto;accent-color:var(--accent)}
+.consent label{margin:0;color:var(--text);font-size:15px;font-weight:400}
+button{margin-top:20px;width:100%;padding:14px;background:var(--accent);color:#04262e;border:0;border-radius:4px;font-size:16px;font-weight:700;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.note{color:var(--muted);font-size:14px}
+.result{margin-top:20px;padding:14px 16px;border-radius:4px;border:1px solid var(--line);display:none}
+.result.ok{display:block;border-color:var(--ok);color:var(--ok)}
+.result.err{display:block;border-color:var(--err);color:var(--err)}
+.fill{background:rgba(255,180,169,.14);color:var(--flag);padding:1px 6px;border-radius:3px;font-weight:600;white-space:nowrap}
+footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--line);color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="brand">CrisisMesh</div>
+  <h1>Emergency Alert SMS Sign-Up</h1>
+  <p class="note">For staff and designated responders at organizations using CrisisMesh.</p>
+</header>
+
+<p><strong>CrisisMesh</strong> is an emergency coordination service operated by <span class="fill">[[LEGAL_ENTITY_NAME]]</span>. Schools, nonprofits, and other organizations use it to coordinate their internal response during a fire, severe-weather, medical, or active-threat incident — tracking who is safe, who needs help, and which routes are clear.</p>
+
+<p>Sign up below to receive emergency coordination and safety check-in text messages during an incident at your site, and to be able to check in by replying <strong>SAFE</strong>, <strong>SOS</strong>, <strong>INJURED</strong>, or <strong>EVACUATED</strong>.</p>
+
+<form id="optin">
+  <label for="name">Full name</label>
+  <input id="name" name="name" type="text" autocomplete="name" required>
+
+  <label for="organization">Organization (school or nonprofit)</label>
+  <input id="organization" name="organization" type="text" autocomplete="organization" required>
+
+  <label for="phone">Mobile number</label>
+  <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="+1 555 123 4567" required>
+
+  <div class="consent">
+    <input id="consent" name="consent" type="checkbox">
+    <label for="consent">
+      I agree to receive emergency coordination and safety check-in text messages from CrisisMesh at the mobile number provided. Message frequency varies by incident. Message and data rates may apply. Reply STOP to unsubscribe or HELP for help. Consent is not a condition of employment, enrollment, or any purchase. See our <a href="/sms-terms" target="_blank">SMS Terms &amp; Conditions</a> and <a href="/privacy" target="_blank">Privacy Policy</a>.
+    </label>
+  </div>
+
+  <button type="submit" id="submit">Sign up for emergency alerts</button>
+  <div class="result" id="result" role="status"></div>
+</form>
+
+<h2>What happens next</h2>
+<ol>
+  <li>We text a confirmation message to the number you entered.</li>
+  <li>Reply <strong>YES</strong> to that message to complete your enrollment. You will not receive alerts until you do.</li>
+  <li>Reply <strong>STOP</strong> at any time to unsubscribe, or <strong>HELP</strong> for support information.</li>
+</ol>
+
+<p class="note"><strong>CrisisMesh never replaces 911.</strong> It coordinates your organization's internal response alongside emergency services. In a life-threatening emergency, call 911 first.</p>
+
+<footer>
+  <a href="/privacy">Privacy Policy</a> · <a href="/sms-terms">SMS Terms &amp; Conditions</a> · <a href="/">Command Console</a>
+</footer>
+</div>
+<script>
+document.getElementById('optin').addEventListener('submit', async function (e) {
+  e.preventDefault();
+  var out = document.getElementById('result');
+  var btn = document.getElementById('submit');
+  out.className = 'result';
+  if (!document.getElementById('consent').checked) {
+    out.className = 'result err';
+    out.textContent = 'Please tick the consent checkbox to continue.';
+    return;
+  }
+  btn.disabled = true;
+  try {
+    var res = await fetch('/sms/optin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: document.getElementById('name').value,
+        organization: document.getElementById('organization').value,
+        phone: document.getElementById('phone').value,
+        consent: true
+      })
+    });
+    var data = await res.json();
+    if (res.ok) {
+      out.className = 'result ok';
+      out.textContent = data.message || 'Check your phone and reply YES to confirm.';
+      btn.textContent = 'Submitted';
+    } else {
+      out.className = 'result err';
+      out.textContent = data.error || 'Sign-up failed. Please try again.';
+      btn.disabled = false;
+    }
+  } catch (err) {
+    out.className = 'result err';
+    out.textContent = 'Network error — please try again.';
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

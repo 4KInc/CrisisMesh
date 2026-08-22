@@ -180,6 +180,21 @@ class AgentGateway:
 
         # 3. Approval gate for high-impact actions — hard block
         if tool_name in APPROVAL_REQUIRED_ACTIONS:
+            existing = next(
+                (p for p in self._pending_actions.values()
+                 if p.action == tool_name and p.state == "pending"),
+                None,
+            )
+            if existing:
+                decision = GatewayDecision(
+                    allowed=False, agent_id=agent_id, tool_name=tool_name,
+                    reason=f"Action '{tool_name}' is already pending approval as {existing.id} — do not retry",
+                    policy="approval_gate", incident_id=incident_id,
+                    pending_action_id=existing.id,
+                )
+                await self._log_decision(decision)
+                return decision
+
             if os.environ.get("DEMO_AUTO_APPROVE") == "1":
                 decision = GatewayDecision(
                     allowed=True, agent_id=agent_id, tool_name=tool_name,
@@ -449,9 +464,10 @@ class GatewayPlugin(_BasePlugin):
                     "reason": decision.reason,
                     "pending_action_id": decision.pending_action_id,
                     "instruction": (
-                        "This action requires Incident Commander approval. "
-                        f"Use '/incident approve {decision.pending_action_id}' to proceed. "
-                        "Do NOT retry this action — report its pending status in the SITREP."
+                        "STOP — this action requires Incident Commander approval and has been queued. "
+                        f"Approval command: '/incident approve {decision.pending_action_id}'. "
+                        "Do NOT call this tool again. Proceed directly to your final summary "
+                        "and report the resolution status as PENDING IC APPROVAL."
                     ),
                 }
             return {

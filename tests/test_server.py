@@ -280,3 +280,95 @@ class TestStreamingEndpoint:
         resp = h.get_response()
         assert resp["blocked"] is True
         assert "injection_guard" in resp["policy"]
+
+
+class TestComplianceRoutes:
+    """A2P 10DLC pages must be publicly reachable with no authentication."""
+
+    def test_privacy_policy_served(self):
+        h = MockHandler("GET", "/privacy")
+        assert h.response_code == 200
+        html = h.wfile.getvalue().decode()
+        assert "Privacy Policy" in html
+        assert "will not be shared with any third parties" in html
+
+    def test_sms_terms_served(self):
+        h = MockHandler("GET", "/sms-terms")
+        assert h.response_code == 200
+        html = h.wfile.getvalue().decode()
+        assert "Message and data rates may apply" in html
+        assert "STOP" in html and "HELP" in html
+
+    def test_terms_alias(self):
+        assert MockHandler("GET", "/terms").response_code == 200
+
+    def test_optin_page_checkbox_is_unchecked(self):
+        h = MockHandler("GET", "/sms-optin")
+        assert h.response_code == 200
+        html = h.wfile.getvalue().decode()
+        checkbox = next(
+            line for line in html.splitlines() if 'type="checkbox"' in line
+        )
+        assert "checked" not in checkbox  # consent must never be pre-selected
+        assert "Consent is not a condition of employment" in html
+
+
+class TestSmsOptinEndpoint:
+    @pytest.fixture(autouse=True)
+    def isolate_consent(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_CONSENT_LOG", str(tmp_path / "consent.jsonl"))
+        from src.services import sms_consent
+        sms_consent.reset()
+        yield
+        sms_consent.reset()
+
+    def test_optin_records_pending_consent(self):
+        h = MockHandler("POST", "/sms/optin", {
+            "name": "Ada Chen",
+            "organization": "Lincoln High",
+            "phone": "555-123-4567",
+            "consent": True,
+        })
+        assert h.response_code == 200
+        assert h.get_response()["status"] == "pending"
+        from src.services.sms_consent import get_record, has_consent
+        assert get_record("+15551234567")["name"] == "Ada Chen"
+        assert has_consent("+15551234567") is False
+
+    def test_optin_rejected_without_consent(self):
+        h = MockHandler("POST", "/sms/optin", {
+            "name": "Ada Chen",
+            "organization": "Lincoln High",
+            "phone": "555-123-4567",
+        })
+        assert h.response_code == 400
+        from src.services.sms_consent import get_record
+        assert get_record("+15551234567") == {}
+
+    def test_optin_rejects_bad_phone(self):
+        h = MockHandler("POST", "/sms/optin", {
+            "name": "Ada Chen",
+            "organization": "Lincoln High",
+            "phone": "12",
+            "consent": True,
+        })
+        assert h.response_code == 400
+
+    def test_optin_requires_name_and_org(self):
+        h = MockHandler("POST", "/sms/optin", {
+            "phone": "555-123-4567",
+            "consent": True,
+        })
+        assert h.response_code == 400
+
+    def test_optin_throttled(self):
+        payload = {
+            "name": "Ada Chen",
+            "organization": "Lincoln High",
+            "phone": "555-123-4567",
+            "consent": True,
+        }
+        from src.services.sms_consent import MAX_PER_PHONE_PER_HOUR
+        for _ in range(MAX_PER_PHONE_PER_HOUR):
+            assert MockHandler("POST", "/sms/optin", payload).response_code == 200
+        assert MockHandler("POST", "/sms/optin", payload).response_code == 429

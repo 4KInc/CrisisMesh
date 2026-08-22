@@ -17,7 +17,10 @@ SEED_DIR = os.path.join(
 
 
 @pytest.fixture(autouse=True)
-def fresh_state():
+def fresh_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("CRISISMESH_CONSENT_LOG", str(tmp_path / "consent.jsonl"))
+    from src.services import sms_consent
+    sms_consent.reset()
     KnowledgeBase.reset()
     init_knowledge_base(SEED_DIR)
     Tracer.reset()
@@ -29,6 +32,7 @@ def fresh_state():
     from src.services.slack_transport import _slack_to_person
     _slack_to_person.clear()
     yield
+    sms_consent.reset()
     KnowledgeBase.reset()
     _phone_to_person.clear()
 
@@ -78,9 +82,16 @@ class TestInboundSMS:
         assert "<Response>" in result["twiml"]
         assert "911" in result["twiml"]
 
-    def test_checkin_help(self):
+    def test_help_returns_program_info_not_checkin(self):
+        """HELP is carrier-reserved — it must never register an emergency status."""
         from src.services.sms_transport import handle_inbound_sms
         result = handle_inbound_sms("+15551234567", "help")
+        assert result["action"] == "info"
+        assert "STOP to cancel" in result["twiml"]
+
+    def test_sos_is_the_need_help_checkin(self):
+        from src.services.sms_transport import handle_inbound_sms
+        result = handle_inbound_sms("+15551234567", "SOS")
         assert result["action"] in ("checkin", "unknown_person")
 
     def test_incident_report(self):
@@ -114,7 +125,9 @@ class TestInboundSMS:
         from src.services.sms_transport import CHECKIN_KEYWORDS
         assert CHECKIN_KEYWORDS["safe"] == "safe"
         assert CHECKIN_KEYWORDS["ok"] == "safe"
-        assert CHECKIN_KEYWORDS["help"] == "need_help"
+        assert "help" not in CHECKIN_KEYWORDS  # carrier-reserved keyword
+        assert CHECKIN_KEYWORDS["sos"] == "need_help"
+        assert CHECKIN_KEYWORDS["needhelp"] == "need_help"
         assert CHECKIN_KEYWORDS["injured"] == "injured"
         assert CHECKIN_KEYWORDS["hurt"] == "injured"
         assert CHECKIN_KEYWORDS["evacuated"] == "evacuated"
