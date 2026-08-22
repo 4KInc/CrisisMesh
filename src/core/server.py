@@ -8,6 +8,10 @@ Endpoints:
   POST /slack/commands          — Slack slash commands (Events API mode)
   POST /slack/events            — Slack event subscriptions (reaction_added, etc.)
   POST /sms                     — Twilio inbound SMS webhook
+  POST /sms/optin               — SMS consent capture (web opt-in form)
+  GET  /sms-optin               — SMS opt-in page (A2P 10DLC)
+  GET  /sms-terms               — SMS terms & conditions (A2P 10DLC)
+  GET  /privacy                 — privacy policy (A2P 10DLC)
   GET  /whatsapp                 — WhatsApp webhook verification
   POST /whatsapp                 — WhatsApp inbound message webhook
   POST /incident/{id}/approve   — approve a pending gated action
@@ -27,7 +31,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -71,9 +75,16 @@ from src.services.slack_transport import (
     verify_slack_signature,
 )
 from src.services.sms_transport import (
+    can_send_sms,
     handle_inbound_sms,
     has_twilio_credentials,
+    send_sms,
     verify_twilio_signature,
+)
+from src.services.sms_consent import (
+    allow_optin_attempt,
+    normalize_phone,
+    record_optin,
 )
 from src.services.whatsapp_transport import (
     extract_messages,
@@ -84,6 +95,7 @@ from src.services.whatsapp_transport import (
     verify_webhook_signature,
 )
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # Initialize on import
@@ -374,6 +386,20 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             self._serve_static("index.html")
             return
 
+        # A2P 10DLC compliance pages — must stay publicly reachable with no
+        # authentication so carrier vetting can review them.
+        if path == "/privacy":
+            self._serve_static("privacy.html")
+            return
+
+        if path in ("/sms-terms", "/terms"):
+            self._serve_static("sms-terms.html")
+            return
+
+        if path in ("/sms-optin", "/sms-opt-in"):
+            self._serve_static("sms-optin.html")
+            return
+
         if path == "/health":
             kb = KnowledgeBase.get()
             bus = EventBus.get()
@@ -571,6 +597,72 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
                 _json_response(self, result)
             else:
                 _json_response(self, {"ok": True})
+
+        elif path == "/sms/optin":
+            body = _read_body(self)
+            phone_raw = str(body.get("phone", "")).strip()
+            name = str(body.get("name", "")).strip()[:120]
+            organization = str(body.get("organization", "")).strip()[:120]
+            consent = body.get("consent")
+
+            if consent is not True:
+                _json_response(self, {
+                    "error": "Consent checkbox must be actively selected to sign up.",
+                }, 400)
+                return
+
+            phone = normalize_phone(phone_raw)
+            if len(phone) < 11 or not phone[1:].isdigit():
+                _json_response(self, {"error": "Enter a valid mobile number."}, 400)
+                return
+
+            if not name or not organization:
+                _json_response(self, {
+                    "error": "Name and organization are required.",
+                }, 400)
+                return
+
+            client_ip = (
+                self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                or getattr(self, "client_address", ("", 0))[0]
+            )
+
+            if not allow_optin_attempt(phone, client_ip):
+                _json_response(self, {
+                    "error": "Too many sign-up attempts. Please try again later.",
+                }, 429)
+                return
+
+            record_optin(
+                phone=phone,
+                name=name,
+                organization=organization,
+                source="web_form",
+                ip=client_ip,
+                user_agent=self.headers.get("User-Agent", ""),
+            )
+
+            confirmation = (
+                "CrisisMesh: you signed up for emergency coordination alerts for "
+                f"{organization}. Reply YES to confirm, STOP to cancel, HELP for help. "
+                "Msg frequency varies by incident. Msg & data rates may apply."
+            )
+            delivery = send_sms(phone, confirmation) if can_send_sms() else {
+                "delivered": False,
+                "detail": "Outbound SMS not configured on this deployment.",
+            }
+
+            _json_response(self, {
+                "ok": True,
+                "status": "pending",
+                "confirmation_sent": bool(delivery.get("delivered")),
+                "message": (
+                    "Check your phone and reply YES to confirm your enrollment."
+                    if delivery.get("delivered")
+                    else "Sign-up recorded. Text START to the CrisisMesh number to "
+                         "confirm your enrollment."
+                ),
+            })
 
         elif path == "/sms":
             if not has_twilio_credentials():
@@ -843,7 +935,7 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
 
 
 def run_server(host: str = "0.0.0.0", port: int = 8080) -> None:
-    server = HTTPServer((host, port), CrisisMeshHandler)
+    server = ThreadingHTTPServer((host, port), CrisisMeshHandler)
     print(f"CrisisMesh server running on {host}:{port}")
     server.serve_forever()
 

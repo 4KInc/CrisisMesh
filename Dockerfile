@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY pyproject.toml .
-RUN pip install --no-cache-dir google-adk google-cloud-pubsub google-cloud-firestore pydantic python-dotenv
+RUN pip install --no-cache-dir google-adk google-cloud-pubsub google-cloud-firestore pydantic python-dotenv requests slack-bolt
 
 COPY . .
 

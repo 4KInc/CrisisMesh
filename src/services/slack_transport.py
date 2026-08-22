@@ -585,6 +585,12 @@ def dispatch_slack_event(payload: dict[str, Any]) -> dict[str, Any] | None:
         elif event_type == "message" and event.get("channel_type") == "im":
             if not event.get("subtype") and not event.get("bot_id"):
                 _handle_app_mention(event)
+        elif event_type == "file_shared":
+            threading.Thread(
+                target=_handle_file_shared,
+                args=(event,),
+                daemon=True,
+            ).start()
 
     return None
 
@@ -603,13 +609,100 @@ def _post_slack_results(channel_id: str, result: dict[str, Any]) -> None:
     _post_incident_block_kit(client, channel_id, result)
 
 
+def _clean_markdown_for_slack(text: str) -> str:
+    """Strip markdown artifacts and convert to Slack-friendly mrkdwn."""
+    import re
+    t = text.strip()
+    t = re.sub(r"#{1,6}\s+", "", t)
+    t = t.replace("---", "")
+    t = re.sub(r"\*{3,}", "", t)
+    t = re.sub(r"\*\*(.+?)\*\*", r"*\1*", t)
+    t = re.sub(r"__(.+?)__", r"*\1*", t)
+    t = re.sub(r"(?m)^\*\s+", "- ", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
+
+
+def _split_text(text: str, limit: int = 2900) -> list[str]:
+    """Split text into chunks that fit within Slack's block text limit."""
+    if len(text) <= limit:
+        return [text]
+    chunks: list[str] = []
+    while text:
+        if len(text) <= limit:
+            chunks.append(text)
+            break
+        cut = text.rfind("\n", 0, limit)
+        if cut < limit // 2:
+            cut = limit
+        chunks.append(text[:cut].rstrip())
+        text = text[cut:].lstrip()
+    return chunks
+
+
+def _gemini_text_to_blocks(
+    text: str, incident_id: str,
+) -> list[dict[str, Any]]:
+    """Convert Gemini markdown output into clean Slack Block Kit blocks."""
+    import re
+
+    blocks: list[dict[str, Any]] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"GEMINI FLEET SITREP — {incident_id}"},
+        },
+    ]
+
+    sections = re.split(r"\n#{1,3}\s+", text)
+    for raw in sections:
+        raw = raw.strip()
+        if not raw:
+            continue
+        lines = raw.split("\n", 1)
+        title = lines[0].strip().strip("#").strip()
+        title = title.strip()
+        body = lines[1].strip() if len(lines) > 1 else ""
+        body = _clean_markdown_for_slack(body)
+
+        if not body and not title:
+            continue
+
+        if title and body:
+            section_text = f"*{title}*\n{body}"
+        elif title:
+            section_text = f"*{title}*"
+        else:
+            section_text = body
+
+        for chunk in _split_text(section_text, 2900):
+            blocks.append({"type": "divider"})
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": chunk},
+            })
+        continue
+
+    blocks.append({"type": "divider"})
+
+    if len(blocks) > 50:
+        blocks = blocks[:49] + [blocks[-1]]
+
+    return blocks
+
+
 def _run_agentic_and_post(channel_id: str, report: str, incident_id: str) -> None:
     """Run the Gemini-driven agentic pipeline in a background thread and post SITREP."""
     try:
         from src.core.server import _run_agentic
         loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(_run_agentic(report))
+        logger.info(f"Agentic pipeline starting for {incident_id}")
+        result = loop.run_until_complete(asyncio.wait_for(_run_agentic(report), timeout=180))
         loop.close()
+        logger.info(f"Agentic pipeline finished for {incident_id}, final_response length={len(result.get('final_response', ''))}")
+    except asyncio.TimeoutError:
+        logger.error(f"Agentic pipeline timed out after 180s for {incident_id}")
+        loop.close()
+        return
     except Exception as e:
         logger.error(f"Agentic pipeline failed (deterministic fallback already posted): {e}")
         return
@@ -627,36 +720,16 @@ def _run_agentic_and_post(channel_id: str, report: str, incident_id: str) -> Non
         logger.info("SLACK_BOT_TOKEN not set — skipping Gemini SITREP post")
         return
 
+    blocks = _gemini_text_to_blocks(final_text, incident_id)
+
     try:
         client = WebClient(token=bot_token)
         client.chat_postMessage(
             channel=channel_id,
             text=f"Gemini Fleet SITREP — {incident_id}",
-            blocks=[
-                {
-                    "type": "header",
-                    "text": {
-                        "type": "plain_text",
-                        "text": f"GEMINI FLEET SITREP — {incident_id}",
-                    },
-                },
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": final_text},
-                },
-                {
-                    "type": "context",
-                    "elements": [{
-                        "type": "mrkdwn",
-                        "text": (
-                            f":robot_face: *Gemini 3.5 Flash* · "
-                            f"{delegations} delegations · {tool_calls} tool calls · "
-                            f"model-driven orchestration"
-                        ),
-                    }],
-                },
-            ],
+            blocks=blocks,
         )
+        logger.info(f"Gemini SITREP posted to Slack channel {channel_id}")
     except Exception as e:
         logger.error(f"Failed to post Gemini SITREP: {e}")
 
@@ -760,28 +833,403 @@ def _post_checkin_confirmation(
 
 
 def _handle_app_mention(event: dict[str, Any]) -> None:
-    """Handle app_mention or DM — trigger the incident pipeline from a natural message.
+    """Handle app_mention or DM — always route to Gemini as a conversational query.
 
-    Runs the pipeline in a background thread and posts the SITREP back to the channel.
+    Incidents are created only via /incident. @mentions are always follow-up
+    queries routed through the Gemini agentic pipeline.
     """
     channel_id = event.get("channel", "")
     user_id = event.get("user", "")
     text = event.get("text", "")
+    thread_ts = event.get("thread_ts") or event.get("ts", "")
 
     cleaned = re.sub(r"<@[A-Z0-9]+>", "", text).strip()
+    logger.info(f"app_mention received: user={user_id}, cleaned={cleaned[:80]!r}")
+
     if not cleaned:
         _post_bot_message(
             channel_id,
             ":rotating_light: *CrisisMesh standing by.* Tell me what's happening and I'll coordinate the response.\n"
             ":telephone_receiver: *If this is a life-threatening emergency, call 911 immediately.*",
+            thread_ts=thread_ts,
         )
         return
 
     threading.Thread(
-        target=_run_mention_pipeline,
-        args=(channel_id, user_id, cleaned),
+        target=_run_followup_query,
+        args=(channel_id, user_id, cleaned, thread_ts),
         daemon=True,
     ).start()
+
+
+_facility_data_cache: str = ""
+_room_checkins: dict[str, dict[str, Any]] = {}
+
+
+def _parse_checkin(text: str) -> dict[str, Any] | None:
+    """Detect check-in messages like 'room 101: all 25 students are safe'."""
+    import re
+    m = re.search(
+        r"room\s+(\w+)\s*[:\-–—]\s*(.+)",
+        text, re.IGNORECASE,
+    )
+    if not m:
+        return None
+    room = m.group(1)
+    body = m.group(2).lower()
+
+    safe = 0
+    missing = 0
+    status = "reported"
+    notes = m.group(2).strip()
+
+    safe_m = re.search(r"(?:all\s+)?(\d+)\s*(?:students?\s+)?(?:are\s+)?safe", body)
+    if safe_m:
+        safe = int(safe_m.group(1))
+        status = "safe"
+
+    miss_m = re.search(r"(\d+)\s*(?:are\s+)?(?:missing|unaccounted)", body)
+    if miss_m:
+        missing = int(miss_m.group(1))
+        status = "partial" if safe > 0 else "missing"
+
+    if "all" in body and "safe" in body and safe == 0:
+        safe_m2 = re.search(r"all\s+(\d+)", body)
+        if safe_m2:
+            safe = int(safe_m2.group(1))
+            status = "safe"
+
+    return {"room": room, "safe": safe, "missing": missing, "status": status, "notes": notes}
+
+
+def _format_checkin_board() -> str:
+    """Format current check-in state as text for the Gemini prompt."""
+    if not _room_checkins:
+        return "No rooms have reported yet."
+    lines = ["CURRENT CHECK-IN BOARD:"]
+    total_safe = 0
+    total_missing = 0
+    for room, info in sorted(_room_checkins.items()):
+        icon = ":white_check_mark:" if info["missing"] == 0 else ":red_circle:"
+        lines.append(
+            f"{icon} Room {room}: {info['safe']} safe, {info['missing']} missing — {info['notes']}"
+        )
+        total_safe += info["safe"]
+        total_missing += info["missing"]
+    lines.append(f"Totals: {total_safe} safe · {total_missing} missing · {len(_room_checkins)} rooms reported")
+    return "\n".join(lines)
+
+
+def _load_facility_data() -> str:
+    """Load all seed CSV files into a single context string (cached)."""
+    global _facility_data_cache
+    if _facility_data_cache:
+        return _facility_data_cache
+    import pathlib
+    seed_dir = pathlib.Path(__file__).resolve().parent.parent.parent / "data" / "seed"
+    parts: list[str] = []
+    for csv_file in sorted(seed_dir.glob("*.csv")):
+        parts.append(f"=== {csv_file.stem.upper()} ===\n{csv_file.read_text().strip()}")
+    _facility_data_cache = "\n\n".join(parts)
+    return _facility_data_cache
+
+
+def _handle_checkin_direct(channel_id: str, user_id: str, checkin: dict[str, Any], thread_ts: str) -> None:
+    """Post a direct check-in confirmation without calling Gemini."""
+    room = checkin["room"]
+    safe = checkin["safe"]
+    missing = checkin["missing"]
+
+    if missing > 0:
+        header = f":red_circle: *Room {room}* logged: {safe} safe, *{missing} MISSING* ({checkin['notes']})"
+    else:
+        header = f":white_check_mark: *Room {room}* logged: {safe}/{safe} safe, 0 missing."
+
+    board_lines = [f"\n:clipboard: *Board — {len(_room_checkins)} rooms reported*"]
+    total_safe = 0
+    total_missing = 0
+    for r, info in sorted(_room_checkins.items()):
+        icon = ":white_check_mark:" if info["missing"] == 0 else ":red_circle:"
+        board_lines.append(f"{icon} Room {r}: {info['safe']} safe, {info['missing']} missing")
+        total_safe += info["safe"]
+        total_missing += info["missing"]
+    board_lines.append(f"\nTotals: *{total_safe} safe* · *{total_missing} missing*")
+
+    if missing > 0:
+        board_lines.append(f"\n_Initiate search for {missing} missing from Room {room}?_")
+
+    text = header + "\n" + "\n".join(board_lines)
+
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    if not HAS_SLACK or not bot_token:
+        return
+    try:
+        client = WebClient(token=bot_token)
+        kwargs: dict[str, Any] = {
+            "channel": channel_id,
+            "text": text,
+            "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": text}}],
+        }
+        if thread_ts:
+            kwargs["thread_ts"] = thread_ts
+        client.chat_postMessage(**kwargs)
+    except Exception as e:
+        logger.error(f"Failed to post check-in response: {e}")
+
+
+def _handle_board_query(channel_id: str, thread_ts: str) -> None:
+    """Show the full accountability board with all rooms."""
+    import csv
+    import io
+    import pathlib
+
+    seed_dir = pathlib.Path(__file__).resolve().parent.parent.parent / "data" / "seed"
+    rooms_file = seed_dir / "rooms.csv"
+    all_rooms: dict[str, str] = {}
+    if rooms_file.exists():
+        reader = csv.DictReader(io.StringIO(rooms_file.read_text()))
+        for row in reader:
+            rid = row.get("room_id", "")
+            teacher = row.get("notes", "").split(" - ")[-1] if " - " in row.get("notes", "") else ""
+            all_rooms[rid] = teacher
+
+    total_safe = 0
+    total_missing = 0
+    reported_lines: list[str] = []
+    silent_rooms: list[str] = []
+
+    for rid in sorted(all_rooms.keys()):
+        if rid in _room_checkins:
+            info = _room_checkins[rid]
+            total_safe += info["safe"]
+            total_missing += info["missing"]
+            if info["missing"] > 0:
+                reported_lines.append(
+                    f":red_circle: Room {rid} ({all_rooms[rid]}): "
+                    f"{info['safe']} safe, *{info['missing']} MISSING* ({info['notes']})"
+                )
+            else:
+                reported_lines.append(
+                    f":white_check_mark: Room {rid} ({all_rooms[rid]}): {info['safe']}/{info['safe']} safe"
+                )
+        else:
+            teacher = all_rooms[rid]
+            cap = 25
+            silent_rooms.append(f"{rid}")
+
+    total_rooms = len(all_rooms)
+    reported_count = len(_room_checkins)
+    silent_count = len(silent_rooms)
+    est_unaccounted = silent_count * 25
+
+    lines = [
+        f":clipboard: *BOARD — {reported_count} of {total_rooms} rooms reported*",
+        "",
+    ]
+    lines.extend(reported_lines)
+
+    if silent_rooms:
+        lines.append(
+            f":black_circle: {silent_count} rooms NO REPORT (~{est_unaccounted} students): "
+            + ", ".join(silent_rooms)
+        )
+
+    lines.append("")
+    lines.append(f"Totals: *{total_safe} safe* · *{total_missing} missing* · *~{est_unaccounted} unaccounted*")
+
+    if silent_rooms:
+        lines.append("")
+        lines.append(f"_Chase order: {', '.join(silent_rooms[:5])} — teachers report by room now._")
+
+    text = "\n".join(lines)
+
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    if not HAS_SLACK or not bot_token:
+        return
+    try:
+        client = WebClient(token=bot_token)
+        kwargs: dict[str, Any] = {
+            "channel": channel_id,
+            "text": text,
+            "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": text}}],
+        }
+        if thread_ts:
+            kwargs["thread_ts"] = thread_ts
+        client.chat_postMessage(**kwargs)
+    except Exception as e:
+        logger.error(f"Failed to post board response: {e}")
+
+
+def _run_followup_query(channel_id: str, user_id: str, query: str, thread_ts: str = "") -> None:
+    """Route a question to Gemini with a single direct API call."""
+    logger.info(f"Follow-up query for {_active_incident_id}: {query[:80]}")
+
+    checkin = _parse_checkin(query)
+    if checkin:
+        _room_checkins[checkin["room"]] = checkin
+        logger.info(f"Check-in logged: Room {checkin['room']} — {checkin['safe']} safe, {checkin['missing']} missing")
+        _handle_checkin_direct(channel_id, user_id, checkin, thread_ts)
+        return
+
+    query_lower = query.lower()
+    if any(kw in query_lower for kw in ["unaccounted", "board", "accountability", "who is still", "status board"]):
+        _handle_board_query(channel_id, thread_ts)
+        return
+
+    incident_ctx = ""
+    if _active_incident_id and _latest_incident:
+        inc = _latest_incident
+        classification = inc.get("classification", {})
+        location = inc.get("location", {})
+        location_name = location.get("primary_zone", "") if isinstance(location, dict) else str(location)
+        incident_ctx = (
+            f"ACTIVE INCIDENT: {_active_incident_id} | "
+            f"Type: {classification.get('incident_type', 'unknown')} | "
+            f"Severity: {classification.get('severity', 'unknown')} | "
+            f"Location: {location_name}"
+        )
+
+    facility_data = _load_facility_data()
+
+    prompt = (
+        "You are CrisisMesh, an emergency coordination bot in Slack. "
+        "This is a LIVE CRISIS. Every second counts.\n\n"
+        "CRITICAL RULE: Answer ONLY the specific question asked. Nothing else.\n"
+        "- If asked for a phone number → return ONLY the name and phone number.\n"
+        "- If asked about routes → return ONLY the relevant routes.\n"
+        "- If asked about accountability → return ONLY the check-in board.\n"
+        "- NEVER add evacuation routes, contact lists, or safety info unless specifically asked.\n"
+        "- NEVER dump all data. Pick only what answers the question.\n\n"
+        "FORMAT RULES:\n"
+        "• Put phone numbers in backticks: `615-555-0138`\n"
+        "• Bold names: *Mrs. Davis* — *Room 104*\n"
+        "• Use → for routes: East hallway → Door 3\n"
+        "• Use emoji: :white_check_mark: safe, :red_circle: danger/missing, :warning: caution\n"
+        "• End with ONE actionable follow-up in _italics_ if relevant\n"
+        "• NO paragraphs. NO headers. NO disclaimers.\n"
+        "• Keep the entire response under 6 lines.\n\n"
+        f"{incident_ctx}\n\n"
+        f"FACILITY DATA:\n{facility_data}\n\n"
+        f"{_format_checkin_board()}\n\n"
+        f"Question: {query}"
+    )
+
+    try:
+        from google.genai import Client
+        project = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+        location = os.environ.get("GOOGLE_CLOUD_REGION", "us-central1")
+        client = Client(vertexai=True, project=project, location=location)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=prompt,
+        )
+        final_text = response.text or ""
+    except Exception as e:
+        logger.error(f"Follow-up query failed: {e}")
+        _post_bot_message(channel_id, ":warning: Something went wrong. Please try again.", thread_ts=thread_ts)
+        return
+
+    if not final_text:
+        _post_bot_message(channel_id, ":warning: I couldn't generate a response. Please rephrase your question.", thread_ts=thread_ts)
+        return
+
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    if not HAS_SLACK or not bot_token:
+        return
+
+    text_clean = _clean_markdown_for_slack(final_text)
+
+    blocks: list[dict[str, Any]] = []
+    for chunk in _split_text(text_clean, 2900):
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": chunk},
+        })
+
+    if len(blocks) > 50:
+        blocks = blocks[:50]
+
+    try:
+        client = WebClient(token=bot_token)
+        kwargs: dict[str, Any] = {
+            "channel": channel_id,
+            "text": f"CrisisMesh — {_active_incident_id or 'query'}",
+            "blocks": blocks,
+        }
+        if thread_ts:
+            kwargs["thread_ts"] = thread_ts
+        client.chat_postMessage(**kwargs)
+        logger.info(f"Follow-up response posted for {_active_incident_id}")
+    except Exception as e:
+        logger.error(f"Failed to post follow-up response: {e}")
+
+
+VALID_CSV_FILES = {
+    "assembly_points.csv", "emergency_resources.csv", "evacuation_routes.csv",
+    "facility.csv", "nearby_services.csv", "personnel.csv", "rooms.csv", "zones.csv",
+}
+
+_knowledge_base_counts: dict[str, int] = {}
+
+
+def _handle_file_shared(event: dict[str, Any]) -> None:
+    """Handle file uploads — if CSV, download and update seed data."""
+    global _facility_data_cache
+    file_id = event.get("file_id", "")
+    if not file_id:
+        return
+
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    if not HAS_SLACK or not bot_token:
+        return
+
+    try:
+        client = WebClient(token=bot_token)
+        info = client.files_info(file=file_id)
+        file_data = info.get("file", {})
+        filename = file_data.get("name", "")
+        filetype = file_data.get("filetype", "")
+        channel_id = ""
+        channels = file_data.get("channels", [])
+        if channels:
+            channel_id = channels[0]
+
+        if filetype != "csv":
+            return
+
+        url_private = file_data.get("url_private", "")
+        if not url_private:
+            return
+
+        import urllib.request
+        req = urllib.request.Request(url_private)
+        req.add_header("Authorization", f"Bearer {bot_token}")
+        with urllib.request.urlopen(req) as resp:
+            csv_content = resp.read().decode("utf-8")
+
+        import pathlib
+        seed_dir = pathlib.Path(__file__).resolve().parent.parent.parent / "data" / "seed"
+        target = seed_dir / filename
+        target.write_text(csv_content)
+
+        _facility_data_cache = ""
+
+        row_count = len(csv_content.strip().split("\n")) - 1
+        label = filename.replace(".csv", "").replace("_", " ").title()
+        _knowledge_base_counts[label] = row_count
+        logger.info(f"CSV uploaded: {filename} ({row_count} rows)")
+
+        if channel_id:
+            summary_lines = [f"- {k}: {v}" for k, v in sorted(_knowledge_base_counts.items())]
+            summary = "\n".join(summary_lines)
+            _post_bot_message(
+                channel_id,
+                f":white_check_mark: File `{filename}` loaded successfully!\n\n"
+                f"{filename.replace('.csv', '')}: {row_count} rows loaded\n\n"
+                f"*Knowledge Base Summary:*\n{summary}",
+            )
+    except Exception as e:
+        logger.error(f"File upload handling failed: {e}")
 
 
 def _run_mention_pipeline(channel_id: str, user_id: str, text: str) -> None:
@@ -820,7 +1268,7 @@ def _run_mention_pipeline(channel_id: str, user_id: str, text: str) -> None:
     ).start()
 
 
-def _post_bot_message(channel_id: str, text: str) -> None:
+def _post_bot_message(channel_id: str, text: str, thread_ts: str = "") -> None:
     """Post a message as the bot to the given channel."""
     bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
     if not HAS_SLACK or not bot_token:
@@ -828,7 +1276,10 @@ def _post_bot_message(channel_id: str, text: str) -> None:
         return
     try:
         client = WebClient(token=bot_token)
-        client.chat_postMessage(channel=channel_id, text=text)
+        kwargs: dict[str, Any] = {"channel": channel_id, "text": text}
+        if thread_ts:
+            kwargs["thread_ts"] = thread_ts
+        client.chat_postMessage(**kwargs)
     except Exception as e:
         logger.error(f"Failed to post bot message: {e}")
 
@@ -968,8 +1419,7 @@ def _post_incident_block_kit(
             "text": (
                 ":telephone_receiver: *If 911 has not been called, do so immediately.*\n"
                 f"Incident ID: `{result['incident_id']}` | "
-                f"Trace: `{result.get('trace_id', '—')}` | "
-                f"_Deterministic pipeline — fast fallback. Gemini fleet SITREP incoming._"
+                f"Trace: `{result.get('trace_id', '—')}`"
             ),
         }],
     })
