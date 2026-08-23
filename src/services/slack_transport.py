@@ -45,6 +45,7 @@ from src.agents.accountability.tools import (
 )
 from src.agents.intake.tools import classify_incident, extract_location, select_playbook
 from src.agents.learning.tools import find_similar_incidents
+from src.agents.sitrep.tools import extract_threat_observation, generate_arrival_brief
 from src.core.tactical_reasoning import build_provenance_record, get_tactical_context
 from src.agents.safety_intel.tools import (
     find_assembly_point,
@@ -1081,6 +1082,98 @@ def _handle_board_query(channel_id: str, thread_ts: str) -> None:
         logger.error(f"Failed to post board response: {e}")
 
 
+def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
+    """Generate and post a Law Enforcement Arrival Brief for the active incident."""
+    if not _active_incident_id or not _latest_incident:
+        _post_bot_message(channel_id, ":warning: No active incident.", thread_ts=thread_ts)
+        return
+
+    inc = _latest_incident
+    classification = inc.get("classification", {})
+    location = inc.get("location", {})
+    zone_id = location.get("zone_id", "") if isinstance(location, dict) else ""
+    report_text = inc.get("report", "")
+    accountability = compute_accountability_summary(_active_incident_id)
+    threat_loc = extract_threat_observation(report_text)
+
+    brief = generate_arrival_brief(
+        incident_id=_active_incident_id,
+        incident_type=classification.get("incident_type", "unknown"),
+        severity=classification.get("severity", "unknown"),
+        location=location.get("resolved_location", report_text) if isinstance(location, dict) else str(location),
+        time_declared=classification.get("timestamp", ""),
+        accountability=accountability,
+        incident_zone=zone_id,
+        facility_id=classification.get("facility_id", "jefferson"),
+        reported_threat_location=threat_loc,
+    )
+
+    incident = brief["incident"]
+    headcount = brief["headcount"]
+    egress = brief["egress"]
+    threat = brief.get("threat_observation")
+    nearby = brief["nearby_services"]
+
+    lines = [
+        f":shield: *LAW ENFORCEMENT ARRIVAL BRIEF — {_active_incident_id}*",
+        f":warning: *REQUIRES INCIDENT COMMANDER APPROVAL BEFORE SHARING*",
+        "",
+        f"*{brief['scope_notice']}*",
+        "",
+        f"*Incident:* `{incident['type'].upper()}` | *Severity:* `{incident['severity'].upper()}`",
+        f"*Location:* {incident['location']}",
+        f"*Zone:* {incident.get('incident_zone', '—')}",
+        "",
+        f"*Headcount:* {headcount['total']} total | {headcount['accounted']} accounted | {headcount['unaccounted']} unaccounted",
+    ]
+
+    if headcount.get("injured"):
+        lines.append(f":ambulance: Injured: {headcount['injured']}")
+    if headcount.get("need_help"):
+        lines.append(f":warning: Need help: {headcount['need_help']}")
+
+    if threat:
+        lines.append("")
+        lines.append(f":rotating_light: *Threat Observation:* `{threat['status']}`")
+        lines.append(f"  Last reported: {threat['last_reported_location']} at {threat['last_reported_time']}")
+        lines.append(f"  _{threat['caveat']}_")
+
+    people = brief.get("people_needing_assistance", [])
+    if people:
+        lines.append("")
+        lines.append(f":wheelchair: *People Needing Assistance ({len(people)}):*")
+        for p in people:
+            lines.append(f"  - *{p['name']}* — {p['last_known_location']}")
+
+    lines.append("")
+    if egress.get("blocked_routes"):
+        lines.append(f":no_entry: *Blocked Routes:* {', '.join(egress['blocked_routes'])}")
+    if egress.get("safe_routes"):
+        lines.append(f":white_check_mark: *Safe Routes:* {', '.join(egress['safe_routes'])}")
+    if egress.get("accessible_routes"):
+        lines.append(f":wheelchair: *Accessible Routes:* {', '.join(egress['accessible_routes'])}")
+
+    lines.append("")
+    lines.append(f"*Assembly:* {brief['assembly_point']}")
+    lines.append(f"*Command Contact:* {brief['command_contact']}")
+
+    if nearby.get("nearest_police_station", {}).get("name"):
+        p = nearby["nearest_police_station"]
+        lines.append(f":police_car: *Police:* {p['name']} (ETA {p['eta_minutes']}min) `{p['phone']}`")
+    if nearby.get("nearest_fire_station", {}).get("name"):
+        f = nearby["nearest_fire_station"]
+        lines.append(f":fire_engine: *Fire:* {f['name']} (ETA {f['eta_minutes']}min) `{f['phone']}`")
+    if nearby.get("nearest_hospital", {}).get("name"):
+        h = nearby["nearest_hospital"]
+        lines.append(f":hospital: *Hospital:* {h['name']} (ETA {h['eta_minutes']}min)")
+
+    lines.append("")
+    lines.append(f":telephone_receiver: *{brief['emergency_notice']}*")
+
+    text = "\n".join(lines)
+    _post_bot_message(channel_id, text, thread_ts=thread_ts)
+
+
 def _run_followup_query(channel_id: str, user_id: str, query: str, thread_ts: str = "") -> None:
     """Route a question to Gemini with a single direct API call."""
     logger.info(f"Follow-up query for {_active_incident_id}: {query[:80]}")
@@ -1095,6 +1188,10 @@ def _run_followup_query(channel_id: str, user_id: str, query: str, thread_ts: st
     query_lower = query.lower()
     if any(kw in query_lower for kw in ["unaccounted", "board", "accountability", "who is still", "status board"]):
         _handle_board_query(channel_id, thread_ts)
+        return
+
+    if any(kw in query_lower for kw in ["arrival brief", "law enforcement", "handoff", "le brief", "handoff package"]):
+        _handle_arrival_brief(channel_id, thread_ts)
         return
 
     incident_ctx = ""
