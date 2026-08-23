@@ -921,15 +921,32 @@ def _format_checkin_board() -> str:
 
 
 def _load_facility_data() -> str:
-    """Load all seed CSV files into a single context string (cached)."""
+    """Load all seed CSV files into a single context string (cached).
+
+    Strips internal-only columns (slack_user_id, emergency_contact_*,
+    medical_notes) so placeholder IDs and PII don't leak into Gemini output.
+    """
     global _facility_data_cache
     if _facility_data_cache:
         return _facility_data_cache
+    import csv as _csv
+    import io as _io
     import pathlib
+    _STRIP_COLS = {"slack_user_id", "emergency_contact_name", "emergency_contact_phone", "medical_notes"}
     seed_dir = pathlib.Path(__file__).resolve().parent.parent.parent / "data" / "seed"
     parts: list[str] = []
     for csv_file in sorted(seed_dir.glob("*.csv")):
-        parts.append(f"=== {csv_file.stem.upper()} ===\n{csv_file.read_text().strip()}")
+        raw = csv_file.read_text().strip()
+        reader = _csv.DictReader(_io.StringIO(raw))
+        keep = [f for f in (reader.fieldnames or []) if f not in _STRIP_COLS]
+        if keep != list(reader.fieldnames or []):
+            buf = _io.StringIO()
+            writer = _csv.DictWriter(buf, fieldnames=keep, extrasaction="ignore")
+            writer.writeheader()
+            for row in reader:
+                writer.writerow(row)
+            raw = buf.getvalue().strip()
+        parts.append(f"=== {csv_file.stem.upper()} ===\n{raw}")
     _facility_data_cache = "\n\n".join(parts)
     return _facility_data_cache
 
