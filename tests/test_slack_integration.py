@@ -513,10 +513,10 @@ class TestAppMention:
 
 
 class TestMentionAgenticDispatch:
-    """@mention and DM fire the agentic Gemini fleet in a background thread."""
+    """Agentic Gemini fleet does NOT auto-post — only on explicit request."""
 
-    def test_mention_spawns_agentic_thread(self):
-        """_run_mention_pipeline must call _run_agentic_and_post."""
+    def test_mention_does_not_spawn_agentic_thread(self):
+        """_run_mention_pipeline must NOT auto-post the Gemini SITREP."""
         import src.services.slack_transport as st
 
         targets = []
@@ -535,10 +535,10 @@ class TestMentionAgenticDispatch:
         finally:
             st.threading.Thread = original_thread
 
-        assert "_run_agentic_and_post" in targets
+        assert "_run_agentic_and_post" not in targets
 
-    def test_slash_command_also_spawns_agentic_thread(self):
-        """Slash command _start_incident must also call _run_agentic_and_post."""
+    def test_slash_command_does_not_spawn_agentic_thread(self):
+        """Slash command _start_incident must NOT auto-post the Gemini SITREP."""
         import src.services.slack_transport as st
 
         targets = []
@@ -561,7 +561,7 @@ class TestMentionAgenticDispatch:
         finally:
             st.threading.Thread = original_thread
 
-        assert "_run_agentic_and_post" in targets
+        assert "_run_agentic_and_post" not in targets
 
     def test_mention_ack_includes_911(self):
         """The @mention fast ack must include the 911 line."""

@@ -350,12 +350,6 @@ def _start_incident(channel_id: str, user_id: str, text: str) -> dict[str, Any]:
         daemon=True,
     ).start()
 
-    threading.Thread(
-        target=_run_agentic_and_post,
-        args=(channel_id, text, result.get("incident_id", "")),
-        daemon=True,
-    ).start()
-
     return {
         "response_type": "in_channel",
         "text": (
@@ -1319,12 +1313,6 @@ def _run_mention_pipeline(channel_id: str, user_id: str, text: str) -> None:
     )
 
     _post_slack_results(channel_id, result)
-
-    threading.Thread(
-        target=_run_agentic_and_post,
-        args=(channel_id, text, result.get("incident_id", "")),
-        daemon=True,
-    ).start()
 
 
 def _post_bot_message(channel_id: str, text: str, thread_ts: str = "") -> None:
