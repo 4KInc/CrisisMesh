@@ -2,7 +2,7 @@
 
 Intercepts all agent tool calls to enforce:
 1. Agent Identity (least-privilege) — deny out-of-scope tools
-2. Content scanning (InjectionGuard regex / Model Armor IAM-blocked) — block injection + PII
+2. Content scanning (Google Model Armor API / InjectionGuard regex fallback) — block injection + PII
 3. Rate limiting — prevent runaway agents
 4. Approval gates — block high-impact actions without commander approval
 

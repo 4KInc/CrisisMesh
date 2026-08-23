@@ -1,6 +1,6 @@
 # CrisisMesh Verification Audit — Phase 0
 
-`AUDIT: 7 PASS / 7 PARTIAL / 2 FAIL · tests 254/268 (14 google.adk import) · pillars: 2 managed / 4 custom / 1 IAM-blocked`
+`AUDIT: 7 PASS / 7 PARTIAL / 2 FAIL · tests 254/268 (14 google.adk import) · pillars: 3 managed / 4 custom`
 
 Run date: 2026-08-21
 Suite: `python3 -m pytest tests/ -q` → 254 passed, 14 failed, 268 collected in 1.60s
@@ -38,7 +38,7 @@ Suite: `python3 -m pytest tests/ -q` → 254 passed, 14 failed, 268 collected in
 | Agent Registry | Custom Python dict (`agent_registry.py`) | **Custom** | Custom | Not labeled | Not labeled | Custom | No |
 | Agent Identity | Custom Python (`AgentGateway.is_tool_allowed`) | **Custom** | Custom | "Identity" | "least-privilege" | Custom | No |
 | Agent Gateway | Custom Python 4-layer (`agent_gateway.py`) | **Custom** | Custom | "Agent Gateway" | "Gateway enforces" | Custom | No |
-| Content Scanning | Regex InjectionGuard (Model Armor IAM-blocked) | **IAM-blocked / regex fallback** | "Managed (IAM-blocked) / Custom fallback" | **"Model Armor (managed)"** | **"Model Armor scans"** | "Managed but IAM-blocked" | **YES — diagram + DEVPOST** |
+| Content Scanning | Google Model Armor API (live) + InjectionGuard regex fallback | **Managed** | "Managed + Custom fallback" | "Model Armor (managed)" | "Model Armor scans" | "Managed" | No |
 | Memory Bank | Custom Python singleton (`memory_bank.py`) | **Custom** | Custom | No managed claim | No managed claim | Custom | No |
 | Observability | Custom Python Tracer/Span (`observability.py`) | **Custom** | Custom | Not labeled | Not labeled | Custom | No |
 | Event Bus | Pub/Sub (deployed) / in-memory (local) | **Managed** | Managed | "Event Bus (Pub/Sub)" | "Pub/Sub handles" | Managed | No |
@@ -50,8 +50,8 @@ Suite: `python3 -m pytest tests/ -q` → 254 passed, 14 failed, 268 collected in
 | ID | Source | Issue | Smallest Fix |
 |----|--------|-------|-------------|
 | GAP-01 | Claim 2 | Slack/console trigger fires deterministic pipeline, not Gemini | Route `_start_incident` through `/incident/agentic/stream`; keep deterministic as labeled fallback |
-| GAP-02 | Claim 5 | README:97 diagram says `Model Armor (managed)` | Change to `Content Scanner (InjectionGuard regex; Model Armor IAM-blocked)` |
-| GAP-03 | Claim 5 | DEVPOST:19,34 imply Model Armor is active | Reword to "InjectionGuard regex scanner (Model Armor API wired but IAM-blocked)" |
+| ~~GAP-02~~ | ~~Claim 5~~ | ~~README:97 diagram says `Model Armor (managed)`~~ | **RESOLVED** — Model Armor is now live with template `crisismesh-guard` |
+| ~~GAP-03~~ | ~~Claim 5~~ | ~~DEVPOST:19,34 imply Model Armor is active~~ | **RESOLVED** — Model Armor API is active; claims are now accurate |
 | GAP-04 | Claim 6 | Approval gate sets `allowed=True` — soft flag, not hard block | Change to `allowed=False` for `APPROVAL_REQUIRED_ACTIONS`; require explicit IC override |
 | GAP-05 | Claim 6 | `resolve_incident` not in approval-required list | Add `resolve_incident` to `APPROVAL_REQUIRED_ACTIONS` |
 | GAP-06 | Claim 6 | Only 2/5 approval actions tested | Add tests for `share_medical_info`, `send_external_message`, `propose_playbook_change` |

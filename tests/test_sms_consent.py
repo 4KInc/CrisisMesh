@@ -154,6 +154,14 @@ class TestCarrierKeywords:
         assert "STOP to cancel" in twiml
         assert "/sms-terms" in twiml
 
+    def test_help_fits_twilio_320_char_registration_cap(self):
+        """Twilio rejects a registered HELP message over 320 chars, and the
+        live reply must match what is registered."""
+        from src.services.sms_transport import handle_inbound_sms
+        twiml = handle_inbound_sms("+15551234567", "HELP")["twiml"]
+        body = twiml.split("<Message>")[1].split("</Message>")[0].replace("&amp;", "&")
+        assert len(body) <= 320, f"HELP reply is {len(body)} chars"
+
     def test_stop_beats_incident_classification(self):
         """A STOP mid-incident must unsubscribe, not open a new incident."""
         from src.services.sms_transport import handle_inbound_sms
@@ -201,3 +209,24 @@ class TestOutboundSuppression:
         result = send_sms("+15551234567", "SITREP")
         assert result["delivered"] is True
         assert sent["to"] == "+15551234567"
+
+
+class TestHelpReplySupportClause:
+    def test_support_present_by_default(self, monkeypatch):
+        monkeypatch.delenv("CRISISMESH_SUPPORT_EMAIL", raising=False)
+        import importlib
+        import src.services.sms_transport as st
+        importlib.reload(st)
+        twiml = st.handle_inbound_sms("+15551234567", "HELP")["twiml"]
+        assert "Support: heartlinmachado@blockintelai.com" in twiml
+        assert "[[" not in twiml  # never ship a placeholder in a HELP reply
+        assert "Msg &amp; data rates may apply" in twiml
+
+    def test_support_included_when_configured(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_SUPPORT_EMAIL", "sms@example.com")
+        import importlib
+        import src.services.sms_transport as st
+        importlib.reload(st)
+        twiml = st.handle_inbound_sms("+15551234567", "HELP")["twiml"]
+        assert "Support: sms@example.com" in twiml
+        importlib.reload(st)

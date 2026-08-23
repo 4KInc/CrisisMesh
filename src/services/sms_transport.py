@@ -72,7 +72,9 @@ CHECKIN_KEYWORDS: dict[str, str] = {
 PUBLIC_BASE_URL = os.environ.get(
     "CRISISMESH_PUBLIC_URL", "https://crisismesh-1031148889398.us-central1.run.app"
 ).rstrip("/")
-SUPPORT_EMAIL = os.environ.get("CRISISMESH_SUPPORT_EMAIL", "support@crisismesh.app")
+SUPPORT_EMAIL = os.environ.get(
+    "CRISISMESH_SUPPORT_EMAIL", "heartlinmachado@blockintelai.com"
+).strip()
 TERMS_URL = f"{PUBLIC_BASE_URL}/sms-terms"
 PRIVACY_URL = f"{PUBLIC_BASE_URL}/privacy"
 
@@ -244,12 +246,16 @@ def _handle_compliance_keyword(from_number: str, word: str) -> dict[str, Any] | 
         }
 
     if word in INFO_KEYWORDS:
+        # Never emit a placeholder or invented support address in the
+        # carrier-mandated HELP reply — omit the clause instead.
+        # Kept under Twilio's 320-character cap for the registered HELP message,
+        # so the campaign registration and the live reply stay identical.
+        support = f"Support: {SUPPORT_EMAIL}. " if SUPPORT_EMAIL else ""
         return {
             "twiml": _twiml_response(
                 "CrisisMesh emergency coordination alerts. Msg frequency varies "
                 "by incident. Msg & data rates may apply. Reply STOP to cancel. "
-                f"Support: {SUPPORT_EMAIL}. Terms: {TERMS_URL} "
-                f"Privacy: {PRIVACY_URL} In an emergency, call 911."
+                f"{support}Terms: {TERMS_URL} In an emergency, call 911."
             ),
             "action": "info",
         }
@@ -280,8 +286,9 @@ def _handle_sms_checkin(from_number: str, status: str) -> dict[str, Any]:
 
     return {
         "twiml": _twiml_response(
-            f"Check-in recorded: {result['name']} — {status}. "
-            f"If this is a life-threatening emergency, call 911."
+            f"CrisisMesh: check-in recorded: {result['name']} — {status}. "
+            f"If this is a life-threatening emergency, call 911. "
+            f"Reply STOP to unsubscribe."
         ),
         "action": "checkin",
         "person_id": person_id,

@@ -84,52 +84,136 @@ classification.
 Twilio re-reviews the live pages, not the form text. A reviewer who hits a
 placeholder or a 404 rejects again, and repeat rejections slow later reviews.
 
-- [ ] **Replace every `[[PLACEHOLDER]]`** in `static/privacy.html`,
-      `static/sms-terms.html`, and `static/sms-optin.html`. They are highlighted
-      in red on the rendered pages: `[[LEGAL_ENTITY_NAME]]`,
-      `[[BUSINESS_ADDRESS]]`, `[[SUPPORT_EMAIL]]`, `[[SUPPORT_PHONE]]`. The legal
-      entity name must match brand `BN859b518187ea261c57126329975a0f95` exactly.
-- [ ] **Deploy**, then confirm all three URLs return 200 with no login —
-      `/privacy`, `/sms-terms`, `/sms-optin`. Error 30921 is an automatic
-      rejection if any page is gated.
-- [ ] **Set `CRISISMESH_SUPPORT_EMAIL`** on the Cloud Run service. It is
-      interpolated into the SMS HELP reply; the default `support@crisismesh.app`
-      is a placeholder.
+- [x] **Business identity filled in** across `static/privacy.html`,
+      `static/sms-terms.html`, and `static/sms-optin.html`:
+      Blockintel Inc · 803 Division St, Nashville, TN 37203 ·
+      heartlinmachado@blockintelai.com · +1 (669) 216-7706.
+- [ ] **Confirm "Blockintel Inc" matches brand `BN859b518187ea261c57126329975a0f95`
+      exactly** — including any "Inc." punctuation the brand record uses. A
+      mismatch between the policy page and the registered brand is its own
+      rejection reason.
+- [ ] **Redeploy**, then confirm all three URLs return 200 with no login and no
+      `[[` placeholders — `/privacy`, `/sms-terms`, `/sms-optin`. Error 30921 is
+      an automatic rejection if any page is gated.
 - [ ] **Set `CRISISMESH_PUBLIC_URL`** if the deployed hostname differs from
       `https://crisismesh-1031148889398.us-central1.run.app`.
 - [ ] **Run one opt-in end to end yourself** and screenshot: the filled form, the
       confirmation SMS, your `YES` reply, and the `STOP` and `HELP` replies.
       Twilio frequently asks for these mid-review.
+- [ ] **Fix the two URL fields in the campaign form.** Both currently point at
+      the site root, which serves the command console. They must be `/privacy`
+      and `/sms-terms` — see §4.
+- [ ] **Replace the consent answer.** The current text says the roster admin
+      supplies the number and that texting in is "implicit opt-in"; both are
+      invalid under A2P 10DLC. Paste the §4 replacement.
+- [ ] **Tick "Embedded links" and "Phone numbers"** under "Select any content
+      your messages may contain" — the HELP reply carries URLs and every message
+      carries the 911 line.
 - [ ] **Update the Messaging Service** to point at the same URLs, and confirm the
       brand's website field resolves (errors 30907 / 30919).
 
 ---
 
-## 4. Campaign field copy
+## 4. Console form — field by field
+
+Screens captured 2026-08-22 from
+`console.twilio.com/.../senders-onboarding/PN76d09b37c755cd853c14f89a552cbeac/checklist/a2p`.
+Two of the three rejection causes are still present in the form as filled, so
+fix these before touching anything else:
+
+> **The privacy policy and terms links both point at the site root**
+> (`https://crisismesh-1031148889398.us-central1.run.app`), which serves the
+> command console. A reviewer following either link finds no policy — that is
+> error 30908 and error 30882 directly.
+>
+> **The consent answer says the roster admin supplies the number and that
+> texting in "constitutes implicit opt-in."** Implicit opt-in and
+> administrator-supplied consent are both invalid under A2P 10DLC; consent must
+> be given by the subscriber themselves. That is error 30909.
+
+Every field below is paste-ready and matches what the code actually sends.
 
 ### Campaign description
 
-> CrisisMesh is an emergency coordination service used by K-12 schools,
-> nonprofits, and similar organizations to coordinate their internal response
-> during a fire, severe-weather, medical, or active-threat incident. Staff and
-> designated responders who have opted in receive incident situation reports and
-> safety check-in requests by SMS, and reply with their status (SAFE, SOS,
-> INJURED, or EVACUATED) so the incident commander knows who is accounted for.
-> All messages are conversational or transactional. The program sends no
-> marketing or promotional content.
+> CrisisMesh sends emergency coordination messages to opted-in staff and
+> designated responders at schools, nonprofits, and similar organizations during
+> a crisis incident. Messages include incident acknowledgments, safety check-in
+> requests, and situation reports (SITREPs). Recipients opt in themselves,
+> either through the public web opt-in form with a double opt-in SMS
+> confirmation, or by texting START to the CrisisMesh number. Users reply SAFE,
+> SOS, INJURED, or EVACUATED to check in during an incident. Message frequency
+> varies and is low — messages are sent only during an active incident. This
+> program sends no marketing or promotional content.
 
-### Call to action / message flow
+*Changed from the rejected version: removed "Users opt in by registering in the
+organization's personnel roster" (invalid consent) and swapped HELP for SOS.*
 
-Paste verbatim into the campaign's **Message Flow** field. This is what answers
-30909, and it must keep matching what the live pages actually do.
+### Sample message #1
 
-> End users opt in through one of two paths, both requiring express written
-> consent.
+> CrisisMesh: you signed up for emergency coordination alerts for Lincoln High
+> School. Reply YES to confirm, STOP to cancel, HELP for help. Msg frequency
+> varies by incident. Msg & data rates may apply.
+
+### Sample message #2
+
+> CrisisMesh: Incident reported: FIRE (critical). ID: INC-20260821-001.
+> CrisisMesh agent fleet is coordinating response. Reply SAFE, SOS, INJURED, or
+> EVACUATED to check in. Reply STOP to unsubscribe, HELP for help. If 911 has
+> not been called, do so immediately.
+
+### Sample message #3
+
+> CrisisMesh SITREP — INC-20260821-001. Type: FIRE, Severity: CRITICAL. 30/34
+> personnel accounted. 4 unaccounted. Assembly point: Athletic Field. Nearest
+> fire station: Central Fire Station (ETA 4min). If 911 has not been called, do
+> so immediately. Reply STOP to opt out.
+
+### Sample message #4
+
+> CrisisMesh: check-in recorded: Jane Smith — safe. If this is a life-threatening
+> emergency, call 911. Reply STOP to unsubscribe.
+
+### Sample message #5
+
+> CrisisMesh emergency coordination alerts. Msg frequency varies by incident.
+> Msg & data rates may apply. Reply STOP to cancel. Support:
+> heartlinmachado@blockintelai.com. Terms:
+> https://crisismesh-1031148889398.us-central1.run.app/sms-terms In an emergency,
+> call 911.
+
+### "Select any content your messages may contain"
+
+- [x] **Embedded links** — the HELP reply carries the terms and privacy URLs.
+- [x] **Phone numbers** — every message carries the 911 escalation line.
+- [ ] Direct lending or loan arrangement — no.
+- [ ] Age-gated content — no.
+
+Leaving *Embedded links* unchecked while the HELP reply contains URLs is its own
+rejection risk. Over-declaring costs nothing.
+
+### Link to the Campaign's privacy policy
+
+```
+https://crisismesh-1031148889398.us-central1.run.app/privacy
+```
+
+### Link to the Campaign's terms of service
+
+```
+https://crisismesh-1031148889398.us-central1.run.app/sms-terms
+```
+
+### How do end-users consent to receive messages?
+
+This is the field that answers 30909. Paste it verbatim.
+
+> End users opt in themselves through one of two paths. Consent is never
+> supplied by an administrator on their behalf.
 >
 > (1) WEB FORM. Staff and designated responders at a subscribing organization
 > visit the public opt-in page at
-> https://crisismesh-1031148889398.us-central1.run.app/sms-optin — reachable
-> from the footer of every CrisisMesh page and distributed by the organization's
+> https://crisismesh-1031148889398.us-central1.run.app/sms-optin — linked from
+> the footer of every CrisisMesh page and distributed by the organization's
 > safety administrator during staff onboarding. The form collects full name,
 > organization, and mobile number, alongside a consent checkbox that is
 > UNCHECKED by default and must be actively selected before the form will
@@ -139,55 +223,85 @@ Paste verbatim into the campaign's **Message Flow** field. This is what answers
 > may apply. Reply STOP to unsubscribe or HELP for help. Consent is not a
 > condition of employment, enrollment, or any purchase." The SMS Terms &
 > Conditions and Privacy Policy are linked directly beside the checkbox. On
-> submission CrisisMesh records the consent text, version, UTC timestamp, and
-> source IP, then sends a double opt-in confirmation SMS: "CrisisMesh: you
-> signed up for emergency coordination alerts for [organization]. Reply YES to
-> confirm, STOP to cancel, HELP for help. Msg frequency varies by incident. Msg
-> & data rates may apply." No further messages are sent unless the user replies
-> YES.
+> submission CrisisMesh records the consent text, its version, a UTC timestamp,
+> and the source IP address, then sends a double opt-in confirmation SMS:
+> "CrisisMesh: you signed up for emergency coordination alerts for
+> [organization]. Reply YES to confirm, STOP to cancel, HELP for help. Msg
+> frequency varies by incident. Msg & data rates may apply." No further messages
+> are sent unless the user replies YES.
 >
 > (2) TEXT TO JOIN. A staff member texts START (or JOIN) to the CrisisMesh
 > number their organization has published internally. The inbound message is
-> itself express consent, and CrisisMesh replies with the program name,
-> frequency disclosure, rate disclosure, and STOP/HELP instructions.
+> itself express consent, and CrisisMesh replies with the program name, the
+> frequency disclosure, the rate disclosure, and STOP/HELP instructions.
 >
-> Consent is never purchased, rented, or shared, and is never a condition of
-> employment or enrollment. Opt-in data is not shared with any third party.
+> Consent is never purchased, rented, shared, or inferred from roster
+> membership, and is never a condition of employment or enrollment. Opt-in data
+> is not shared with any third party.
 
-**Opt-in screenshot to attach:** `/sms-optin`, showing the unchecked consent box
-with its disclosure text and the two policy links.
+**Attach as the opt-in screenshot:** `/sms-optin`, showing the unchecked consent
+box with its disclosure text and the two policy links.
 
-### Sample messages
+### Opt-in keywords
 
-1. > CrisisMesh: you signed up for emergency coordination alerts for Lincoln
-   > High School. Reply YES to confirm, STOP to cancel, HELP for help. Msg
-   > frequency varies by incident. Msg & data rates may apply.
+```
+START,YES,UNSTOP,JOIN,CONFIRM,OPTIN
+```
 
-2. > Incident reported: fire (high). ID: INC-20260821-004. CrisisMesh agent
-   > fleet is coordinating response. Reply SAFE, SOS, INJURED, or EVACUATED to
-   > check in. Reply STOP to unsubscribe, HELP for help. If 911 has not been
-   > called, do so immediately.
+*The rejected version listed only START,YES,UNSTOP. The other three are live in
+`OPT_IN_KEYWORDS` and must be declared.*
 
-3. > Check-in recorded: A. Chen — safe. If this is a life-threatening emergency,
-   > call 911. Reply STOP to unsubscribe.
+### Opt-in message
 
-### Keyword replies
+> You are subscribed to CrisisMesh emergency coordination alerts for your
+> organization. Msg frequency varies by incident. Msg & data rates may apply.
+> Reply HELP for help, STOP to cancel. In an emergency, call 911.
 
-| Keyword | Reply sent |
-|---|---|
-| START, UNSTOP, YES, JOIN | You are subscribed to CrisisMesh emergency coordination alerts for your organization. Msg frequency varies by incident. Msg & data rates may apply. Reply HELP for help, STOP to cancel. In an emergency, call 911. |
-| STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT | You have been unsubscribed from CrisisMesh emergency alerts and will receive no further messages. Reply START to resubscribe. In an emergency, call 911. |
-| HELP, INFO | CrisisMesh emergency coordination alerts. Msg frequency varies by incident. Msg & data rates may apply. Reply STOP to cancel. Support: [support email]. Terms: …/sms-terms Privacy: …/privacy In an emergency, call 911. |
+*The rejected version told users to "Reply SAFE, HELP, INJURED, or EVACUATED",
+which both conflicts with HELP being a reserved keyword and omits the required
+frequency and rate disclosures.*
 
-### URLs
+### Opt-out keywords
 
-| Field | URL |
-|---|---|
-| Privacy Policy | `https://crisismesh-1031148889398.us-central1.run.app/privacy` |
-| Terms & Conditions | `https://crisismesh-1031148889398.us-central1.run.app/sms-terms` |
-| Opt-in page | `https://crisismesh-1031148889398.us-central1.run.app/sms-optin` |
+```
+CANCEL,QUIT,STOP,OPTOUT,UNSUBSCRIBE,STOPALL,REVOKE,END
+```
 
----
+*Already correct — this matches `OPT_OUT_KEYWORDS` exactly. Leave it.*
+
+### Opt-out message
+
+> You have been unsubscribed from CrisisMesh emergency alerts and will receive
+> no further messages. Reply START to resubscribe. In an emergency, call 911.
+
+*Adds the brand name, which the rejected version omitted.*
+
+### Help keywords
+
+```
+HELP,INFO
+```
+
+*Already correct — matches `INFO_KEYWORDS`. Leave it.*
+
+### Help message
+
+> CrisisMesh emergency coordination alerts. Msg frequency varies by incident.
+> Msg & data rates may apply. Reply STOP to cancel. Support:
+> heartlinmachado@blockintelai.com. Terms:
+> https://crisismesh-1031148889398.us-central1.run.app/sms-terms In an emergency,
+> call 911.
+
+**265 characters — Twilio caps this field at 320.** The privacy URL was dropped
+to fit; CTIA requires only the program name, a customer-care contact, the rate
+disclosure, and opt-out instructions in a HELP reply, and the terms page links to
+the privacy policy anyway. `_handle_compliance_keyword` sends this exact string,
+and a test enforces the cap so the registered text and the live reply cannot
+drift apart.
+
+*The rejected version was "Reply STOP to unsubscribe. Msg&Data Rates May Apply."
+— no program name and no support contact, both of which carriers require in the
+HELP reply.*
 
 ## 5. What changed in the codebase
 
@@ -206,7 +320,7 @@ with its disclosure text and the two policy links.
 | File | Change |
 |---|---|
 | `src/core/server.py` | `GET /privacy`, `GET /sms-terms` (alias `/terms`), `GET /sms-optin` (alias `/sms-opt-in`), and `POST /sms/optin` — validates consent, name, organization and phone, records the consent, then sends the double opt-in SMS. |
-| `src/services/sms_transport.py` | Carrier keywords handled before incident classification; `HELP` removed from `CHECKIN_KEYWORDS` and replaced by `SOS`/`NEEDHELP`/`ASSIST`; `send_sms` suppresses opted-out numbers; incident ack now carries the STOP/HELP notice. |
+| `src/services/sms_transport.py` | Carrier keywords handled before incident classification; `HELP` removed from `CHECKIN_KEYWORDS` and replaced by `SOS`/`NEEDHELP`/`ASSIST`; `send_sms` suppresses opted-out numbers; incident ack now carries the STOP/HELP notice; check-in ack now carries the brand name and the STOP notice. |
 | `tests/test_sms_transport.py` | Updated for the corrected `HELP` behavior; consent log isolated to a tmp path. |
 | `tests/test_server.py` | Route tests for the three pages plus the opt-in endpoint, including an assertion that the consent checkbox is never pre-selected. |
 | `pyproject.toml`, `Dockerfile` | Declared `requests` — the outbound SMS path imports it directly but only received it transitively through `google-cloud-*`. |
@@ -227,7 +341,7 @@ with its disclosure text and the two policy links.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CRISISMESH_SUPPORT_EMAIL` | `support@crisismesh.app` (placeholder) | Surfaced in the SMS HELP reply. |
+| `CRISISMESH_SUPPORT_EMAIL` | `heartlinmachado@blockintelai.com` | Surfaced in the SMS HELP reply. |
 | `CRISISMESH_PUBLIC_URL` | the Cloud Run URL | Base for the terms/privacy links in the HELP reply. |
 | `CRISISMESH_CONSENT_LOG` | `data/consent/sms_consent.jsonl` | Consent audit log path. |
 

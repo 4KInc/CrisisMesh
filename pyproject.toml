@@ -11,6 +11,7 @@ dependencies = [
     "google-cloud-pubsub>=2.25.0",
     "google-cloud-storage>=2.18.0",
     "google-cloud-aiplatform>=1.74.0",
+    "google-cloud-modelarmor>=0.7.1",
     "slack-bolt>=1.21.0",
     "pydantic>=2.10.0",
     "python-dotenv>=1.0.0",

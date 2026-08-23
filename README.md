@@ -113,8 +113,8 @@ Open the web console and type a report in the DECLARE INCIDENT panel. "DECLARE I
                                  │
                     ┌────────────▼─────────────┐
                     │     Content Scanner        │
-                    │  InjectionGuard (regex)    │
-                    │  Model Armor (IAM-blocked) │
+                    │  Google Model Armor API    │
+                    │  + InjectionGuard (regex)  │
                     └────────────┬─────────────┘
                                  │
                     ┌────────────▼─────────────┐
@@ -151,7 +151,7 @@ Open the web console and type a report in the DECLARE INCIDENT panel. "DECLARE I
 | **Model** | Gemini 3.5 Flash | Classification, NLU, SITREP synthesis |
 | **Event Bus** | Google Cloud Pub/Sub / in-memory | Async agent-to-agent events |
 | **State** | Firestore / in-memory | Incident state, accountability, append-only audit log |
-| **Content Scanning** | InjectionGuard (regex) / Model Armor API (wired, IAM-blocked) | Prompt injection + PII leakage detection |
+| **Content Scanning** | Google Model Armor API + InjectionGuard (regex fallback) | Prompt injection, PII leakage, malicious URI, RAI filtering |
 | **Compute** | Cloud Run | HTTP server, SSE streaming, static SPA |
 | **Slack** | Raw HTTP / Slack Events API | Slash commands, reaction check-ins, Block Kit SITREPs |
 | **SMS** | Twilio webhooks | Inbound SMS incident reports and check-in replies |
@@ -200,7 +200,7 @@ CrisisMesh implements all 7 platform pillars required by the Fortified Enterpris
 | **Agent Runtime** | Google ADK `Runner` + `Agent` with `sub_agents` delegation on Gemini 3.5 Flash via Vertex AI | Managed |
 | **Agent Identity** | Least-privilege enforcement — out-of-scope tool calls denied and logged as `policy.violation` events | Custom |
 | **Agent Gateway** | 4-layer policy: identity check, rate limiting (100 calls/agent/incident), approval gates, content scanning | Custom |
-| **Content Scanning** | Dual-backend `ContentScanner`: regex `InjectionGuard` (9 injection + 5 PII patterns) or Google Model Armor API | Managed (IAM-blocked) / Custom fallback |
+| **Content Scanning** | Dual-backend `ContentScanner`: Google Model Armor API (prompt injection, PII, malicious URI, RAI) + regex `InjectionGuard` fallback (9 injection + 5 PII patterns) | Managed + Custom fallback |
 | **Memory Bank** | Cross-session lesson storage with Jaccard tag-overlap confidence scoring, source citations, and historical outcome stats; pre-seeded with 5 drill lessons and 2 outcomes | Custom |
 | **Observability** | Hierarchical span traces per incident with span trees, duration tracking, and audit bundle export | Custom |
 | **Event Bus** | Typed pub/sub events via Google Cloud Pub/Sub (deployed) or in-memory (local); 18 event types | Managed |
@@ -209,8 +209,8 @@ CrisisMesh implements all 7 platform pillars required by the Fortified Enterpris
 
 The `ContentScanner` facade routes to one of two backends:
 
-- **`regex` (default):** Local `InjectionGuard` with 9 prompt injection patterns and 5 PII leakage patterns. Works offline, no GCP needed.
-- **`model_armor`:** Google Cloud Model Armor API (`modelarmor.googleapis.com`). SDK wired, template ready — needs `roles/modelarmor.admin` IAM grant to activate.
+- **`model_armor` (deployed default):** Google Cloud Model Armor API (`modelarmor.googleapis.com`). Template `crisismesh-guard` scans for prompt injection, jailbreak, malicious URIs, and RAI violations (hate speech, harassment, dangerous content, sexually explicit).
+- **`regex` (offline fallback):** Local `InjectionGuard` with 9 prompt injection patterns and 5 PII leakage patterns. Works offline, no GCP needed.
 
 **Injection patterns blocked:** `ignore policy`, `override security`, `disregard safety`, `you are now unrestricted`, `bypass restrictions`, `jailbreak`, `pretend there are no rules`, `act as admin`, `system prompt`
 
@@ -654,26 +654,23 @@ python scripts/demo_fire_drill.py
 
 ---
 
-## Enabling Model Armor (Managed Backend)
+## Model Armor (Managed Content Scanning)
 
-The Model Armor API is enabled on the project and the SDK is wired. Once a project owner grants IAM:
+The deployed Cloud Run service uses Google Model Armor as its primary content scanner. Template `crisismesh-guard` in `us-central1` is configured with:
+
+- **Prompt injection & jailbreak detection** — `LOW_AND_ABOVE` confidence (catches subtle attempts)
+- **Malicious URI filtering** — blocks phishing and malware links in agent inputs
+- **RAI filters** — hate speech, harassment, dangerous content, sexually explicit (`MEDIUM_AND_ABOVE`)
+
+The `InjectionGuard` regex scanner remains as an offline fallback. To switch backends:
 
 ```bash
-# Grant Model Armor admin role
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="user:YOUR_EMAIL" \
-  --role="roles/modelarmor.admin"
-
-# Create the scanning template
-gcloud model-armor templates create crisismesh-guard \
-  --location=us-central1 \
-  --pi-and-jailbreak-filter-settings-enforcement=enabled \
-  --pi-and-jailbreak-filter-settings-confidence-level=low_and_above \
-  --malicious-uri-filter-settings-enforcement=enabled
-
-# Switch to managed backend
+# Model Armor (deployed default)
 export ARMOR_BACKEND=model_armor
 export ARMOR_TEMPLATE=crisismesh-guard
+
+# Regex fallback (offline / local dev)
+export ARMOR_BACKEND=regex
 ```
 
 ---
@@ -693,7 +690,7 @@ FirstResponder is disclosed as prior work per hackathon rules.
 - **Firestore** — Incident state, accountability, append-only audit log
 - **Cloud Pub/Sub** — Async agent-to-agent events (18 event types, 4 topics)
 - **Cloud Run** — HTTP server, SSE streaming, webhooks, static SPA hosting
-- **Content Scanner** — InjectionGuard regex (active); Model Armor API wired but IAM-blocked
+- **Content Scanner** — Google Model Armor API (active); InjectionGuard regex fallback
 - **Cloud Storage** — CSV data, approved playbooks, reports
 - **Slack** (Events API, raw HTTP) — `/incident` and `/checkin` slash commands, reaction-based one-tap check-ins, Block Kit SITREP messages
 - **Twilio** (optional) — Inbound SMS incident reports and check-in replies via TwiML webhooks

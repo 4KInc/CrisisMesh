@@ -372,3 +372,19 @@ class TestSmsOptinEndpoint:
         for _ in range(MAX_PER_PHONE_PER_HOUR):
             assert MockHandler("POST", "/sms/optin", payload).response_code == 200
         assert MockHandler("POST", "/sms/optin", payload).response_code == 429
+
+
+class TestCompliancePageIdentity:
+    """A carrier reviewer must never see an unfilled placeholder."""
+
+    def test_pages_carry_real_business_identity(self):
+        for path in ("/privacy", "/sms-terms", "/sms-optin"):
+            html = MockHandler("GET", path).wfile.getvalue().decode()
+            assert "[[" not in html, f"unfilled placeholder in {path}"
+            assert "Blockintel Inc" in html, path
+
+    def test_contact_details_present(self):
+        for path in ("/privacy", "/sms-terms"):
+            html = MockHandler("GET", path).wfile.getvalue().decode()
+            assert "heartlinmachado@blockintelai.com" in html, path
+            assert "803 Division St, Nashville, TN 37203" in html, path
