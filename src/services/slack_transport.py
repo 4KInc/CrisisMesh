@@ -215,7 +215,14 @@ def run_incident_pipeline(
     routes = find_safe_routes(facility_id, zone_id) if zone_id else {}
     resources = locate_resource(facility_id, "aed")
     assembly = find_assembly_point(facility_id, primary_only=True)
-    nearby = find_nearby_services("fire_station")
+    incident_type = classification.get("incident_type", "")
+    _SERVICE_FOR_TYPE = {
+        "active_shooter": "police_station",
+        "active_threat": "police_station",
+        "medical": "hospital",
+    }
+    nearby_service_type = _SERVICE_FOR_TYPE.get(incident_type, "fire_station")
+    nearby = find_nearby_services(nearby_service_type)
     safety_span.set_attribute("blocked_routes", len(blocked.get("blocked_routes", [])))
     safety_span.set_attribute("safe_routes", routes.get("total_routes", 0))
     safety_span.end()
@@ -250,7 +257,8 @@ def run_incident_pipeline(
         "blocked_zones": blocked,
         "safe_routes": routes,
         "assembly_point": assembly,
-        "nearby_fire_station": nearby,
+        "nearby_service": nearby,
+        "nearby_service_type": nearby_service_type,
         "accountability": {
             "personnel_tracked": send_result["requests_sent"],
             "mobility_needs": roster.get("mobility_needs", []),
@@ -1376,12 +1384,19 @@ def _post_incident_block_kit(
     routes_list = result.get("safe_routes", {}).get("routes", [])
     blocked_list = result.get("blocked_zones", {}).get("blocked_routes", [])
     assembly_list = result.get("assembly_point", {}).get("assembly_points", [])
-    nearby_list = result.get("nearby_fire_station", {}).get("services", [])
+    nearby_list = result.get("nearby_service", {}).get("services", [])
     lessons_list = result.get("prior_lessons", {}).get("lessons", [])
     acct = result.get("accountability", {})
 
     assembly_name = assembly_list[0]["name"] if assembly_list else "Athletic Field"
-    fire_info = (
+    nearby_label_map = {
+        "police_station": "Nearest Police",
+        "fire_station": "Nearest Fire Station",
+        "hospital": "Nearest Hospital",
+    }
+    nearby_type = result.get("nearby_service_type", "fire_station")
+    nearby_label = nearby_label_map.get(nearby_type, "Nearest Service")
+    nearby_info = (
         f"{nearby_list[0]['name']} (ETA {nearby_list[0]['eta_minutes']}min)"
         if nearby_list else "—"
     )
@@ -1413,7 +1428,7 @@ def _post_incident_block_kit(
                     f":busts_in_silhouette: Personnel tracked: *{acct.get('personnel_tracked', 0)}*\n"
                     f"Mobility needs: *{len(acct.get('mobility_needs', []))}*\n\n"
                     f"*Assembly:* {assembly_name}\n"
-                    f"*Nearest Fire Station:* {fire_info}"
+                    f"*{nearby_label}:* {nearby_info}"
                 ),
             },
         },

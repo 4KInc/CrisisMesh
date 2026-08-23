@@ -239,6 +239,7 @@ class TestArrivalBrief:
         assert len(result["on_site_resources"]) >= 3
         assert result["command_contact"]
         assert result["assembly_point"]
+        assert result["nearby_services"]["nearest_police_station"]["name"]
         assert result["nearby_services"]["nearest_fire_station"]["name"]
         assert result["nearby_services"]["nearest_hospital"]["name"]
 

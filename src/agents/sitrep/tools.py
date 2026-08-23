@@ -323,6 +323,8 @@ def generate_arrival_brief(
     nearest_fire = fire_stations[0] if fire_stations else {}
     hospitals = kb.get_nearby_services("hospital")
     nearest_hospital = hospitals[0] if hospitals else {}
+    police_stations = kb.get_nearby_services("police_station")
+    nearest_police = police_stations[0] if police_stations else {}
 
     headcount = accountability
     total = headcount.get("total_tracked", 0)
@@ -375,6 +377,11 @@ def generate_arrival_brief(
         "assembly_point": assembly_info,
         "command_contact": command_contact,
         "nearby_services": {
+            "nearest_police_station": {
+                "name": nearest_police.get("name", ""),
+                "eta_minutes": nearest_police.get("eta_minutes", ""),
+                "phone": nearest_police.get("phone", ""),
+            } if nearest_police else None,
             "nearest_fire_station": {
                 "name": nearest_fire.get("name", ""),
                 "eta_minutes": nearest_fire.get("eta_minutes", ""),

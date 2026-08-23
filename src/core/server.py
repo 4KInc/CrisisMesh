@@ -810,7 +810,10 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             routes = find_safe_routes(facility_id, zone_id) if zone_id else {}
             resources = locate_resource(facility_id, "aed")
             assembly = find_assembly_point(facility_id, primary_only=True)
-            nearby = find_nearby_services("fire_station")
+            inc_type = classification.get("incident_type", "")
+            _SVC = {"active_shooter": "police_station", "active_threat": "police_station", "medical": "hospital"}
+            nearby_svc_type = _SVC.get(inc_type, "fire_station")
+            nearby = find_nearby_services(nearby_svc_type)
             safety_span.set_attribute("blocked_routes", len(blocked.get("blocked_routes", [])))
             safety_span.set_attribute("safe_routes", routes.get("total_routes", 0))
             safety_span.end()
@@ -845,7 +848,8 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
                 "blocked_zones": blocked,
                 "safe_routes": routes,
                 "assembly_point": assembly,
-                "nearby_fire_station": nearby,
+                "nearby_service": nearby,
+                "nearby_service_type": nearby_svc_type,
                 "accountability": {
                     "personnel_tracked": send_result["requests_sent"],
                     "mobility_needs": roster.get("mobility_needs", []),
