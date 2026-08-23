@@ -4,51 +4,74 @@
 flowchart TB
     subgraph Transport["Transport Layer"]
         direction LR
-        Slack["Slack\nEvents API · Block Kit\n/incident · @mention · CSV"]
-        SMS["SMS\nTwilio Webhooks\nSAFE · SOS · STOP"]
-        WhatsApp["WhatsApp\nBusiness API\nSITREP · Check-in"]
-        Console["Web Console\nSPA · SSE Stream"]
+        Slack["Slack<br/>Events API · Block Kit"]
+        SMS["SMS<br/>Twilio Webhooks"]
+        WhatsApp["WhatsApp<br/>Business API"]
+        Console["Web Console<br/>Tailwind · Vanilla JS · SSE"]
     end
 
     subgraph Server["Cloud Run"]
-        HTTP["HTTP Server\nSSE · REST · Webhooks"]
+        HTTP["HTTP Server<br/>REST · SSE · Webhooks"]
     end
 
     subgraph Governance["Governance Layer — Fortified Enterprise Fleet"]
-        Scanner["Content Scanner\nGoogle Model Armor API\nInjectionGuard regex fallback"]
-        Gateway["Agent Gateway\nIdentity · Rate Limit\nApproval Gates · Content Scan"]
+        Scanner["Content Scanner<br/>Google Model Armor API<br/>InjectionGuard regex fallback"]
+        Gateway["Agent Gateway · GatewayPlugin<br/>Identity · Rate Limit<br/>Approval Gates · Content Scan"]
     end
 
-    subgraph Orchestration["Agent Orchestration — ADK 2.7.1 · Gemini 3.5 Flash"]
+    IC{{"Incident Commander"}}
+
+    subgraph Orchestration["Agent Orchestration — Vertex AI · ADK 2.7.1 · Gemini 3.5 Flash"]
         Coordinator["Coordinator Agent"]
-        subgraph Agents["Specialist Agents"]
+        subgraph Specialists["Specialist Agents"]
             direction LR
-            Intake["Intake\nClassification\nPlaybook"]
-            Accountability["Accountability\nRoster · Check-ins\nEscalation"]
-            SafetyIntel["Safety Intel\nRoutes · Resources\nZones"]
-            SITREP["SITREP\nSituation Reports\nResponder Cards"]
-            Learning["Learning\nAAR · Lessons\nMemory Bank"]
-            Compliance["Compliance\nPII Redaction\nPolicy · Audit"]
+            Intake["Intake<br/>Classification<br/>Playbook"]
+            Accountability["Accountability<br/>Roster · Check-ins<br/>Escalation"]
+            SafetyIntel["Safety Intel<br/>Routes · Resources<br/>Zones"]
+            SITREP["SITREP<br/>Situation Reports<br/>Responder Cards"]
+            Learning["Learning<br/>AAR · Lessons"]
+            Compliance["Compliance<br/>PII Redaction<br/>Policy · Audit"]
         end
     end
 
     subgraph Data["Data Layer"]
         direction LR
-        Firestore["Firestore\nIncident State\nAppend-only Audit Log"]
-        PubSub["Cloud Pub/Sub\nEvent Bus\n18 Event Types"]
-        KB["Knowledge Base\n8 CSV Types\nFacility · Personnel · Routes"]
-        MB["Memory Bank\nCross-session Lessons\nHistorical Outcomes"]
+        Firestore["Firestore<br/>Incident State<br/>Append-only Audit Log"]
+        PubSub["Cloud Pub/Sub<br/>Event Bus<br/>18 Event Types"]
+        KB["Knowledge Base<br/>8 CSV Types<br/>Facility · Personnel · Routes"]
+        MB["Memory Bank<br/>Cross-session Lessons<br/>Historical Outcomes"]
     end
 
-    Transport --> HTTP
-    HTTP --> Scanner
-    Scanner --> Gateway
-    Gateway --> Coordinator
-    Coordinator --> Intake
-    Coordinator --> Accountability
-    Coordinator --> SafetyIntel
-    Coordinator --> SITREP
-    Coordinator --> Learning
-    Coordinator --> Compliance
-    Agents --> Data
+    %% Ingress — server.py:do_POST /incident, /incident/agentic, /incident/agentic/stream
+    Transport -->|report| HTTP
+    HTTP -->|scan_message| Scanner
+
+    %% content_scanner.py:ContentScanner.scan_message — ingress gate
+    Scanner -->|clean| Coordinator
+    Scanner -.->|blocked 403| HTTP
+
+    %% coordinator/agent.py:79-86 — sub_agents list, transfer_to_agent in instruction
+    Coordinator -->|transfer_to_agent| Specialists
+    Specialists -->|result| Coordinator
+
+    %% agent_gateway.py:443-479 — GatewayPlugin.before_tool_callback on every tool call
+    Specialists -->|every tool call| Gateway
+    Gateway -->|allowed| Specialists
+
+    %% agent_gateway.py:69-73, 182-244 — PendingAction for gated actions
+    Gateway -.->|PendingAction hold| IC
+    %% server.py:867-911 — POST /incident/{id}/approve and /deny
+    IC -.->|approve or deny| HTTP
+
+    %% Specialist agents read from KB, write to Firestore, emit to PubSub
+    Specialists --> Data
+
+    %% learning/tools.py:168-211 — store_lesson at incident resolve
+    Learning -->|store_lesson| MB
+    %% learning/tools.py:24-92 — find_similar_incidents reads at next incident
+    MB -.->|find_similar_incidents · next incident| Learning
+
+    %% server.py:221-222 — apply_safety_backstop + validate_routing_directives
+    Coordinator -->|final response + safety floors| HTTP
+    HTTP -->|SSE · SITREP · Block Kit| Transport
 ```
