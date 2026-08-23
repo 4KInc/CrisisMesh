@@ -14,7 +14,7 @@ During a fire, active-threat, or severe-weather event, a K-12 school district co
 
 ## What It Does
 
-A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp message, or a console declaration — describing what they see. CrisisMesh's 7-agent fleet activates autonomously, coordinates the organizational response across the affected facility, and posts a structured SITREP back to the same channel. The console lights up in real time.
+A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp message, or a console declaration — describing what they see. CrisisMesh's deterministic pipeline fires immediately with a Block Kit SITREP. The Gemini agent fleet is available on-demand for deeper analysis via `@CrisisMesh` follow-up queries or the `/incident/agentic` endpoint. The console lights up in real time.
 
 **This is a human sending a message they would already send.** CrisisMesh does not detect or sense incidents. It coordinates the organizational response after a human reports one.
 
@@ -26,9 +26,12 @@ A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp
 6. **Locates resources proactively** — finds AEDs, fire extinguishers, and assembly points near the incident zone without IC prompting
 7. **Posts** Block Kit SITREP and responder one-card back to Slack; lights up the command console
 8. **Accepts** one-tap check-ins via Slack reactions, SMS replies, or WhatsApp messages (SAFE / SOS / INJURED / EVACUATED)
-9. **Surfaces prior lessons without prompting** — the Memory Bank automatically retrieves relevant lessons from past incidents across facilities (e.g. "elevator key should be pre-staged on Floor 2") with Jaccard confidence scoring and source citations
-10. **Blocks** malicious inputs via Google Model Armor API (injection, jailbreak, malicious URI, RAI) + InjectionGuard regex fallback
-11. **Audits** every action with an append-only audit log and observability trace
+9. **Accepts room-level check-ins** — teachers report via `@CrisisMesh room 104: 23 safe, 2 missing` for per-room accountability
+10. **Generates Law Enforcement Arrival Briefs** — on-demand via `@CrisisMesh arrival brief`, providing a read-only point-in-time package for arriving responders: silent rooms (rooms with no check-in, prioritized by threat zone proximity), building overview, floor wardens, on-site resources (AEDs, first aid, fire extinguishers), hazards, blocked/safe/accessible routes, and assembly points
+11. **Surfaces prior lessons without prompting** — the Memory Bank automatically retrieves relevant lessons from past incidents across facilities (e.g. "elevator key should be pre-staged on Floor 2") with Jaccard confidence scoring and source citations
+12. **Blocks** malicious inputs via Google Model Armor API (injection, jailbreak, malicious URI, RAI) + InjectionGuard regex fallback
+13. **Audits** every action with an append-only audit log and observability trace
+14. **Hot-reloads facility data** — CSV files dropped in the Slack channel are ingested immediately, updating both the Gemini context and the deterministic KnowledgeBase pipeline in real time
 
 ### Authority-Bounded Autonomy
 
@@ -51,8 +54,8 @@ CrisisMesh has four trigger paths. Each is human-initiated — a person sends a 
 
 | Channel | Deterministic Pipeline | Gemini Agent Fleet |
 |---------|:---:|:---:|
-| Slack `/incident` command | Yes (fast ack) | Yes (background) |
-| Slack @mention / DM | Yes (fast ack) | Yes (background) |
+| Slack `/incident` command | Yes (fast ack) | On-demand (`@CrisisMesh` follow-up or `/incident/agentic`) |
+| Slack @mention / DM | Yes (fast ack) | On-demand (follow-up queries, arrival brief) |
 | SMS (Twilio) | Yes (TwiML ack) | Yes (background, follow-up SMS) |
 | WhatsApp (Meta) | Yes | No — confirmation only |
 | Command Console | Yes ("Quick Declare") | Yes ("Declare Incident") |
@@ -81,7 +84,11 @@ CrisisMesh has four trigger paths. Each is human-initiated — a person sends a 
 | `/incident help` | Show all available commands |
 | `/checkin [status]` | Quick check-in alias |
 
-**@mention / DM:** Mention @CrisisMesh in any channel or send a DM to trigger the same pipeline as the slash command — deterministic fast ack, then Gemini agent fleet SITREP in the same thread.
+**@mention / DM:** Mention @CrisisMesh in any channel or send a DM to declare an incident (same deterministic pipeline as the slash command). After the incident is declared, @CrisisMesh handles follow-up queries in-thread:
+- `@CrisisMesh arrival brief` / `law enforcement handoff` — generates a comprehensive Law Enforcement Arrival Brief
+- `@CrisisMesh full sitrep` — triggers the Gemini agent fleet for a deep-analysis SITREP
+- `@CrisisMesh room 104: 23 safe, 2 missing` — room-level check-in from a teacher
+- Any other query — Gemini-powered contextual follow-up
 
 **Reaction check-ins:** Each emoji reaction posts a public confirmation with the running check-in count and missing personnel list. When all personnel are accounted for, CrisisMesh announces it.
 
@@ -221,7 +228,7 @@ CrisisMesh runs 7 agents orchestrated by Google ADK. The Coordinator owns the in
 | **Intake** | internal | `classify_incident`, `extract_location`, `select_playbook`, `transfer_to_agent` | — | Normalizes reports; classifies type (10 types) and severity (4 levels); selects approved playbook |
 | **Accountability** | sensitive | `read_roster`, `process_checkin`, `compute_accountability_summary`, `send_checkin_request`, `escalate_missing_checkins`, `transfer_to_agent` | `send_external_message`, `share_medical_info` | Tracks people, check-in status; escalates missing with mobility-need flagging |
 | **Safety Intel** | internal | `find_safe_routes`, `find_zone_info`, `find_blocked_zones`, `locate_resource`, `find_assembly_point`, `find_nearby_services`, `find_accessible_routes`, `transfer_to_agent` | `send_external_message`, `modify_playbook` | Answers location-specific operational questions from the knowledge base |
-| **SITREP** | internal | `generate_sitrep`, `generate_responder_card`, `generate_stakeholder_update`, `generate_timeline`, `transfer_to_agent` | — | IC briefs, responder one-cards, stakeholder updates |
+| **SITREP** | internal | `generate_sitrep`, `generate_responder_card`, `generate_arrival_brief`, `extract_threat_observation`, `generate_stakeholder_update`, `generate_timeline`, `transfer_to_agent` | — | IC briefs, responder one-cards, law enforcement arrival briefs, stakeholder updates |
 | **Learning** | internal | `find_similar_incidents`, `produce_aar`, `store_lesson`, `propose_playbook_change`, `transfer_to_agent` | — | Cross-session lessons, after-action reviews, playbook change proposals |
 | **Compliance** | restricted | `append_audit_log`, `validate_approval`, `redact_sensitive`, `export_trace_bundle`, `check_policy`, `transfer_to_agent` | — | Append-only audit records, policy checks, PII redaction, audit bundle export |
 
@@ -497,17 +504,20 @@ The Dockerfile runs `python -m src.core.server` on port 8080 with Vertex AI and 
 2. Under **Slash Commands**, add:
    - `/incident` → `https://YOUR_CLOUD_RUN_URL/slack/commands` (usage hint: `<description> | status | checkin | resolve | playbook <type> | help`)
    - `/checkin` → `https://YOUR_CLOUD_RUN_URL/slack/commands`
-3. Under **Event Subscriptions**, set Request URL to `https://YOUR_CLOUD_RUN_URL/slack/events` and subscribe to: `app_mention`, `message.im`, `reaction_added`
-4. Under **OAuth & Permissions**, add bot scopes: `app_mentions:read`, `channels:history`, `channels:read`, `chat:write`, `chat:write.public`, `commands`, `groups:history`, `groups:read`, `im:history`, `im:read`, `im:write`, `reactions:read`, `users:read`
+3. Under **Event Subscriptions**, set Request URL to `https://YOUR_CLOUD_RUN_URL/slack/events` and subscribe to: `app_mention`, `message.im`, `reaction_added`, `file_shared`
+4. Under **OAuth & Permissions**, add bot scopes: `app_mentions:read`, `channels:history`, `channels:read`, `chat:write`, `chat:write.public`, `commands`, `files:read`, `files:write`, `groups:history`, `groups:read`, `im:history`, `im:read`, `im:write`, `reactions:read`, `users:read`
 5. Install to workspace, copy the Bot Token (`xoxb-...`) and Signing Secret
 6. Set `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` env vars on Cloud Run
 
 **Features after setup:**
 - `/incident` with subcommands (declare, status, resolve, playbook, help)
 - `/checkin` for quick check-ins
-- @CrisisMesh mention in any channel triggers the agent fleet
+- @CrisisMesh mention to declare incidents or query follow-ups (arrival brief, sitrep, room check-ins)
 - DM CrisisMesh to report incidents privately
 - Emoji reactions on SITREP messages for one-tap check-ins with public confirmations
+- Room-level check-ins via `@CrisisMesh room <number>: <count> safe, <count> missing`
+- Law Enforcement Arrival Brief via `@CrisisMesh arrival brief`
+- CSV hot-reload: drop updated facility CSVs in the channel and CrisisMesh ingests them immediately
 
 ### Twilio SMS Setup (Optional)
 
@@ -541,6 +551,7 @@ Operationally autonomous but authority-bounded — humans retain the consequenti
 | Tactical guidance (playbook-grounded) | Autonomous — Gemini reasons over approved playbook rules |
 | Tactical guidance (improvised) | Autonomous — fires when no approved rule covers the situation; provenance recorded as `improvised` in audit log |
 | Routing directives | Deterministic route validation (code) — directives into known blocked/threat zones are suppressed before release |
+| Generate arrival brief | **`REQUIRES_COMMANDER_APPROVAL`** — read-only point-in-time package for arriving law enforcement/fire/EMS with silent rooms, building layout, resources, and hazards |
 | Send responder handoff brief | Autonomous — PII content scan still runs on output |
 | Propose playbook change | Autonomous — a proposal is low-consequence; applying it is separately gated |
 | Tool-call failure on high-impact action | Fail closed; flag to Coordinator |
@@ -591,7 +602,7 @@ CrisisMesh/
 │   │   │   └── tools.py             # find_safe_routes, locate_resource, find_blocked_zones
 │   │   ├── sitrep/
 │   │   │   ├── agent.py             # SITREP & handoff agent
-│   │   │   └── tools.py             # generate_sitrep, generate_responder_card
+│   │   │   └── tools.py             # generate_sitrep, generate_responder_card, generate_arrival_brief, extract_threat_observation
 │   │   ├── learning/
 │   │   │   ├── agent.py             # Learning & after-action agent
 │   │   │   └── tools.py             # find_similar_incidents, produce_aar, store_lesson
@@ -644,7 +655,7 @@ CrisisMesh/
     └── agents/
         ├── test_intake_tools.py     # Classification, location, playbook
         ├── test_accountability_tools.py  # Roster, check-in, escalation
-        └── test_sitrep_tools.py     # SITREP, responder card generation
+        └── test_sitrep_tools.py     # SITREP, responder card, arrival brief, threat observation
 ```
 
 ---
@@ -656,7 +667,7 @@ CrisisMesh/
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries
 - **Safety Intel:** Route finding with blocked-zone exclusion, resource location by type/zone/floor, accessible routes
-- **SITREP:** IC briefs, responder one-cards with real route/resource/assembly data
+- **SITREP:** IC briefs, responder one-cards, law enforcement arrival briefs (silent rooms, building overview, floor wardens, hazards, on-site resources), threat observation extraction
 - **Compliance:** PII redaction (general vs commander context), policy checks
 - **Gateway:** Agent Identity least-privilege enforcement, rate limiting, approval gates (PendingAction state machine with IC authorization), content scanning
 - **Model Armor:** 9 injection patterns + 5 PII leakage patterns blocked
