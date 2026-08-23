@@ -1,6 +1,6 @@
 # CrisisMesh
 
-**Autonomous multi-agent crisis-coordination fleet for schools, nonprofits & resource-constrained organizations**
+**Autonomous multi-agent crisis-coordination fleet for school districts, nonprofits & resource-constrained organizations — one shared registry, many facilities**
 
 [All Things Agentic Hackathon](https://allthingsagentic.devpost.com/) (Google / Devpost) | Category: **Fortified Enterprise Fleet**
 
@@ -10,23 +10,36 @@ Live: [crisismesh-1031148889398.us-central1.run.app](https://crisismesh-10311488
 
 ## The Problem
 
-During a fire, active-threat, or severe-weather event, a K-12 school coordinates via frantic group chats, failing phone trees, paper rosters, and disconnected documents. The incident commander cannot rapidly answer what matters: *who is safe, who is unaccounted for, which route is blocked, who needs mobility assistance, where the AEDs are.* Enterprise incident platforms solve this — but cost $21+/user/month. CrisisMesh gives these underserved organizations the same capability through a no-code, Google Cloud-native multi-agent fleet.
+During a fire, active-threat, or severe-weather event, a K-12 school district coordinates across multiple buildings via frantic group chats, failing phone trees, paper rosters, and disconnected documents. The incident commander cannot rapidly answer what matters: *who is safe, who is unaccounted for, which route is blocked, who needs mobility assistance, where the AEDs are* — much less answer it for each facility in the district. Enterprise incident platforms solve this — but cost $21+/user/month. CrisisMesh gives these underserved organizations the same capability through a no-code, Google Cloud-native multi-agent fleet that spans facilities with a shared agent registry, a cross-site Memory Bank, and per-facility knowledge bases.
 
 ## What It Does
 
-A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp message, or a console declaration — describing what they see. CrisisMesh's 7-agent fleet activates, coordinates the organizational response, and posts a structured SITREP back to the same channel. The console lights up in real time.
+A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp message, or a console declaration — describing what they see. CrisisMesh's 7-agent fleet activates autonomously, coordinates the organizational response across the affected facility, and posts a structured SITREP back to the same channel. The console lights up in real time.
 
 **This is a human sending a message they would already send.** CrisisMesh does not detect or sense incidents. It coordinates the organizational response after a human reports one.
 
 1. **Receives** an incident report via Slack, SMS, WhatsApp, or the command console
-2. **Classifies** the report (type, severity, location) and activates the matching playbook
-3. **Delegates** to specialist agents for accountability, safety intel, SITREPs, and learning
-4. **Tracks** who is safe, injured, evacuated, or unaccounted — with mobility-need escalation
-5. **Posts** Block Kit SITREP and responder one-card back to Slack; lights up the command console
-6. **Accepts** one-tap check-ins via Slack reactions, SMS replies, or WhatsApp messages (SAFE / SOS / INJURED / EVACUATED)
-7. **Blocks** malicious inputs via InjectionGuard content scanner (injection + PII detection)
-8. **Learns** from outcomes and surfaces prior lessons on future incidents
-9. **Audits** every action with an append-only audit log and observability trace
+2. **Classifies** the report (type, severity, location) and activates the matching playbook — no human triage needed
+3. **Delegates autonomously** to specialist agents for accountability, safety intel, SITREPs, and learning
+4. **Tracks** who is safe, injured, evacuated, or unaccounted — and **unprompted, escalates** missing personnel with mobility needs to the top of the priority list
+5. **Routes autonomously** — identifies blocked zones and computes safe evacuation routes without being asked, including accessible routes for personnel with mobility needs
+6. **Locates resources proactively** — finds AEDs, fire extinguishers, and assembly points near the incident zone without IC prompting
+7. **Posts** Block Kit SITREP and responder one-card back to Slack; lights up the command console
+8. **Accepts** one-tap check-ins via Slack reactions, SMS replies, or WhatsApp messages (SAFE / SOS / INJURED / EVACUATED)
+9. **Surfaces prior lessons without prompting** — the Memory Bank automatically retrieves relevant lessons from past incidents across facilities (e.g. "elevator key should be pre-staged on Floor 2") with Jaccard confidence scoring and source citations
+10. **Blocks** malicious inputs via Google Model Armor API (injection, jailbreak, malicious URI, RAI) + InjectionGuard regex fallback
+11. **Audits** every action with an append-only audit log and observability trace
+
+### Authority-Bounded Autonomy
+
+CrisisMesh is operationally autonomous but authority-bounded. The fleet executes data collection, tracking, routing, resource location, SITREP generation, and lesson surfacing **without human prompting** — the IC doesn't need to ask "who is missing?" or "where are the AEDs?" These answers arrive autonomously in the SITREP.
+
+Three high-consequence actions require explicit IC approval before executing:
+- **`send_external_message`** — external comms
+- **`share_medical_info`** — PII release
+- **`resolve_incident`** — incident closure
+
+Everything else — including playbook activation, route computation, resource lookup, check-in escalation, and lesson retrieval — executes autonomously. This is a deliberate design: in a crisis, speed matters for information gathering; human authority matters for consequential decisions.
 
 **Safety guardrail:** CrisisMesh coordinates an organization's internal response **alongside 911 and qualified responders** — it never replaces them. Every incident acknowledgment includes a 911-escalation line. It never provides medical, tactical, or evacuation instructions beyond approved, organization-specific playbooks.
 
@@ -98,50 +111,60 @@ Open the web console and type a report in the DECLARE INCIDENT panel. "DECLARE I
 
 ## Architecture
 
+```mermaid
+flowchart TB
+    subgraph Transport["Transport Layer"]
+        direction LR
+        Slack["Slack\nEvents API · Block Kit\n/incident · @mention · CSV"]
+        SMS["SMS\nTwilio Webhooks\nSAFE · SOS · STOP"]
+        WhatsApp["WhatsApp\nBusiness API\nSITREP · Check-in"]
+        Console["Web Console\nSPA · SSE Stream"]
+    end
+
+    subgraph Server["Cloud Run"]
+        HTTP["HTTP Server\nSSE · REST · Webhooks"]
+    end
+
+    subgraph Governance["Governance Layer — Fortified Enterprise Fleet"]
+        Scanner["Content Scanner\nGoogle Model Armor API\nInjectionGuard regex fallback"]
+        Gateway["Agent Gateway\nIdentity · Rate Limit\nApproval Gates · Content Scan"]
+    end
+
+    subgraph Orchestration["Agent Orchestration — ADK 2.7.1 · Gemini 3.5 Flash"]
+        Coordinator["Coordinator Agent"]
+        subgraph Agents["Specialist Agents"]
+            direction LR
+            Intake["Intake\nClassification\nPlaybook"]
+            Accountability["Accountability\nRoster · Check-ins\nEscalation"]
+            SafetyIntel["Safety Intel\nRoutes · Resources\nZones"]
+            SITREP["SITREP\nSituation Reports\nResponder Cards"]
+            Learning["Learning\nAAR · Lessons\nMemory Bank"]
+            Compliance["Compliance\nPII Redaction\nPolicy · Audit"]
+        end
+    end
+
+    subgraph Data["Data Layer"]
+        direction LR
+        Firestore["Firestore\nIncident State\nAppend-only Audit Log"]
+        PubSub["Cloud Pub/Sub\nEvent Bus\n18 Event Types"]
+        KB["Knowledge Base\n8 CSV Types\nFacility · Personnel · Routes"]
+        MB["Memory Bank\nCross-session Lessons\nHistorical Outcomes"]
+    end
+
+    Transport --> HTTP
+    HTTP --> Scanner
+    Scanner --> Gateway
+    Gateway --> Coordinator
+    Coordinator --> Intake
+    Coordinator --> Accountability
+    Coordinator --> SafetyIntel
+    Coordinator --> SITREP
+    Coordinator --> Learning
+    Coordinator --> Compliance
+    Agents --> Data
 ```
-    Slack /incident   SMS (Twilio)  WhatsApp (Meta)  Console (SPA)
-    Reactions · /checkin   SAFE/SOS/…     SITREP · Accountability
-         │                    │          Agent Stream · Governance
-         └────────┬───────────┘                  │
-                  │                              │
-                  └──────────┬───────────────────┘
-                             │
-                    ┌────────▼─────────────────┐
-                    │   Cloud Run HTTP Server    │
-                    │   SSE · REST · Webhooks    │
-                    └────────────┬─────────────┘
-                                 │
-                    ┌────────────▼─────────────┐
-                    │     Content Scanner        │
-                    │  Google Model Armor API    │
-                    │  + InjectionGuard (regex)  │
-                    └────────────┬─────────────┘
-                                 │
-                    ┌────────────▼─────────────┐
-                    │     Agent Gateway          │
-                    │  Identity · Rate Limit     │
-                    │  Approval Gates · Scanner  │
-                    └────────────┬─────────────┘
-                                 │
-                    ┌────────────▼─────────────┐
-                    │   Coordinator Agent (ADK)  │
-                    │     gemini-3.5-flash       │
-                    └──┬──┬──┬──┬──┬──┬────────┘
-                       │  │  │  │  │  │
-          ┌────────────┘  │  │  │  │  └────────────┐
-          │     ┌─────────┘  │  │  └─────────┐     │
-          ▼     ▼            ▼  ▼            ▼     ▼
-       Intake  Account-   Safety  SITREP  Learning  Compliance
-               ability    Intel   Handoff  AAR      Audit
-                                                    
-          │     │            │     │        │        │
-          └─────┴────────────┴─────┴────────┴────────┘
-                              │
-               ┌──────────────┼──────────────┐
-               ▼              ▼              ▼
-          Event Bus      Firestore      Memory Bank
-          (Pub/Sub)    (state+ledger)  (cross-session)
-```
+
+> Full diagram also available at [`docs/architecture.md`](docs/architecture.md).
 
 ### Service Stack
 

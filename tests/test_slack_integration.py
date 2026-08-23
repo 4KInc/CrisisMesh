@@ -409,7 +409,7 @@ class TestFastAckPattern:
         assert "911" in result["text"]
         assert "Incident Report Received" in result["text"]
 
-    def test_deterministic_block_kit_labeled(self):
+    def test_deterministic_block_kit_has_911_and_incident_id(self):
         from src.services.slack_transport import _post_incident_block_kit
         import src.services.slack_transport as st
 
@@ -422,8 +422,8 @@ class TestFastAckPattern:
         _post_incident_block_kit(FakeClient(), "C123", result)
 
         context_blocks = [b for b in blocks_captured if b.get("type") == "context"]
-        assert any("Deterministic pipeline" in str(b) for b in context_blocks)
-        assert any("fast fallback" in str(b) for b in context_blocks)
+        assert any("911" in str(b) for b in context_blocks)
+        assert any("Incident ID" in str(b) for b in context_blocks)
 
 
 class TestPlaybookFormatting:
