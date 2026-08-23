@@ -345,9 +345,17 @@ def _start_incident(channel_id: str, user_id: str, text: str) -> dict[str, Any]:
     _incident_declared_by = user_id
     _incident_start_time = time.time()
 
+    incident_id = result.get("incident_id", "")
+
     threading.Thread(
         target=_post_slack_results,
         args=(channel_id, result),
+        daemon=True,
+    ).start()
+
+    threading.Thread(
+        target=_run_agentic_and_post,
+        args=(channel_id, text, incident_id),
         daemon=True,
     ).start()
 
@@ -357,7 +365,7 @@ def _start_incident(channel_id: str, user_id: str, text: str) -> dict[str, Any]:
             ":rotating_light: *Incident Report Received*\n"
             f"> {text}\n\n"
             f"Reported by <@{user_id}>. CrisisMesh agent fleet is activating.\n"
-            f"Incident ID: `{result.get('incident_id', '')}`\n"
+            f"Incident ID: `{incident_id}`\n"
             ":telephone_receiver: *If this is a life-threatening emergency, call 911 immediately.*"
         ),
     }
@@ -1487,18 +1495,26 @@ def _run_mention_pipeline(channel_id: str, user_id: str, text: str) -> None:
     _incident_declared_by = user_id
     _incident_start_time = time.time()
 
+    incident_id = result.get("incident_id", "")
+
     _post_bot_message(
         channel_id,
         (
             f":rotating_light: *Incident Report Received*\n"
             f"> {text}\n\n"
             f"Reported by <@{user_id}>. CrisisMesh agent fleet is activating.\n"
-            f"Incident ID: `{result.get('incident_id', '')}`\n"
+            f"Incident ID: `{incident_id}`\n"
             ":telephone_receiver: *If this is a life-threatening emergency, call 911 immediately.*"
         ),
     )
 
     _post_slack_results(channel_id, result)
+
+    threading.Thread(
+        target=_run_agentic_and_post,
+        args=(channel_id, text, incident_id),
+        daemon=True,
+    ).start()
 
 
 def _post_bot_message(channel_id: str, text: str, thread_ts: str = "") -> None:

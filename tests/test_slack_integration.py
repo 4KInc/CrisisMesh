@@ -512,11 +512,11 @@ class TestAppMention:
         assert result is None
 
 
-class TestMentionAgenticDispatch:
-    """Agentic Gemini fleet does NOT auto-post — only on explicit request."""
+class TestAgenticFleetDispatch:
+    """Gemini agent fleet auto-fires in background on every incident declaration."""
 
-    def test_mention_does_not_spawn_agentic_thread(self):
-        """_run_mention_pipeline must NOT auto-post the Gemini SITREP."""
+    def test_mention_spawns_agentic_thread(self):
+        """_run_mention_pipeline must spawn the Gemini fleet in the background."""
         import src.services.slack_transport as st
 
         targets = []
@@ -535,10 +535,10 @@ class TestMentionAgenticDispatch:
         finally:
             st.threading.Thread = original_thread
 
-        assert "_run_agentic_and_post" not in targets
+        assert "_run_agentic_and_post" in targets
 
-    def test_slash_command_does_not_spawn_agentic_thread(self):
-        """Slash command _start_incident must NOT auto-post the Gemini SITREP."""
+    def test_slash_command_spawns_agentic_thread(self):
+        """Slash command _start_incident must spawn the Gemini fleet in the background."""
         import src.services.slack_transport as st
 
         targets = []
@@ -561,7 +561,62 @@ class TestMentionAgenticDispatch:
         finally:
             st.threading.Thread = original_thread
 
-        assert "_run_agentic_and_post" not in targets
+        assert "_run_agentic_and_post" in targets
+
+    def test_slash_command_returns_fast_ack_independent_of_fleet(self):
+        """Declaration returns the deterministic fast-ack without waiting on the fleet."""
+        import src.services.slack_transport as st
+
+        original_thread = st.threading.Thread
+
+        class NoopThread:
+            def __init__(self, *, target, args, daemon=False):
+                pass
+            def start(self):
+                pass
+
+        st.threading.Thread = NoopThread
+        try:
+            result = st.dispatch_slash_command("/incident", {
+                "channel_id": "C123",
+                "user_id": "U_PRINCIPAL",
+                "text": "Shooter in east wing",
+            })
+        finally:
+            st.threading.Thread = original_thread
+
+        assert result["response_type"] == "in_channel"
+        assert "Incident Report Received" in result["text"]
+        assert "911" in result["text"]
+
+    def test_fleet_failure_does_not_block_declaration(self):
+        """If the fleet thread raises, the deterministic ack was already returned."""
+        import src.services.slack_transport as st
+
+        original_thread = st.threading.Thread
+        fleet_called = []
+
+        class TrackingThread:
+            def __init__(self, *, target, args, daemon=False):
+                self._target_name = target.__name__
+                if self._target_name == "_run_agentic_and_post":
+                    fleet_called.append(True)
+            def start(self):
+                pass
+
+        st.threading.Thread = TrackingThread
+        try:
+            result = st.dispatch_slash_command("/incident", {
+                "channel_id": "C123",
+                "user_id": "U_PRINCIPAL",
+                "text": "Bomb threat in library",
+            })
+        finally:
+            st.threading.Thread = original_thread
+
+        assert result["response_type"] == "in_channel"
+        assert "Incident Report Received" in result["text"]
+        assert len(fleet_called) == 1
 
     def test_mention_ack_includes_911(self):
         """The @mention fast ack must include the 911 line."""

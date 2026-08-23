@@ -14,7 +14,7 @@ During a fire, active-threat, or severe-weather event, a K-12 school district co
 
 ## What It Does
 
-A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp message, or a console declaration — describing what they see. CrisisMesh's deterministic pipeline fires immediately with a Block Kit SITREP. The Gemini agent fleet is available on-demand for deeper analysis via `@CrisisMesh` follow-up queries or the `/incident/agentic` endpoint. The console lights up in real time.
+A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp message, or a console declaration — describing what they see. Every incident declaration automatically triggers the Gemini agent fleet in the background; a deterministic pipeline returns a sub-second fast-ack and serves as the fail-safe fallback if Vertex is unavailable. When the fleet completes, its richer SITREP is posted back to the same Slack channel. The console lights up in real time.
 
 **This is a human sending a message they would already send.** CrisisMesh does not detect or sense incidents. It coordinates the organizational response after a human reports one.
 
@@ -54,10 +54,10 @@ CrisisMesh has four trigger paths. Each is human-initiated — a person sends a 
 
 | Channel | Deterministic Pipeline | Gemini Agent Fleet |
 |---------|:---:|:---:|
-| Slack `/incident` command | Yes (fast ack) | On-demand (`@CrisisMesh` follow-up or `/incident/agentic`) |
-| Slack @mention / DM | Yes (fast ack) | On-demand (follow-up queries, arrival brief) |
+| Slack `/incident` command | Yes (fast ack) | Yes (background, auto on declaration) |
+| Slack @mention / DM | Yes (fast ack) | Yes (background, auto on declaration) |
 | SMS (Twilio) | Yes (TwiML ack) | Yes (background, follow-up SMS) |
-| WhatsApp (Meta) | Yes | No — confirmation only |
+| WhatsApp (Meta) | Yes | No — deterministic only by design |
 | Command Console | Yes ("Quick Declare") | Yes ("Declare Incident") |
 
 ### 1. Slack `/incident` Command (Primary)
@@ -214,7 +214,7 @@ flowchart LR
 | **WhatsApp** | WhatsApp Business Cloud API (Meta) | Inbound message incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 495 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 497 tests, no GCP required |
 
 ---
 
@@ -674,7 +674,7 @@ CrisisMesh/
 - **Observability:** Trace creation, span hierarchies, audit bundle export
 - **Memory Bank:** Lesson storage, retrieval, Jaccard tag-overlap confidence scoring, source citations with outcome data, cross-session recall, historical outcome stats
 - **Event Bus:** Publish/subscribe, event filtering, history
-- **Slack Transport:** Signature verification (HMAC-SHA256), slash command dispatch, @mention/DM agentic dispatch, reaction-based check-ins, URL verification challenge, pipeline integration, Block Kit formatting
+- **Slack Transport:** Signature verification (HMAC-SHA256), slash command dispatch, @mention/DM agentic dispatch, background fleet auto-spawn on declaration, fleet-failure fallback to deterministic, reaction-based check-ins, URL verification challenge, pipeline integration, Block Kit formatting
 - **SMS Transport:** Twilio signature verification (HMAC-SHA1), check-in keyword mapping, incident pipeline via SMS, TwiML response formatting, content safety blocking, outbound SMS via Twilio REST API, background agentic dispatch + follow-up SITREP
 - **HTTP Server:** All endpoints (GET + POST), error handling, CORS
 - **CSV Ingestion:** All 8 data types parsed correctly, semantic validation (route→blocked zone, resource→valid floor/zone, room→valid facility), row-level reject-and-report with validation reports
@@ -699,8 +699,8 @@ The `scripts/demo_fire_drill.py` script runs a complete 7-beat demo that proves 
 
 | Beat | Time | What It Proves |
 |------|------|---------------|
-| 1 | 0:00–0:20 | **Slack trigger:** `/incident Smoke near science lab floor 2` — CrisisMesh acks, fleet ignites |
-| 2 | 0:20–0:50 | **Block Kit SITREP** posted to Slack — type, severity, routes, assembly, 911 line |
+| 1 | 0:00–0:20 | **Slack trigger:** `/incident Smoke near science lab floor 2` — deterministic fast-ack + Gemini fleet auto-fires in background |
+| 2 | 0:20–0:50 | **Block Kit SITREP** posted to Slack — type, severity, routes, assembly, 911 line; Gemini fleet SITREP follows when ready |
 | 3 | 0:50–1:20 | **Console lights up** — real-time binding auto-discovers the Slack-triggered incident, Agent Stream starts |
 | 4 | 1:20–1:50 | **One-tap check-in** — Slack reactions (:white_check_mark: :thumbsup: :ok_hand: :runner: :door: :warning: :ambulance: :hospital:) update Accountability in real time |
 | 5 | 1:50–2:20 | **Model Armor** injection block, Agent Identity deny, PII redaction (Governance screen) |
