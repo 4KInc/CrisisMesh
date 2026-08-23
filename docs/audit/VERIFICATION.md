@@ -1,6 +1,6 @@
 # CrisisMesh Verification Audit — Phase 0
 
-`AUDIT: 9 PASS / 5 PARTIAL / 2 FAIL · tests 254/268 (14 google.adk import) · pillars: 3 managed / 4 custom`
+`AUDIT: 9 PASS / 5 PARTIAL / 2 FAIL · tests 479 passing · pillars: 3 managed / 4 custom`
 
 Run date: 2026-08-21
 Suite: `python3 -m pytest tests/ -q` → 254 passed, 14 failed, 268 collected in 1.60s

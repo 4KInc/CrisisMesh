@@ -181,7 +181,7 @@ flowchart TB
 | **WhatsApp** | WhatsApp Business Cloud API (Meta) | Inbound message incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 435 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 479 tests, no GCP required |
 
 ---
 
@@ -345,7 +345,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (435 tests, no GCP required)
+# Run tests (479 passing, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -366,7 +366,7 @@ adk run
 | `GOOGLE_CLOUD_REGION` | region | `us-central1` | Region for Vertex AI and Model Armor |
 | `GOOGLE_GENAI_USE_VERTEXAI` | `TRUE` | — | Required for ADK to use Vertex AI |
 | `EVENT_BUS_BACKEND` | `memory`, `pubsub` | `memory` | Selects event transport |
-| `ARMOR_BACKEND` | `regex`, `model_armor` | `regex` | Selects content scanner backend |
+| `ARMOR_BACKEND` | `regex`, `model_armor` | `model_armor` | Selects content scanner backend (`regex` for offline/local dev) |
 | `ARMOR_TEMPLATE` | template ID | `crisismesh-guard` | Model Armor template name |
 | `SLACK_BOT_TOKEN` | `xoxb-...` | — | Slack Bot OAuth token (for posting messages) |
 | `SLACK_SIGNING_SECRET` | secret | — | Slack request signature verification |
@@ -625,7 +625,7 @@ CrisisMesh/
 
 ## Test Coverage
 
-435 passing tests covering:
+479 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries
