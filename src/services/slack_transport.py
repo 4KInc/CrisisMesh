@@ -1132,6 +1132,19 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     if headcount.get("need_help"):
         lines.append(f":warning: Need help: {headcount['need_help']}")
 
+    if _room_checkins:
+        total_safe = sum(r["safe"] for r in _room_checkins.values())
+        total_missing = sum(r["missing"] for r in _room_checkins.values())
+        lines.append("")
+        lines.append(f":clipboard: *Room Check-ins ({len(_room_checkins)} rooms reported):*")
+        for room_id, info in sorted(_room_checkins.items()):
+            icon = ":white_check_mark:" if info["missing"] == 0 else ":red_circle:"
+            line = f"  {icon} Room {room_id}: {info['safe']} safe, {info['missing']} missing"
+            if info.get("notes"):
+                line += f" — {info['notes']}"
+            lines.append(line)
+        lines.append(f"  *Totals:* {total_safe} safe · {total_missing} missing")
+
     if threat:
         lines.append("")
         lines.append(f":rotating_light: *Threat Observation:* `{threat['status']}`")
