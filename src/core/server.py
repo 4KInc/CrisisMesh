@@ -807,7 +807,7 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             zone_id = location.get("zone_id", "")
             safety_span = trace.start_span("safety_intel", "safety_intel", root.span_id)
             blocked = find_blocked_zones(facility_id, zone_id) if zone_id else {}
-            routes = find_safe_routes(facility_id, zone_id) if zone_id else {}
+            routes = find_safe_routes(facility_id, zone_id, blocked_zones=zone_id) if zone_id else {}
             resources = locate_resource(facility_id, "aed")
             assembly = find_assembly_point(facility_id, primary_only=True)
             inc_type = classification.get("incident_type", "")

@@ -212,7 +212,7 @@ def run_incident_pipeline(
     zone_id = location.get("zone_id", "")
     safety_span = trace.start_span("safety_intel", "safety_intel", root.span_id)
     blocked = find_blocked_zones(facility_id, zone_id) if zone_id else {}
-    routes = find_safe_routes(facility_id, zone_id) if zone_id else {}
+    routes = find_safe_routes(facility_id, zone_id, blocked_zones=zone_id) if zone_id else {}
     resources = locate_resource(facility_id, "aed")
     assembly = find_assembly_point(facility_id, primary_only=True)
     incident_type = classification.get("incident_type", "")
@@ -720,8 +720,10 @@ def _run_agentic_and_post(channel_id: str, report: str, incident_id: str) -> Non
         logger.info("Agentic pipeline returned no final text — deterministic fallback stands")
         return
 
-    delegations = result.get("delegations", 0)
-    tool_calls = result.get("tool_calls", 0)
+    id_pattern = re.compile(r"[A-Z][A-Z_]+-\d{4}-\d+")
+    for gen_id in set(id_pattern.findall(final_text)):
+        if gen_id != incident_id:
+            final_text = final_text.replace(gen_id, incident_id)
 
     bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
     if not HAS_SLACK or not bot_token:

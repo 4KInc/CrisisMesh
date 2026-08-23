@@ -151,6 +151,8 @@ def extract_location(report_text: str) -> dict[str, Any]:
         "main office": "admin-f1",
         "front office": "admin-f1",
         "nurse": "east-wing-f1",
+        "east wing": "east-wing-f1",
+        "west wing": "west-wing-f1",
     }
     for keyword, zone_id in keyword_zone_map.items():
         if keyword in text_lower:
