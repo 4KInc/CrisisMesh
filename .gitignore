@@ -20,3 +20,6 @@ service-account*.json
 
 # SMS consent audit log (contains personal data — never commit)
 data/consent/
+
+# Internal audit docs
+docs/audit/
