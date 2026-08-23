@@ -347,7 +347,7 @@ HELP reply.*
 
 ### Verification
 
-- `python3 -m pytest tests/ -q` → **479 passed**.
+- `python3 -m pytest tests/ -q` → **495 passed**.
 - Local server smoke test: `/privacy`, `/sms-terms`, `/sms-optin`, `/terms`, and
   `/sms-opt-in` all return `200 text/html`; `POST /sms/optin` records a pending
   consent row with the disclosure text, version, timestamp, and IP; a submission
