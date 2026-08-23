@@ -56,7 +56,7 @@ from src.agents.safety_intel.tools import (
 from src.config.playbooks import PLAYBOOKS
 from src.core.content_scanner import ContentScanner
 from src.core.event_bus import EventBus, create_event
-from src.core.knowledge_base import KnowledgeBase
+from src.core.knowledge_base import KnowledgeBase, init_knowledge_base
 from src.core.observability import Tracer
 from src.core.tactical_reasoning import strip_origin_from_payload
 from src.models.events import EventType
@@ -1266,6 +1266,9 @@ def _handle_file_shared(event: dict[str, Any]) -> None:
         target.write_text(csv_content)
 
         _facility_data_cache = ""
+
+        KnowledgeBase.reset()
+        init_knowledge_base(str(seed_dir))
 
         row_count = len(csv_content.strip().split("\n")) - 1
         label = filename.replace(".csv", "").replace("_", " ").title()
