@@ -91,6 +91,173 @@ class TestResponderCard:
         assert len(result["safe_routes"]) >= 1
 
 
+class TestArrivalBrief:
+    def test_arrival_brief_structure(self):
+        from src.agents.sitrep.tools import generate_arrival_brief
+
+        result = generate_arrival_brief(
+            incident_id="FIRE-2026-001",
+            incident_type="fire",
+            severity="high",
+            location="West Wing Floor 2 — Science Lab",
+            time_declared="2026-08-19T14:30:00Z",
+            accountability={"total_tracked": 34, "accounted": 30, "counts": {"injured": 1, "need_help": 2}},
+            incident_zone="west-wing-f2",
+        )
+        assert result["type"] == "ARRIVAL_BRIEF"
+        assert result["REQUIRES_COMMANDER_APPROVAL"] is True
+        assert "NO tactical directives" in result["scope_notice"]
+        assert "NO movement/entry instructions" in result["scope_notice"]
+        assert result["incident"]["type"] == "fire"
+        assert result["incident"]["severity"] == "high"
+        assert result["headcount"]["unaccounted"] == 4
+        assert result["headcount"]["injured"] == 1
+        assert result["headcount"]["need_help"] == 2
+        assert result["emergency_notice"]
+
+    def test_arrival_brief_includes_facility_address(self):
+        from src.agents.sitrep.tools import generate_arrival_brief
+
+        result = generate_arrival_brief(
+            incident_id="FIRE-2026-001",
+            incident_type="fire",
+            severity="high",
+            location="Science Lab",
+            time_declared="2026-08-19T14:30:00Z",
+            accountability={"total_tracked": 34, "accounted": 34, "counts": {}},
+        )
+        assert "1200 Oak Street" in result["incident"]["location"]
+
+    def test_arrival_brief_people_needing_assistance(self):
+        from src.agents.sitrep.tools import generate_arrival_brief
+
+        result = generate_arrival_brief(
+            incident_id="FIRE-2026-001",
+            incident_type="fire",
+            severity="high",
+            location="Science Lab",
+            time_declared="2026-08-19T14:30:00Z",
+            accountability={"total_tracked": 34, "accounted": 34, "counts": {}},
+            incident_zone="west-wing-f2",
+        )
+        assert len(result["people_needing_assistance"]) >= 1
+        for person in result["people_needing_assistance"]:
+            assert person["has_mobility_limitation"] is True
+            assert "name" in person
+            assert "last_known_location" in person
+
+    def test_arrival_brief_no_threat_observation_by_default(self):
+        from src.agents.sitrep.tools import generate_arrival_brief
+
+        result = generate_arrival_brief(
+            incident_id="FIRE-2026-001",
+            incident_type="fire",
+            severity="high",
+            location="Science Lab",
+            time_declared="2026-08-19T14:30:00Z",
+            accountability={"total_tracked": 34, "accounted": 34, "counts": {}},
+        )
+        assert result["threat_observation"] is None
+
+    def test_arrival_brief_threat_observation_unconfirmed(self):
+        from src.agents.sitrep.tools import generate_arrival_brief
+
+        result = generate_arrival_brief(
+            incident_id="THREAT-2026-001",
+            incident_type="active_threat",
+            severity="critical",
+            location="Main Building",
+            time_declared="2026-08-19T14:30:00Z",
+            accountability={"total_tracked": 34, "accounted": 30, "counts": {}},
+            reported_threat_location="Room 204",
+            threat_last_seen_time="14:32",
+        )
+        obs = result["threat_observation"]
+        assert obs is not None
+        assert "UNCONFIRMED" in obs["status"]
+        assert obs["last_reported_location"] == "Room 204"
+        assert obs["last_reported_time"] == "14:32"
+        assert "unverified" in obs["caveat"].lower()
+
+    def test_arrival_brief_has_floor_summary(self):
+        from src.agents.sitrep.tools import generate_arrival_brief
+
+        result = generate_arrival_brief(
+            incident_id="FIRE-2026-001",
+            incident_type="fire",
+            severity="high",
+            location="Science Lab",
+            time_declared="2026-08-19T14:30:00Z",
+            accountability={"total_tracked": 34, "accounted": 34, "counts": {}},
+        )
+        assert len(result["floor_summary"]) >= 1
+        for floor in result["floor_summary"]:
+            assert "floor" in floor
+            assert "zones" in floor
+            assert "personnel_assigned" in floor
+
+    def test_arrival_brief_has_floor_wardens(self):
+        from src.agents.sitrep.tools import generate_arrival_brief
+
+        result = generate_arrival_brief(
+            incident_id="FIRE-2026-001",
+            incident_type="fire",
+            severity="high",
+            location="Science Lab",
+            time_declared="2026-08-19T14:30:00Z",
+            accountability={"total_tracked": 34, "accounted": 34, "counts": {}},
+        )
+        assert isinstance(result["floor_wardens"], list)
+
+    def test_arrival_brief_egress_structure(self):
+        from src.agents.sitrep.tools import generate_arrival_brief
+
+        result = generate_arrival_brief(
+            incident_id="FIRE-2026-001",
+            incident_type="fire",
+            severity="high",
+            location="Science Lab",
+            time_declared="2026-08-19T14:30:00Z",
+            accountability={"total_tracked": 34, "accounted": 34, "counts": {}},
+            incident_zone="west-wing-f2",
+        )
+        assert "safe_routes" in result["egress"]
+        assert "blocked_routes" in result["egress"]
+        assert "accessible_routes" in result["egress"]
+
+    def test_arrival_brief_has_resources(self):
+        from src.agents.sitrep.tools import generate_arrival_brief
+
+        result = generate_arrival_brief(
+            incident_id="FIRE-2026-001",
+            incident_type="fire",
+            severity="high",
+            location="Science Lab",
+            time_declared="2026-08-19T14:30:00Z",
+            accountability={"total_tracked": 34, "accounted": 34, "counts": {}},
+        )
+        assert len(result["on_site_resources"]) >= 3
+        assert result["command_contact"]
+        assert result["assembly_point"]
+        assert result["nearby_services"]["nearest_fire_station"]["name"]
+        assert result["nearby_services"]["nearest_hospital"]["name"]
+
+    def test_arrival_brief_no_medical_details(self):
+        """Arrival brief must NOT leak medical notes — only mobility-limitation flag."""
+        from src.agents.sitrep.tools import generate_arrival_brief
+
+        result = generate_arrival_brief(
+            incident_id="FIRE-2026-001",
+            incident_type="fire",
+            severity="high",
+            location="Science Lab",
+            time_declared="2026-08-19T14:30:00Z",
+            accountability={"total_tracked": 34, "accounted": 34, "counts": {}},
+        )
+        brief_str = str(result)
+        assert "medical_notes" not in brief_str
+
+
 class TestStakeholderUpdate:
     def test_no_personal_data(self):
         from src.agents.sitrep.tools import generate_stakeholder_update

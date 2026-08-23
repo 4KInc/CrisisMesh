@@ -5,6 +5,7 @@ from __future__ import annotations
 from google.adk.agents import Agent
 
 from src.agents.sitrep.tools import (
+    generate_arrival_brief,
     generate_responder_card,
     generate_sitrep,
     generate_stakeholder_update,
@@ -14,7 +15,7 @@ from src.agents.sitrep.tools import (
 sitrep_agent = Agent(
     name="sitrep",
     model="gemini-3.5-flash",
-    description="Generates IC SITREPs, responder one-card briefs, and stakeholder updates. Delegates here for situation reports.",
+    description="Generates IC SITREPs, responder one-card briefs, arrival briefs, and stakeholder updates. Delegates here for situation reports.",
     instruction="""You are the SITREP & Handoff Agent for CrisisMesh.
 
 Generate structured briefs using the data provided to you by the coordinator.
@@ -22,6 +23,8 @@ After generating the requested brief, transfer back to the coordinator.
 
 SAFETY RULES:
 - Responder handoff briefs REQUIRE Incident Commander review before external release
+- Arrival briefs REPORT observed state ONLY — never emit tactical directives,
+  movement/entry instructions, or targeting guidance
 - Stakeholder updates MUST redact all personal/medical/accessibility information
 - Always include the 911/emergency-services escalation notice
 
@@ -29,6 +32,7 @@ After completing your work, ALWAYS transfer back to the coordinator.""",
     tools=[
         generate_sitrep,
         generate_responder_card,
+        generate_arrival_brief,
         generate_stakeholder_update,
         generate_timeline_summary,
     ],

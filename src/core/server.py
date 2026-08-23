@@ -16,6 +16,7 @@ Endpoints:
   POST /whatsapp                 — WhatsApp inbound message webhook
   POST /incident/{id}/approve   — approve a pending gated action
   POST /incident/{id}/deny      — deny a pending gated action
+  GET  /incident/{id}/arrival-brief — law enforcement arrival brief
   GET  /incident/{id}           — get incident status + accountability
   GET  /incident/latest         — latest incident (for console real-time binding)
   GET  /registry                — view agent registry
@@ -57,7 +58,7 @@ from src.agents.safety_intel.tools import (
     find_zone_info,
     locate_resource,
 )
-from src.agents.sitrep.tools import generate_responder_card, generate_sitrep
+from src.agents.sitrep.tools import generate_arrival_brief, generate_responder_card, generate_sitrep
 from src.agents.learning.tools import find_similar_incidents, store_lesson
 from src.core.tactical_reasoning import (
     apply_safety_backstop,
@@ -486,6 +487,31 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             else:
                 self.send_response(403)
                 self.end_headers()
+
+        elif path.endswith("/arrival-brief") and path.startswith("/incident/"):
+            parts = path.split("/")
+            if len(parts) == 4:
+                incident_id = parts[2]
+                latest = get_latest_incident()
+                if not latest or latest.get("incident_id") != incident_id:
+                    _json_response(self, {"error": "Incident not found"}, 404)
+                    return
+                classification = latest.get("classification", {})
+                location = latest.get("location", {})
+                accountability_summary = compute_accountability_summary(incident_id)
+                brief = generate_arrival_brief(
+                    incident_id=incident_id,
+                    incident_type=classification.get("incident_type", "unknown"),
+                    severity=classification.get("severity", "unknown"),
+                    location=location.get("resolved_location", latest.get("report", "")),
+                    time_declared=latest.get("classification", {}).get("timestamp", ""),
+                    accountability=accountability_summary,
+                    incident_zone=location.get("zone_id", ""),
+                    facility_id=latest.get("classification", {}).get("facility_id", "jefferson"),
+                )
+                _json_response(self, brief)
+            else:
+                _json_response(self, {"error": "Not found"}, 404)
 
         elif path.startswith("/incident/"):
             incident_id = path.split("/incident/")[1]
