@@ -258,6 +258,56 @@ class TestArrivalBrief:
         assert "medical_notes" not in brief_str
 
 
+class TestExtractThreatObservation:
+    def test_last_seen_heading_toward(self):
+        from src.agents.sitrep.tools import extract_threat_observation
+
+        result = extract_threat_observation(
+            "Active shooter in west wing. Last seen heading toward east hallway."
+        )
+        assert "east hallway" in result
+
+    def test_last_seen_near(self):
+        from src.agents.sitrep.tools import extract_threat_observation
+
+        result = extract_threat_observation(
+            "Gunman reported. Last seen near the cafeteria entrance."
+        )
+        assert "cafeteria" in result
+
+    def test_shooter_spotted_in(self):
+        from src.agents.sitrep.tools import extract_threat_observation
+
+        result = extract_threat_observation(
+            "Shooter spotted in Room 204, students sheltering."
+        )
+        assert "Room 204" in result
+
+    def test_gunshots_heard_from(self):
+        from src.agents.sitrep.tools import extract_threat_observation
+
+        result = extract_threat_observation(
+            "Multiple gunshots heard from the east wing hallway."
+        )
+        assert "east wing hallway" in result
+
+    def test_no_threat_in_fire_report(self):
+        from src.agents.sitrep.tools import extract_threat_observation
+
+        result = extract_threat_observation(
+            "Fire in the cafeteria, smoke visible from east wing."
+        )
+        assert result == ""
+
+    def test_suspect_reported_at(self):
+        from src.agents.sitrep.tools import extract_threat_observation
+
+        result = extract_threat_observation(
+            "Suspect reported near the main entrance, wearing dark clothing."
+        )
+        assert "main entrance" in result
+
+
 class TestStakeholderUpdate:
     def test_no_personal_data(self):
         from src.agents.sitrep.tools import generate_stakeholder_update

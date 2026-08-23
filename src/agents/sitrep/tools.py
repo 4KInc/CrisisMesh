@@ -6,10 +6,39 @@ and accountability tracking.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
 from src.core.knowledge_base import KnowledgeBase
+
+_THREAT_PATTERNS = [
+    re.compile(
+        r"last\s+(?:seen|spotted|reported)\s+(?:heading\s+)?(?:toward|towards|near|in|at|by)\s+(?:the\s+)?(.+?)(?:\.|,|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:shooter|suspect|intruder|threat|gunman)\s+(?:seen|spotted|reported|observed)\s+(?:near|in|at|by|heading\s+(?:toward|towards))\s+(?:the\s+)?(.+?)(?:\.|,|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:gunshots?|shots?\s+fired)\s+(?:heard|reported)\s+(?:from|in|near)\s+(?:the\s+)?(.+?)(?:\.|,|$)",
+        re.IGNORECASE,
+    ),
+]
+
+
+def extract_threat_observation(report: str) -> str:
+    """Extract reported threat location from incident report text.
+
+    Returns the raw reported observation or empty string. This extracts
+    what was REPORTED by witnesses — it does not infer or generate positions.
+    """
+    for pattern in _THREAT_PATTERNS:
+        m = pattern.search(report)
+        if m:
+            return m.group(1).strip()
+    return ""
 
 
 def generate_sitrep(

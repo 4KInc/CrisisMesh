@@ -58,7 +58,12 @@ from src.agents.safety_intel.tools import (
     find_zone_info,
     locate_resource,
 )
-from src.agents.sitrep.tools import generate_arrival_brief, generate_responder_card, generate_sitrep
+from src.agents.sitrep.tools import (
+    extract_threat_observation,
+    generate_arrival_brief,
+    generate_responder_card,
+    generate_sitrep,
+)
 from src.agents.learning.tools import find_similar_incidents, store_lesson
 from src.core.tactical_reasoning import (
     apply_safety_backstop,
@@ -498,16 +503,19 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
                     return
                 classification = latest.get("classification", {})
                 location = latest.get("location", {})
+                report_text = latest.get("report", "")
                 accountability_summary = compute_accountability_summary(incident_id)
+                threat_loc = extract_threat_observation(report_text)
                 brief = generate_arrival_brief(
                     incident_id=incident_id,
                     incident_type=classification.get("incident_type", "unknown"),
                     severity=classification.get("severity", "unknown"),
-                    location=location.get("resolved_location", latest.get("report", "")),
+                    location=location.get("resolved_location", report_text),
                     time_declared=latest.get("classification", {}).get("timestamp", ""),
                     accountability=accountability_summary,
                     incident_zone=location.get("zone_id", ""),
                     facility_id=latest.get("classification", {}).get("facility_id", "jefferson"),
+                    reported_threat_location=threat_loc,
                 )
                 _json_response(self, brief)
             else:
