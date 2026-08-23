@@ -1113,6 +1113,9 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     egress = brief["egress"]
     threat = brief.get("threat_observation")
     nearby = brief["nearby_services"]
+    kb = KnowledgeBase.get()
+
+    elapsed_min = int((time.time() - _incident_start_time) / 60) if _incident_start_time else 0
 
     lines = [
         f":shield: *LAW ENFORCEMENT ARRIVAL BRIEF — {_active_incident_id}*",
@@ -1120,44 +1123,97 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
         "",
         f"*{brief['scope_notice']}*",
         "",
-        f"*Incident:* `{incident['type'].upper()}` | *Severity:* `{incident['severity'].upper()}`",
+        f"*Incident:* `{incident['type'].upper()}` | *Severity:* `{incident['severity'].upper()}` | *Elapsed:* {elapsed_min} min",
         f"*Location:* {incident['location']}",
         f"*Zone:* {incident.get('incident_zone', '—')}",
-        "",
-        f"*Headcount:* {headcount['total']} total | {headcount['accounted']} accounted | {headcount['unaccounted']} unaccounted",
     ]
 
+    # ── Building overview ──
+    facility = kb.get_facility("jefferson")
+    floor_summary = brief.get("floor_summary", [])
+    total_rooms = len(kb.rooms)
+    total_personnel = len(kb.personnel)
+    total_floors = len(floor_summary)
+    if facility:
+        lines.append("")
+        lines.append(f":school: *Building:* {facility.get('name', 'Jefferson Elementary')} — {total_floors} floors, {total_rooms} rooms, {total_personnel} staff/students tracked")
+
+    # ── Threat observation ──
+    if threat:
+        lines.append("")
+        lines.append(f":rotating_light: *THREAT OBSERVATION:* `{threat['status']}`")
+        lines.append(f"  Last reported: *{threat['last_reported_location']}* at {threat['last_reported_time']}")
+        lines.append(f"  _{threat['caveat']}_")
+
+    # ── Headcount ──
+    lines.append("")
+    lines.append(f"*Headcount:* {headcount['total']} total | {headcount['accounted']} accounted | {headcount['unaccounted']} unaccounted")
     if headcount.get("injured"):
         lines.append(f":ambulance: Injured: {headcount['injured']}")
     if headcount.get("need_help"):
         lines.append(f":warning: Need help: {headcount['need_help']}")
 
+    # ── Room check-ins + silent rooms ──
+    all_rooms = {r["room_id"]: r for r in kb.rooms}
+    reported_rooms = set(_room_checkins.keys())
+    silent_rooms = sorted(set(all_rooms.keys()) - reported_rooms)
+
     if _room_checkins:
         total_safe = sum(r["safe"] for r in _room_checkins.values())
         total_missing = sum(r["missing"] for r in _room_checkins.values())
         lines.append("")
-        lines.append(f":clipboard: *Room Check-ins ({len(_room_checkins)} rooms reported):*")
+        lines.append(f":clipboard: *Room Check-ins ({len(_room_checkins)}/{len(all_rooms)} rooms reported):*")
         for room_id, info in sorted(_room_checkins.items()):
             icon = ":white_check_mark:" if info["missing"] == 0 else ":red_circle:"
-            line = f"  {icon} Room {room_id}: {info['safe']} safe, {info['missing']} missing"
-            if info.get("notes"):
+            room_data = all_rooms.get(room_id, {})
+            teacher = room_data.get("notes", "")
+            line = f"  {icon} Room {room_id}"
+            if teacher:
+                line += f" ({teacher})"
+            line += f": {info['safe']} safe, {info['missing']} missing"
+            if info.get("notes") and info["notes"] != f"{info['safe']} students are safe, {info['missing']} are missing":
                 line += f" — {info['notes']}"
             lines.append(line)
         lines.append(f"  *Totals:* {total_safe} safe · {total_missing} missing")
 
-    if threat:
+    if silent_rooms:
+        est_unaccounted = len(silent_rooms) * 25
         lines.append("")
-        lines.append(f":rotating_light: *Threat Observation:* `{threat['status']}`")
-        lines.append(f"  Last reported: {threat['last_reported_location']} at {threat['last_reported_time']}")
-        lines.append(f"  _{threat['caveat']}_")
+        lines.append(f":black_circle: *SILENT ROOMS — NO REPORT ({len(silent_rooms)} rooms, ~{est_unaccounted} people):*")
+        silent_in_threat_zone = []
+        silent_other = []
+        for rid in silent_rooms:
+            room_data = all_rooms.get(rid, {})
+            room_zone = room_data.get("zone_id", "")
+            if room_zone == zone_id:
+                silent_in_threat_zone.append(rid)
+            else:
+                silent_other.append(rid)
+        if silent_in_threat_zone:
+            zone_name = brief["incident"].get("incident_zone", zone_id)
+            room_list = ", ".join(silent_in_threat_zone)
+            lines.append(f"  :red_circle: *IN THREAT ZONE ({zone_name}):* {room_list}")
+        if silent_other:
+            room_list = ", ".join(silent_other)
+            lines.append(f"  :grey_question: Other: {room_list}")
 
+    # ── People needing assistance ──
     people = brief.get("people_needing_assistance", [])
     if people:
         lines.append("")
         lines.append(f":wheelchair: *People Needing Assistance ({len(people)}):*")
         for p in people:
-            lines.append(f"  - *{p['name']}* — {p['last_known_location']}")
+            lines.append(f"  - *{p['name']}* — Room {p['last_known_location']}")
 
+    # ── Floor wardens (on-site contacts for each floor) ──
+    wardens = brief.get("floor_wardens", [])
+    if wardens:
+        lines.append("")
+        lines.append(f":bust_in_silhouette: *Floor Wardens (on-site contacts):*")
+        for w in wardens:
+            lines.append(f"  - *{w['name']}* — Floor {w['floor']}, {w['location']}")
+
+    # ── Egress ──
     lines.append("")
     if egress.get("blocked_routes"):
         lines.append(f":no_entry: *Blocked Routes:* {', '.join(egress['blocked_routes'])}")
@@ -1166,6 +1222,23 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     if egress.get("accessible_routes"):
         lines.append(f":wheelchair: *Accessible Routes:* {', '.join(egress['accessible_routes'])}")
 
+    # ── Hazards ──
+    hazards = brief.get("hazards", [])
+    if hazards:
+        lines.append("")
+        lines.append(f":biohazard_sign: *Hazards:*")
+        for h in hazards:
+            lines.append(f"  - {h}")
+
+    # ── On-site resources ──
+    resources = brief.get("on_site_resources", [])
+    if resources:
+        lines.append("")
+        lines.append(f":package: *On-Site Resources:*")
+        for r in resources:
+            lines.append(f"  - {r}")
+
+    # ── Command & services ──
     lines.append("")
     lines.append(f"*Assembly:* {brief['assembly_point']}")
     lines.append(f"*Command Contact:* {brief['command_contact']}")
