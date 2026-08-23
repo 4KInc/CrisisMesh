@@ -61,13 +61,11 @@ def validate_evacuation_route(row: dict[str, str], kb: KnowledgeBase) -> str | N
         if zone is None:
             return f"route '{row.get('name', '?')}' references unknown from_zone '{from_zone}'"
 
-    if blocked_by:
+    if blocked_by and kb.zones:
         blocked_zones = {z.strip() for z in blocked_by.split(",") if z.strip()}
-        if from_zone in blocked_zones:
-            return (
-                f"route '{row.get('name', '?')}' terminates in blocked zone "
-                f"'{from_zone}' (listed in its own blocked_by_zones)"
-            )
+        for bz in blocked_zones:
+            if kb.get_zone(bz) is None:
+                return f"route '{row.get('name', '?')}' references unknown blocked zone '{bz}'"
 
     return None
 

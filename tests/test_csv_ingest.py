@@ -144,18 +144,18 @@ class TestSemanticEvacuationRoute:
         assert result["records_rejected"] == 0
 
     @pytest.mark.asyncio
-    async def test_route_to_blocked_zone_rejected(self):
+    async def test_route_unknown_blocked_zone_rejected(self):
         state = _mock_state()
         csv = (
             "facility_id,name,from_zone,to_exit,route_description,accessibility,blocked_by_zones\n"
-            "jefferson,Bad Route,west-wing-f2,Door 1,Through west hall,standard,west-wing-f2\n"
+            "jefferson,Bad Route,west-wing-f2,Door 1,Through west hall,standard,nonexistent-zone\n"
         )
         result = await ingest_csv(state, "evacuation_routes", csv)
         assert result["records_loaded"] == 0
         assert result["records_rejected"] == 1
         reason = result["rejected_rows"][0]["reason"]
-        assert "blocked zone" in reason
-        assert "west-wing-f2" in reason
+        assert "unknown blocked zone" in reason
+        assert "nonexistent-zone" in reason
 
     @pytest.mark.asyncio
     async def test_route_unknown_from_zone_rejected(self):
@@ -311,13 +311,12 @@ class TestMixedBatchRejectAndReport:
         csv = (
             "facility_id,name,from_zone,to_exit,route_description,accessibility,blocked_by_zones\n"
             "jefferson,Good Route,east-wing-f1,Door 3,Through hallway,standard,\n"
-            "jefferson,Self-Blocked,west-wing-f2,Door 1,Through west,standard,west-wing-f2\n"
+            "jefferson,Zone-Blocked,west-wing-f2,Door 1,Through west,standard,west-wing-f2\n"
             "jefferson,Ghost Route,nonexistent-zone,Door 1,Through nowhere,standard,\n"
         )
         result = await ingest_csv(state, "evacuation_routes", csv)
 
-        assert result["records_loaded"] == 1
-        assert result["records_rejected"] == 2
+        assert result["records_loaded"] == 2
+        assert result["records_rejected"] == 1
         reasons = [r["reason"] for r in result["rejected_rows"]]
-        assert any("blocked zone" in r for r in reasons)
         assert any("unknown from_zone" in r for r in reasons)

@@ -101,9 +101,8 @@ class TestRouteQueries:
 
     def test_routes_with_blocked_zones(self):
         kb = KnowledgeBase.get()
-        # east-wing-f1 primary route is blocked by "east-entrance"
         all_routes = kb.get_routes_from_zone("jefferson", "east-wing-f1")
-        filtered = kb.get_routes_from_zone("jefferson", "east-wing-f1", ["east-entrance"])
+        filtered = kb.get_routes_from_zone("jefferson", "east-wing-f1", ["east-wing-f1"])
         assert len(filtered) < len(all_routes)
 
     def test_accessible_routes(self):
@@ -114,11 +113,10 @@ class TestRouteQueries:
 
     def test_blocked_routes_detection(self):
         kb = KnowledgeBase.get()
-        blocked = kb.get_blocked_routes("jefferson", ["east-entrance"])
+        blocked = kb.get_blocked_routes("jefferson", ["east-wing-f1"])
         assert len(blocked) >= 1
-        # Should block the east wing routes that have blocked_by_zones=east-entrance
         for r in blocked:
-            assert "east-entrance" in r.get("blocked_by_zones", "")
+            assert "east-wing-f1" in r.get("blocked_by_zones", "")
 
 
 class TestResourceQueries:

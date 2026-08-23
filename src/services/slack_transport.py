@@ -1099,12 +1099,44 @@ def _run_followup_query(channel_id: str, user_id: str, query: str, thread_ts: st
         classification = inc.get("classification", {})
         location = inc.get("location", {})
         location_name = location.get("primary_zone", "") if isinstance(location, dict) else str(location)
-        incident_ctx = (
-            f"ACTIVE INCIDENT: {_active_incident_id} | "
-            f"Type: {classification.get('incident_type', 'unknown')} | "
-            f"Severity: {classification.get('severity', 'unknown')} | "
-            f"Location: {location_name}"
-        )
+        zone_id = location.get("zone_id", "") if isinstance(location, dict) else ""
+        report_text = inc.get("report", "")
+
+        ctx_parts = [
+            f"ACTIVE INCIDENT: {_active_incident_id}",
+            f"Type: {classification.get('incident_type', 'unknown')}",
+            f"Severity: {classification.get('severity', 'unknown')}",
+            f"Location: {location_name}",
+            f"Zone: {zone_id}" if zone_id else "",
+            f"Original report: {report_text}" if report_text else "",
+        ]
+
+        blocked = inc.get("blocked_zones", {})
+        blocked_routes = blocked.get("blocked_routes", [])
+        if blocked_routes:
+            names = [r.get("name", "") for r in blocked_routes]
+            ctx_parts.append(f"BLOCKED ROUTES (run through threat zone — DO NOT USE): {', '.join(names)}")
+
+        safe = inc.get("safe_routes", {})
+        safe_routes = safe.get("routes", [])
+        if safe_routes:
+            route_strs = [f"{r.get('name', '')} → {r.get('to_exit', '')}" for r in safe_routes]
+            ctx_parts.append(f"SAFE ROUTES (away from threat): {'; '.join(route_strs)}")
+
+        if zone_id and not blocked_routes:
+            ctx_parts.append(
+                f"ROUTE SAFETY: The incident is in zone '{zone_id}'. "
+                f"Any route passing through '{zone_id}' is UNSAFE. "
+                f"Routes from OTHER zones that do not pass through '{zone_id}' are safe."
+            )
+
+        acct = inc.get("accountability", {})
+        mobility = acct.get("mobility_needs", [])
+        if mobility:
+            mob_strs = [f"{p.get('name', '')} (Room {p.get('location', '')})" for p in mobility]
+            ctx_parts.append(f"MOBILITY NEEDS: {', '.join(mob_strs)}")
+
+        incident_ctx = "\n".join(p for p in ctx_parts if p)
 
     facility_data = _load_facility_data()
 

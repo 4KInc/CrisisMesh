@@ -108,7 +108,7 @@ class TestSafetyIntelTools:
         from src.agents.safety_intel.tools import find_safe_routes
 
         all_routes = find_safe_routes("jefferson", "east-wing-f1")
-        filtered = find_safe_routes("jefferson", "east-wing-f1", blocked_zones="east-entrance")
+        filtered = find_safe_routes("jefferson", "east-wing-f1", blocked_zones="east-wing-f1")
         assert filtered["total_routes"] < all_routes["total_routes"]
 
     def test_find_zone_info(self):
@@ -155,7 +155,7 @@ class TestSafetyIntelTools:
     def test_find_blocked_zones(self):
         from src.agents.safety_intel.tools import find_blocked_zones
 
-        result = find_blocked_zones("jefferson", "east-entrance")
+        result = find_blocked_zones("jefferson", "east-wing-f1")
         assert len(result["blocked_routes"]) >= 1
 
 
