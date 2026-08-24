@@ -25,9 +25,8 @@ def fresh_state(tmp_path, monkeypatch):
     Tracer.reset()
     from src.services.sms_transport import _phone_to_person
     _phone_to_person.clear()
-    import src.services.slack_transport as st
-    st._active_incident_id = ""
-    st._latest_incident = {}
+    from src.core import incident_state
+    incident_state.reset()
     yield log
     sms_consent.reset()
     KnowledgeBase.reset()

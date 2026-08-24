@@ -22,9 +22,8 @@ def fresh_state():
     Tracer.reset()
     from src.services.whatsapp_transport import _phone_to_person
     _phone_to_person.clear()
-    import src.services.slack_transport as st
-    st._active_incident_id = ""
-    st._latest_incident = {}
+    from src.core import incident_state
+    incident_state.reset()
     from src.services.slack_transport import _slack_to_person
     _slack_to_person.clear()
     yield
@@ -204,3 +203,133 @@ class TestInboundMessage:
         assert CHECKIN_KEYWORDS["hurt"] == "injured"
         assert CHECKIN_KEYWORDS["evacuated"] == "evacuated"
         assert CHECKIN_KEYWORDS["out"] == "evacuated"
+
+
+class TestWhatsAppModeSwitch:
+    """CRISISMESH_WHATSAPP_MODE picks the provider — same shape as anbu-care."""
+
+    def test_defaults_to_meta(self, monkeypatch):
+        monkeypatch.delenv("CRISISMESH_WHATSAPP_MODE", raising=False)
+        from src.services.whatsapp_transport import whatsapp_mode
+        assert whatsapp_mode() == "meta"
+
+    @pytest.mark.parametrize("value", ["off", "OFF", "none", "false", ""])
+    def test_off_variants(self, monkeypatch, value):
+        monkeypatch.setenv("CRISISMESH_WHATSAPP_MODE", value)
+        from src.services.whatsapp_transport import whatsapp_mode
+        assert whatsapp_mode() == "off"
+
+    def test_twilio_mode(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_WHATSAPP_MODE", "twilio")
+        from src.services.whatsapp_transport import whatsapp_mode
+        assert whatsapp_mode() == "twilio"
+
+    def test_off_sends_nothing(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_WHATSAPP_MODE", "off")
+        from src.services.whatsapp_transport import send_whatsapp
+        result = send_whatsapp("+15551234567", "SITREP")
+        assert result["delivered"] is False
+        assert "no message left the platform" in result["detail"]
+
+    def test_credentials_are_checked_per_mode(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_WHATSAPP_MODE", "twilio")
+        monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "meta_token")
+        monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "123")
+        monkeypatch.delenv("TWILIO_WHATSAPP_FROM", raising=False)
+        from src.services.whatsapp_transport import has_whatsapp_credentials
+        # Meta creds must not satisfy a Twilio-mode deployment.
+        assert has_whatsapp_credentials() is False
+
+
+class TestTwilioHostedWhatsApp:
+    @pytest.fixture(autouse=True)
+    def twilio_mode(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_WHATSAPP_MODE", "twilio")
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_test")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok")
+        monkeypatch.setenv("TWILIO_WHATSAPP_FROM", "+17722971783")
+
+    def test_addresses_get_the_whatsapp_prefix(self, monkeypatch):
+        captured = {}
+
+        class _Resp:
+            ok = True
+            status_code = 201
+
+            def json(self):
+                return {"sid": "SM1", "status": "queued"}
+
+        def _fake_post(url, **kwargs):
+            captured.update(kwargs["data"])
+            return _Resp()
+
+        import requests
+        monkeypatch.setattr(requests, "post", _fake_post)
+        from src.services.whatsapp_transport import send_whatsapp
+        result = send_whatsapp("+15551234567", "SITREP")
+        assert captured["From"] == "whatsapp:+17722971783"
+        assert captured["To"] == "whatsapp:+15551234567"
+        assert result["delivered"] is True
+        assert result["channel"] == "twilio"
+
+    def test_already_prefixed_sender_is_not_doubled(self, monkeypatch):
+        monkeypatch.setenv("TWILIO_WHATSAPP_FROM", "whatsapp:+17722971783")
+        captured = {}
+
+        class _Resp:
+            ok = True
+            status_code = 201
+
+            def json(self):
+                return {"sid": "SM1", "status": "queued"}
+
+        import requests
+        monkeypatch.setattr(requests, "post",
+                            lambda url, **kw: (captured.update(kw["data"]), _Resp())[1])
+        from src.services.whatsapp_transport import send_whatsapp
+        send_whatsapp("+15551234567", "SITREP")
+        assert captured["From"] == "whatsapp:+17722971783"
+
+    def test_terminal_status_is_not_delivered(self, monkeypatch):
+        class _Resp:
+            ok = True
+            status_code = 201
+
+            def json(self):
+                return {"sid": "SM_dead", "status": "undelivered",
+                        "error_message": "Recipient has not opted in"}
+
+        import requests
+        monkeypatch.setattr(requests, "post", lambda url, **kw: _Resp())
+        from src.services.whatsapp_transport import send_whatsapp
+        result = send_whatsapp("+15551234567", "SITREP")
+        assert result["delivered"] is False
+        assert "did not reach" in result["detail"]
+
+    def test_missing_sender_sends_nothing(self, monkeypatch):
+        monkeypatch.delenv("TWILIO_WHATSAPP_FROM", raising=False)
+
+        def _explode(*a, **kw):
+            raise AssertionError("must not call Twilio without a sender")
+
+        import requests
+        monkeypatch.setattr(requests, "post", _explode)
+        from src.services.whatsapp_transport import send_whatsapp
+        assert send_whatsapp("+15551234567", "SITREP")["delivered"] is False
+
+
+class TestCrossChannelKeywordParity:
+    """A person trained on one channel must not be failed by the other."""
+
+    def test_both_help_and_sos_mean_need_help_on_whatsapp(self):
+        from src.services.whatsapp_transport import CHECKIN_KEYWORDS
+        assert CHECKIN_KEYWORDS["help"] == "need_help"
+        assert CHECKIN_KEYWORDS["sos"] == "need_help"
+        assert CHECKIN_KEYWORDS["needhelp"] == "need_help"
+
+    def test_sms_check_in_words_all_work_on_whatsapp(self):
+        """Every SMS check-in keyword must resolve the same way on WhatsApp."""
+        from src.services.sms_transport import CHECKIN_KEYWORDS as SMS_WORDS
+        from src.services.whatsapp_transport import CHECKIN_KEYWORDS as WA_WORDS
+        for word, status in SMS_WORDS.items():
+            assert WA_WORDS.get(word) == status, f"{word!r} diverges between channels"

@@ -13,12 +13,16 @@ Endpoints:
   GET  /sms-terms               — SMS terms & conditions (A2P 10DLC)
   GET  /privacy                 — privacy policy (A2P 10DLC)
   GET  /whatsapp                 — WhatsApp webhook verification
-  POST /whatsapp                 — WhatsApp inbound message webhook
+  POST /whatsapp                 — WhatsApp inbound webhook (Meta Cloud API)
+  POST /whatsapp/twilio          — WhatsApp inbound webhook (Twilio-hosted)
+  POST /incident/{id}/resolve   — end the active incident (any channel)
   POST /incident/{id}/approve   — approve a pending gated action
   POST /incident/{id}/deny      — deny a pending gated action
   GET  /incident/{id}/arrival-brief — law enforcement arrival brief
   GET  /incident/{id}           — get incident status + accountability
   GET  /incident/latest         — latest incident (for console real-time binding)
+  GET  /incident/{id}/observations — witness reports attached to an incident
+  GET  /notify/last              — result of the most recent fan-out
   GET  /registry                — view agent registry
   GET  /trace/{id}              — get observability trace
   GET  /audit/{id}              — export audit bundle
@@ -28,18 +32,19 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import os
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlparse
 
 from src.config.agent_registry import AGENT_REGISTRY
 from src.core.agent_gateway import AgentGateway
 from src.core.content_scanner import ContentScanner
-from src.core.event_bus import EventBus, create_event
+from src.core.event_bus import EventBus
 from src.core.knowledge_base import KnowledgeBase, init_knowledge_base
 from src.core.memory_bank import MemoryBank, init_memory_bank
 from src.core.observability import Tracer, export_audit_bundle
@@ -72,19 +77,20 @@ from src.core.tactical_reasoning import (
     strip_origin_from_payload,
     validate_routing_directives,
 )
-from src.models.events import EventType
+from src.core import incident_resolve, incident_state, notify, observations
 from src.services.slack_transport import (
+    _publish_declared,
     dispatch_slash_command,
     dispatch_slack_event,
-    get_latest_incident,
-    set_latest_incident,
     verify_slack_signature,
 )
 from src.services.sms_transport import (
     can_send_sms,
     handle_inbound_sms,
     has_twilio_credentials,
+    public_url,
     send_sms,
+    twiml_response,
     verify_twilio_signature,
 )
 from src.services.sms_consent import (
@@ -94,6 +100,7 @@ from src.services.sms_consent import (
 )
 from src.services.whatsapp_transport import (
     extract_messages,
+    whatsapp_mode,
     handle_inbound_message,
     has_whatsapp_credentials,
     send_reply_async,
@@ -107,6 +114,9 @@ logger = logging.getLogger(__name__)
 # Initialize on import
 init_knowledge_base()
 init_memory_bank()
+# Attach the fan-out. Without this the bus has no subscribers at all and an
+# incident declared on one channel reaches nobody on the others.
+notify.subscribe()
 
 
 def _json_response(handler: BaseHTTPRequestHandler, data: Any, status: int = 200) -> None:
@@ -134,6 +144,11 @@ def _read_raw_body(handler: BaseHTTPRequestHandler) -> str:
 def _parse_form(raw: str) -> dict[str, str]:
     parsed = parse_qs(raw, keep_blank_values=True)
     return {k: v[0] for k, v in parsed.items()}
+
+
+def _parse_form_pairs(raw: str) -> list[tuple[str, str]]:
+    """Form fields in arrival order, keeping repeats — what Twilio signed."""
+    return parse_qsl(raw, keep_blank_values=True)
 
 
 async def _run_agentic(report: str) -> dict[str, Any]:
@@ -356,7 +371,7 @@ def _run_agentic_background(report: str) -> None:
         result = loop.run_until_complete(_run_agentic(report))
         loop.close()
         result["pipeline"] = "agentic"
-        set_latest_incident(result, source="web")
+        incident_state.set_latest_incident(result, source="web")
         logger.info(
             f"Agentic pipeline complete: {result.get('delegations', 0)} delegations, "
             f"{result.get('tool_calls', 0)} tool calls"
@@ -422,6 +437,22 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
                 },
             })
 
+        elif path.endswith("/observations") and path.startswith("/incident/"):
+            parts = path.split("/")
+            if len(parts) == 4:
+                entries = observations.get(parts[2])
+                _json_response(self, {
+                    "incident_id": parts[2],
+                    "count": len(entries),
+                    "latest_threat_location": observations.latest_threat_location(parts[2]),
+                    "observations": entries,
+                })
+            else:
+                _json_response(self, {"error": "Not found"}, 404)
+
+        elif path == "/notify/last":
+            _json_response(self, notify.get_last_result() or {"kind": "", "notified": 0})
+
         elif path == "/registry":
             registry = {
                 aid: {
@@ -471,7 +502,7 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             })
 
         elif path == "/incident/latest":
-            latest = get_latest_incident()
+            latest = incident_state.get_latest_incident()
             if latest:
                 _json_response(self, strip_origin_from_payload(latest))
             else:
@@ -497,7 +528,7 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             parts = path.split("/")
             if len(parts) == 4:
                 incident_id = parts[2]
-                latest = get_latest_incident()
+                latest = incident_state.get_latest_incident()
                 if not latest or latest.get("incident_id") != incident_id:
                     _json_response(self, {"error": "Incident not found"}, 404)
                     return
@@ -606,7 +637,21 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             ts = self.headers.get("X-Slack-Request-Timestamp", "")
             sig = self.headers.get("X-Slack-Signature", "")
 
-            if signing_secret and not verify_slack_signature(signing_secret, ts, raw, sig):
+            # Fail closed. This used to be `if signing_secret and not verify(...)`,
+            # so an unset secret skipped verification entirely and the endpoint
+            # accepted anything — and a forged /incident declares an incident and
+            # pages real phones. A missing secret is a misconfiguration, not
+            # permission to trust the caller. Matches /sms, which refuses without
+            # its credentials rather than accepting unverified requests.
+            if not signing_secret:
+                logger.error(
+                    "SLACK_SIGNING_SECRET is not set — refusing Slack requests "
+                    "rather than accepting them unverified"
+                )
+                _json_response(self, {"error": "Slack verification not configured"}, 503)
+                return
+
+            if not verify_slack_signature(signing_secret, ts, raw, sig):
                 _json_response(self, {"error": "Invalid signature"}, 401)
                 return
 
@@ -621,7 +666,21 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             ts = self.headers.get("X-Slack-Request-Timestamp", "")
             sig = self.headers.get("X-Slack-Signature", "")
 
-            if signing_secret and not verify_slack_signature(signing_secret, ts, raw, sig):
+            # Fail closed. This used to be `if signing_secret and not verify(...)`,
+            # so an unset secret skipped verification entirely and the endpoint
+            # accepted anything — and a forged /incident declares an incident and
+            # pages real phones. A missing secret is a misconfiguration, not
+            # permission to trust the caller. Matches /sms, which refuses without
+            # its credentials rather than accepting unverified requests.
+            if not signing_secret:
+                logger.error(
+                    "SLACK_SIGNING_SECRET is not set — refusing Slack requests "
+                    "rather than accepting them unverified"
+                )
+                _json_response(self, {"error": "Slack verification not configured"}, 503)
+                return
+
+            if not verify_slack_signature(signing_secret, ts, raw, sig):
                 _json_response(self, {"error": "Invalid signature"}, 401)
                 return
 
@@ -710,12 +769,16 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
                 return
 
             raw = _read_raw_body(self)
-            form = _parse_form(raw)
+            # Verify against the pairs exactly as they arrived — rebuilding them
+            # from a collapsed dict is the classic way this check silently
+            # starts passing everything.
+            pairs = _parse_form_pairs(raw)
+            form = dict(pairs)
             auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
             twilio_sig = self.headers.get("X-Twilio-Signature", "")
-            request_url = f"https://{self.headers.get('Host', '')}{self.path}"
+            request_url = public_url(self.headers, self.path)
 
-            if not verify_twilio_signature(auth_token, request_url, form, twilio_sig):
+            if not verify_twilio_signature(auth_token, request_url, pairs, twilio_sig):
                 _json_response(self, {"error": "Invalid signature"}, 401)
                 return
 
@@ -730,7 +793,61 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(result["twiml"].encode())
 
+        elif path == "/whatsapp/twilio":
+            # Twilio-hosted WhatsApp. Same webhook shape as /sms — form-encoded,
+            # signed with X-Twilio-Signature — so it is verified with the same
+            # check, never with Meta's. Only reachable in twilio mode.
+            if whatsapp_mode() != "twilio":
+                self.send_response(503)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(
+                    b"Twilio-hosted WhatsApp is not the configured provider. "
+                    b"Set CRISISMESH_WHATSAPP_MODE=twilio."
+                )
+                return
+
+            if not has_whatsapp_credentials():
+                self.send_response(503)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(
+                    b"Twilio WhatsApp not configured. Set TWILIO_ACCOUNT_SID, "
+                    b"TWILIO_WHATSAPP_FROM and an API key or TWILIO_AUTH_TOKEN."
+                )
+                return
+
+            raw = _read_raw_body(self)
+            pairs = _parse_form_pairs(raw)
+            form = dict(pairs)
+            auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+            twilio_sig = self.headers.get("X-Twilio-Signature", "")
+            request_url = public_url(self.headers, self.path)
+
+            if not verify_twilio_signature(auth_token, request_url, pairs, twilio_sig):
+                _json_response(self, {"error": "Invalid signature"}, 401)
+                return
+
+            # Twilio prefixes both addresses on the WhatsApp channel.
+            from_number = form.get("From", "").removeprefix("whatsapp:")
+            result = handle_inbound_message(from_number, form.get("Body", ""))
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/xml")
+            self.end_headers()
+            self.wfile.write(twiml_response(result["reply"]).encode())
+
         elif path == "/whatsapp":
+            if whatsapp_mode() != "meta":
+                self.send_response(503)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(
+                    b"Meta Cloud API is not the configured provider. "
+                    b"Set CRISISMESH_WHATSAPP_MODE=meta."
+                )
+                return
+
             if not has_whatsapp_credentials():
                 self.send_response(503)
                 self.send_header("Content-Type", "text/plain")
@@ -797,13 +914,6 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             intake_span.set_attribute("location_resolved", location.get("resolved", False))
             intake_span.end()
 
-            bus = EventBus.get()
-            loop = asyncio.new_event_loop()
-            loop.run_until_complete(bus.publish(create_event(
-                EventType.INCIDENT_DECLARED, incident_id, "coordinator",
-                {"type": classification["incident_type"], "severity": classification["severity"]},
-            )))
-
             zone_id = location.get("zone_id", "")
             safety_span = trace.start_span("safety_intel", "safety_intel", root.span_id)
             blocked = find_blocked_zones(facility_id, zone_id) if zone_id else {}
@@ -837,8 +947,6 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             provenance = build_provenance_record(tactical, incident_id)
             root.set_attribute("tactical_origin", provenance["origin"])
 
-            loop.close()
-
             result_data: dict[str, Any] = {
                 "incident_id": incident_id,
                 "report": report,
@@ -859,7 +967,12 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
                 "tactical_provenance": provenance,
             }
             result_data["pipeline"] = "deterministic"
-            set_latest_incident(result_data, source="web")
+            incident_state.set_latest_incident(result_data, source="web")
+            # Same helper the other channels use: published only once the state
+            # is consistent, and carrying enough for the fan-out to pick the
+            # right message. Publishing early with a thin payload would have
+            # sent a console-declared lockdown the evacuation wording.
+            _publish_declared(incident_id, classification, location)
             _json_response(self, strip_origin_from_payload(result_data), 201)
 
             import threading
@@ -901,6 +1014,49 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             text = body.get("text", "")
             result = ContentScanner.get().scan_message(text)
             _json_response(self, result)
+
+        elif path.endswith("/resolve") and path.startswith("/incident/"):
+            # Ending an incident is destructive: it stops the coordination
+            # everyone is working from and fires an all-clear to every reachable
+            # person. Two guards, because this service is public.
+            parts = path.split("/")
+            if len(parts) != 4:
+                _json_response(self, {"error": "Not found"}, 404)
+                return
+
+            body = _read_body(self)
+            resolve_token = os.environ.get("CRISISMESH_RESOLVE_TOKEN", "").strip()
+            if resolve_token:
+                presented = (
+                    self.headers.get("X-CrisisMesh-Token", "")
+                    or str(body.get("token", ""))
+                ).strip()
+                if not hmac.compare_digest(presented, resolve_token):
+                    _json_response(self, {"error": "Not authorized to resolve"}, 403)
+                    return
+
+            resolved_by = str(body.get("resolved_by", "")).strip()
+            if not resolved_by:
+                _json_response(self, {
+                    "error": "Missing resolved_by — a resolution has to be attributable.",
+                }, 400)
+                return
+
+            try:
+                report = incident_resolve.resolve(
+                    incident_id=parts[2],
+                    resolved_by=resolved_by,
+                    channel="http",
+                )
+            except incident_resolve.ResolveRefused as refused:
+                _json_response(
+                    self,
+                    {"error": refused.reason, "code": refused.code},
+                    404 if refused.code == "no_active_incident" else 409,
+                )
+                return
+
+            _json_response(self, report)
 
         elif path.endswith("/approve") and path.startswith("/incident/"):
             parts = path.split("/")

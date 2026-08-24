@@ -388,3 +388,93 @@ class TestCompliancePageIdentity:
             html = MockHandler("GET", path).wfile.getvalue().decode()
             assert "heartlinmachado@blockintelai.com" in html, path
             assert "803 Division St, Nashville, TN 37203" in html, path
+
+
+class TestConsoleResolveControl:
+    """The console must be able to end an incident, and must not carry the
+    token that authorises it — this page is served publicly."""
+
+    def _html(self):
+        return MockHandler("GET", "/").wfile.getvalue().decode()
+
+    def test_resolve_button_present(self):
+        html = self._html()
+        assert 'id="btn-resolve"' in html
+        assert "resolveIncident()" in html
+
+    def test_calls_the_resolve_endpoint(self):
+        html = self._html()
+        assert "'/incident/'+encodeURIComponent(incId)+'/resolve'" in html
+        assert "resolved_by" in html
+
+    def test_token_is_never_embedded_in_the_page(self):
+        """An embedded token would be readable by anyone who views source,
+        which is no gate at all."""
+        import os
+        html = self._html()
+        token = os.environ.get("CRISISMESH_RESOLVE_TOKEN", "")
+        if token:
+            assert token not in html
+        # it is asked for at use time and kept in the browser instead
+        assert "cm_resolve_token" in html
+        assert "X-CrisisMesh-Token" in html
+
+    def test_confirms_before_resolving(self):
+        html = self._html()
+        assert "confirm(" in html
+        assert "all-clear" in html
+
+    def test_clears_when_resolved_elsewhere(self):
+        """Slack or SMS can resolve too; the panel must stop showing a live
+        emergency that has already ended."""
+        html = self._html()
+        assert "!d.incident_id && _pollId" in html
+        assert "clearIncident()" in html
+
+
+class TestSlackFailsClosed:
+    """A forged Slack request declares an incident and pages real phones, so a
+    missing secret must refuse rather than skip verification."""
+
+    def _post(self, path, headers=None):
+        h = MockHandler("POST", path, {"command": "/incident", "text": "status"})
+        return h
+
+    def test_refuses_when_secret_is_unset(self, monkeypatch):
+        monkeypatch.delenv("SLACK_SIGNING_SECRET", raising=False)
+        for path in ("/slack/commands", "/slack/events"):
+            assert self._post(path).response_code == 503, path
+
+    def test_rejects_an_unsigned_request_when_configured(self, monkeypatch):
+        monkeypatch.setenv("SLACK_SIGNING_SECRET", "test_secret")
+        for path in ("/slack/commands", "/slack/events"):
+            assert self._post(path).response_code == 401, path
+
+    def test_accepts_a_correctly_signed_request(self, monkeypatch):
+        import hashlib
+        import hmac as _hmac
+        import time as _time
+
+        secret = "test_secret"
+        monkeypatch.setenv("SLACK_SIGNING_SECRET", secret)
+        body = "command=%2Fincident&text=status&user_id=U_PRINCIPAL&channel_id=C123"
+        ts = str(int(_time.time()))
+        sig = "v0=" + _hmac.new(
+            secret.encode(), f"v0:{ts}:{body}".encode(), hashlib.sha256,
+        ).hexdigest()
+
+        h = MockHandler.__new__(MockHandler)
+        h.response_code = None
+        h._headers = {}
+        raw = body.encode()
+        h.rfile = BytesIO(raw)
+        h.wfile = BytesIO()
+        h.path = "/slack/commands"
+        h.command = "POST"
+        h.headers = {
+            "Content-Length": str(len(raw)),
+            "X-Slack-Request-Timestamp": ts,
+            "X-Slack-Signature": sig,
+        }
+        h.do_POST()
+        assert h.response_code == 200

@@ -89,7 +89,10 @@ button,input,textarea,select{border-radius:0 !important}
     <h1 class="font-display-911 text-[24px] font-black text-white uppercase tracking-tighter leading-none md:hidden">EMERGENCY</h1>
     <span class="bg-white text-[#ef4444] px-2 py-0.5 text-label-caps font-label-caps font-bold blinking-live">LIVE</span>
   </div>
-  <span id="inc-label" class="text-white/70 text-label-caps font-label-caps uppercase font-mono"></span>
+  <div class="flex items-center gap-3">
+    <span id="inc-label" class="text-white/70 text-label-caps font-label-caps uppercase font-mono"></span>
+    <button id="btn-resolve" onclick="resolveIncident()" class="hidden bg-white/15 hover:bg-white/25 border border-white/40 text-white px-3 py-1 text-label-caps font-label-caps uppercase font-mono tracking-widest transition-colors">Resolve incident</button>
+  </div>
 </header>
 
 <!-- 911 Banner -->
@@ -327,6 +330,7 @@ async function declareFast(){
 function renderSit(d){
   incId=d.incident_id;document.getElementById('acct-iid').value=incId;document.getElementById('tr-id').value=incId;
   document.getElementById('inc-label').textContent='INC: '+incId;
+  document.getElementById('btn-resolve').classList.remove('hidden');
   mobIds=new Set((d.accountability?.mobility_needs||[]).map(m=>m.person_id));
   const c=d.classification,loc=d.location;
 
@@ -498,6 +502,57 @@ async function loadTrace(){
     ${(d.spans||[]).map(s=>`<div class="py-1 font-mono">${s.parent_span_id?'&nbsp;&nbsp;├─ ':''}<span class="text-primary">${s.name}</span> [<span class="text-on-surface-variant">${s.agent_id}</span>] <span class="text-${s.status==='ok'?'status-safe':'tertiary'}">${s.status}</span> <span class="text-on-surface-variant text-[11px]">${s.duration_ms?s.duration_ms.toFixed(0)+'ms':''}</span></div>`).join('')}`;
 }
 
+/* RESOLVE — ends the incident for every channel, not just this screen.
+   The token is never baked into this page: it is public, so an embedded token
+   would be no gate at all. The operator supplies it once and the browser keeps
+   it locally. */
+function resolveToken(){
+  let t='';
+  try{ t=localStorage.getItem('cm_resolve_token')||''; }catch(e){}
+  if(!t){
+    t=prompt('Resolve token (leave blank if this deployment has no CRISISMESH_RESOLVE_TOKEN set):')||'';
+    try{ if(t) localStorage.setItem('cm_resolve_token',t); }catch(e){}
+  }
+  return t;
+}
+
+function resolveIncident(){
+  if(!incId){ alert('No active incident.'); return; }
+  const who=prompt('Resolving as (name or role) — a resolution has to be attributable:');
+  if(!who) return;
+  if(!confirm('Resolve '+incId+'?\n\nThis ends the incident for Slack, SMS and WhatsApp too, and sends an all-clear to everyone reachable.')) return;
+
+  const btn=document.getElementById('btn-resolve');
+  btn.disabled=true; btn.textContent='Resolving…';
+  const headers={'Content-Type':'application/json'};
+  const tok=resolveToken();
+  if(tok) headers['X-CrisisMesh-Token']=tok;
+
+  fetch(API+'/incident/'+encodeURIComponent(incId)+'/resolve',{
+    method:'POST', headers, body:JSON.stringify({resolved_by:who})
+  }).then(async r=>{
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){
+      alert('Incident '+d.incident_id+' resolved after '+d.duration_minutes+' min.\n'+
+            'Accounted: '+(d.accountability?.accounted??'—')+
+            ' / Unaccounted: '+(d.accountability?.unaccounted??'—'));
+      clearIncident();
+    }else{
+      if(r.status===403){ try{ localStorage.removeItem('cm_resolve_token'); }catch(e){} }
+      alert('Not resolved: '+(d.error||('HTTP '+r.status)));
+    }
+  }).catch(e=>alert('Not resolved: '+e))
+   .finally(()=>{ btn.disabled=false; btn.textContent='Resolve incident'; });
+}
+
+function clearIncident(){
+  incId=''; _pollId='';
+  document.getElementById('inc-label').textContent='';
+  document.getElementById('btn-resolve').classList.add('hidden');
+  document.getElementById('sit-stats').innerHTML=
+    '<div class="col-span-full text-center text-on-surface-variant font-mono py-8 text-label-caps uppercase tracking-widest">No active incident</div>';
+}
+
 /* REAL-TIME BINDING — polls for Slack/SMS/WhatsApp-triggered incidents */
 let _pollId='';
 function pollLatest(){
@@ -510,6 +565,12 @@ function pollLatest(){
         document.querySelectorAll('.nav-link')[2].click();
         runStream();
       }
+    }else if(!d.incident_id && _pollId){
+      /* Resolved somewhere else — Slack, SMS, another console. The guard used
+         to require a truthy incident_id, so a resolved incident stayed on
+         screen indefinitely and this panel kept showing a live emergency that
+         had already ended. */
+      clearIncident();
     }
   }).catch(()=>{});
 }

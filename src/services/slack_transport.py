@@ -57,6 +57,7 @@ from src.agents.safety_intel.tools import (
 from src.config.playbooks import PLAYBOOKS
 from src.core.content_scanner import ContentScanner
 from src.core.event_bus import EventBus, create_event
+from src.core import checkin_policy, incident_state
 from src.core.knowledge_base import KnowledgeBase, init_knowledge_base
 from src.core.observability import Tracer
 from src.core.tactical_reasoning import strip_origin_from_payload
@@ -82,11 +83,10 @@ REACTION_STATUS_MAP = {
 }
 
 _slack_to_person: dict[str, str] = {}
-_active_incident_id: str = ""
-_latest_incident: dict[str, Any] = {}
-_incident_channel: str = ""
-_incident_declared_by: str = ""
-_incident_start_time: float = 0.0
+# The active incident now lives in src/core/incident_state — it belongs to the
+# system, not to this channel. Slack-specific origin details (which channel,
+# which user) are attached there too, so /incident status and the arrival brief
+# can render them without owning them.
 
 INCIDENT_TYPES = {
     "earthquake": {"label": "Earthquake", "emoji": "earth_americas"},
@@ -120,19 +120,21 @@ def _build_slack_map() -> None:
             _slack_to_person[slack_id] = p["person_id"]
 
 
+def _origin_user() -> str:
+    """The Slack user id that declared the incident, if it came from Slack."""
+    return incident_state.get_origin()["declared_by"]
+
+
 def get_active_incident_id() -> str:
-    return _active_incident_id
+    return incident_state.get_active_incident_id()
 
 
 def get_latest_incident() -> dict[str, Any]:
-    return dict(_latest_incident)
+    return incident_state.get_latest_incident()
 
 
 def set_latest_incident(result: dict[str, Any], source: str = "web") -> None:
-    global _active_incident_id, _latest_incident
-    _latest_incident = {**result, "source": source}
-    if result.get("incident_id"):
-        _active_incident_id = result["incident_id"]
+    incident_state.set_latest_incident(result, source)
 
 
 # ── Signature verification ──
@@ -166,17 +168,68 @@ def verify_slack_signature(
 # ── Incident pipeline (deterministic — no Gemini) ──
 
 
+def _publish_resolved(previous: dict[str, Any]) -> None:
+    """Announce resolution. INCIDENT_RESOLVED had never been published at all,
+    so nothing downstream — fan-out, audit, console — could learn an incident
+    had ended."""
+    try:
+        bus = EventBus.get()
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(bus.publish(create_event(
+                EventType.INCIDENT_RESOLVED, previous.get("incident_id", ""), "coordinator",
+                {
+                    "incident_id": previous.get("incident_id", ""),
+                    "elapsed_minutes": previous.get("elapsed_minutes", 0),
+                    "source": previous.get("source", ""),
+                    "incident_type": (
+                        (previous.get("record", {}) or {}).get("classification", {}) or {}
+                    ).get("incident_type", ""),
+                },
+            )))
+        finally:
+            loop.close()
+    except Exception as exc:
+        logger.error(f"INCIDENT_RESOLVED publish failed: {exc}")
+
+
+def _publish_declared(
+    incident_id: str,
+    classification: dict[str, Any],
+    location: dict[str, Any],
+    reporter_address: str = "",
+) -> None:
+    """Announce the declaration on the bus. Never lets a subscriber break intake."""
+    try:
+        bus = EventBus.get()
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(bus.publish(create_event(
+                EventType.INCIDENT_DECLARED, incident_id, "coordinator",
+                {
+                    "type": classification.get("incident_type", ""),
+                    "severity": classification.get("severity", ""),
+                    "zone_name": location.get("zone_name", ""),
+                    "reporter_address": reporter_address,
+                },
+            )))
+        finally:
+            loop.close()
+    except Exception as exc:
+        logger.error(f"INCIDENT_DECLARED publish failed: {exc}")
+
+
 def run_incident_pipeline(
     report: str,
     facility_id: str = "jefferson",
     source: str = "web",
+    reporter_address: str = "",
 ) -> dict[str, Any]:
     """Run the deterministic incident pipeline. Stores result as the latest incident.
 
     This is the same pipeline as POST /incident but callable from any trigger
     (Slack, SMS, web). Returns the full incident result dict.
     """
-    global _active_incident_id, _latest_incident
 
     armor = ContentScanner.get().scan_message(report)
     if armor["blocked"]:
@@ -203,12 +256,6 @@ def run_incident_pipeline(
     intake_span.set_attribute("location_resolved", location.get("resolved", False))
     intake_span.end()
 
-    bus = EventBus.get()
-    loop = asyncio.new_event_loop()
-    loop.run_until_complete(bus.publish(create_event(
-        EventType.INCIDENT_DECLARED, incident_id, "coordinator",
-        {"type": classification["incident_type"], "severity": classification["severity"]},
-    )))
 
     zone_id = location.get("zone_id", "")
     safety_span = trace.start_span("safety_intel", "safety_intel", root.span_id)
@@ -247,8 +294,6 @@ def run_incident_pipeline(
     provenance = build_provenance_record(tactical, incident_id)
     root.set_attribute("tactical_origin", provenance["origin"])
 
-    loop.close()
-
     result = {
         "incident_id": incident_id,
         "report": report,
@@ -270,8 +315,12 @@ def run_incident_pipeline(
         "tactical_provenance": provenance,
     }
 
-    _active_incident_id = incident_id
-    _latest_incident = result
+    incident_state.declare(incident_id, result, source=source)
+
+    # Published only once the state is consistent: the fan-out subscriber reads
+    # incident_state, and firing before declare() would hand it the previous
+    # incident. The payload carries enough to alert on without that read.
+    _publish_declared(incident_id, classification, location, reporter_address)
     return strip_origin_from_payload(result)
 
 
@@ -332,7 +381,6 @@ def dispatch_slash_command(command: str, form_data: dict[str, str]) -> dict[str,
 
 def _start_incident(channel_id: str, user_id: str, text: str) -> dict[str, Any]:
     """Declare a new incident — fast-ack, deterministic fallback, agentic in background."""
-    global _incident_channel, _incident_declared_by, _incident_start_time
 
     result = run_incident_pipeline(text, source="slack")
     if result.get("blocked"):
@@ -341,9 +389,7 @@ def _start_incident(channel_id: str, user_id: str, text: str) -> dict[str, Any]:
             "text": f":no_entry: *Blocked by content safety:* {result.get('reason', '')}",
         }
 
-    _incident_channel = channel_id
-    _incident_declared_by = user_id
-    _incident_start_time = time.time()
+    incident_state.attach_origin(declared_by=user_id, origin_channel=channel_id)
 
     threading.Thread(
         target=_post_slack_results,
@@ -385,19 +431,19 @@ def _handle_help(user_id: str) -> dict[str, Any]:
 
 
 def _handle_status(channel_id: str, user_id: str) -> dict[str, Any]:
-    if not _active_incident_id or not _latest_incident:
+    if not incident_state.is_active():
         return {
             "response_type": "ephemeral",
             "text": ":white_check_mark: No active incidents.",
         }
 
-    inc = _latest_incident
+    inc = incident_state.get_latest_incident()
     classification = inc.get("classification", {})
     incident_type = classification.get("incident_type", "other")
     type_info = INCIDENT_TYPES.get(incident_type, INCIDENT_TYPES["other"])
 
-    summary = compute_accountability_summary(_active_incident_id)
-    duration_min = int((time.time() - _incident_start_time) / 60) if _incident_start_time else 0
+    summary = compute_accountability_summary(incident_state.get_active_incident_id())
+    duration_min = incident_state.elapsed_minutes()
 
     missing_names = []
     breakdown = summary.get("breakdown", {})
@@ -407,10 +453,10 @@ def _handle_status(channel_id: str, user_id: str) -> dict[str, Any]:
         missing_names.append(person.get("name", person.get("person_id", "?")))
 
     status_text = (
-        f":{type_info['emoji']}: *{_active_incident_id} — {type_info['label']}*\n\n"
+        f":{type_info['emoji']}: *{incident_state.get_active_incident_id()} — {type_info['label']}*\n\n"
         f"*Severity:* `{classification.get('severity', '—').upper()}`\n"
         f"*Duration:* {duration_min} minutes\n"
-        f"*Declared by:* {'<@' + _incident_declared_by + '>' if _incident_declared_by else '—'}\n"
+        f"*Declared by:* {'<@' + _origin_user() + '>' if _origin_user() else '—'}\n"
         f"*Check-ins:* {summary['accounted']}/{summary['total_tracked']}\n"
     )
 
@@ -427,53 +473,46 @@ def _handle_status(channel_id: str, user_id: str) -> dict[str, Any]:
 
 
 def _handle_resolve(channel_id: str, user_id: str) -> dict[str, Any]:
-    global _active_incident_id, _latest_incident, _incident_start_time
+    """Slack rendering of a resolution. The state change lives in
+    core.incident_resolve so every channel ends an incident the same way."""
+    from src.core import incident_resolve
 
-    if not _active_incident_id:
-        return {
-            "response_type": "ephemeral",
-            "text": ":warning: No active incidents to resolve.",
-        }
+    try:
+        report = incident_resolve.resolve(
+            incident_id=incident_state.get_active_incident_id(),
+            resolved_by=user_id,
+            channel="slack",
+        )
+    except incident_resolve.ResolveRefused as refused:
+        return {"response_type": "ephemeral", "text": f":warning: {refused.reason}"}
 
-    incident_id = _active_incident_id
-    inc = _latest_incident
-    classification = inc.get("classification", {})
-    incident_type = classification.get("incident_type", "other")
-    type_info = INCIDENT_TYPES.get(incident_type, INCIDENT_TYPES["other"])
-
-    summary = compute_accountability_summary(incident_id)
-    duration_min = int((time.time() - _incident_start_time) / 60) if _incident_start_time else 0
-
-    lessons = inc.get("prior_lessons", {})
+    type_info = INCIDENT_TYPES.get(report["incident_type"], INCIDENT_TYPES["other"])
+    acct = report["accountability"]
 
     report_text = (
-        f":heavy_check_mark: *Incident {incident_id} RESOLVED*\n\n"
+        f":heavy_check_mark: *Incident {report['incident_id']} RESOLVED*\n\n"
         f"*Type:* {type_info['label']}\n"
-        f"*Severity:* `{classification.get('severity', '—').upper()}`\n"
-        f"*Duration:* {duration_min} minutes\n"
+        f"*Severity:* `{(report['severity'] or '—').upper()}`\n"
+        f"*Duration:* {report['duration_minutes']} minutes\n"
         f"*Resolved by:* <@{user_id}>\n\n"
         f"---\n\n"
         f"*Personnel Accountability*\n"
-        f"- Total tracked: {summary['total_tracked']}\n"
-        f"- Accounted: {summary['accounted']}\n"
-        f"- Unaccounted: {summary['unaccounted']}\n"
+        f"- Total tracked: {acct['total_tracked']}\n"
+        f"- Accounted: {acct['accounted']}\n"
+        f"- Unaccounted: {acct['unaccounted']}\n"
     )
 
-    counts = summary.get("counts", {})
-    for status, count in counts.items():
+    for status, count in acct.get("counts", {}).items():
         if count > 0 and status not in ("unknown", "silent"):
             emoji = {"safe": ":white_check_mark:", "injured": ":ambulance:",
                      "need_help": ":warning:", "evacuated": ":runner:"}.get(status, ":grey_question:")
             report_text += f"  {emoji} {status}: {count}\n"
 
+    lessons = report.get("prior_lessons", {}) or {}
     if lessons.get("lessons_found", 0) > 0:
         report_text += "\n*Lessons from Prior Incidents:*\n"
         for lesson in lessons.get("lessons", [])[:3]:
             report_text += f"  :brain: {lesson.get('title', '')}\n"
-
-    _active_incident_id = ""
-    _latest_incident = {}
-    _incident_start_time = 0.0
 
     return {"response_type": "in_channel", "text": report_text}
 
@@ -483,7 +522,7 @@ def _handle_approve(user_id: str, action_id: str) -> dict[str, Any]:
     if not action_id:
         from src.core.agent_gateway import AgentGateway
         gw = AgentGateway.get()
-        pending = gw.get_pending_actions(incident_id=_active_incident_id)
+        pending = gw.get_pending_actions(incident_id=incident_state.get_active_incident_id())
         if not pending:
             return {
                 "response_type": "ephemeral",
@@ -756,7 +795,14 @@ def _handle_checkin_command(
     status = text.strip().lower() if text.strip().lower() in (
         "safe", "injured", "need_help", "evacuated",
     ) else "safe"
-    incident_id = _active_incident_id or "active"
+    if not checkin_policy.can_accept():
+        checkin_policy.log_refusal("slack", status, user_id)
+        return {
+            "response_type": "ephemeral",
+            "text": f":warning: {checkin_policy.refusal_message(status)}",
+        }
+
+    incident_id = incident_state.get_active_incident_id()
     result = process_checkin(incident_id, person_id, status)
 
     return {
@@ -783,7 +829,19 @@ def _handle_reaction_event(event: dict[str, Any]) -> None:
     if not person_id:
         return
 
-    incident_id = _active_incident_id or "active"
+    if not checkin_policy.can_accept():
+        # A reaction has no reply channel of its own, so the refusal has to go
+        # to the person directly rather than being swallowed.
+        checkin_policy.log_refusal("slack-reaction", status, user_id)
+        if channel_id:
+            threading.Thread(
+                target=_post_ephemeral,
+                args=(channel_id, user_id, f":warning: {checkin_policy.refusal_message(status)}"),
+                daemon=True,
+            ).start()
+        return
+
+    incident_id = incident_state.get_active_incident_id()
     result = process_checkin(incident_id, person_id, status)
     logger.info(f"Reaction check-in: {result['name']} -> {status} (incident: {incident_id})")
 
@@ -793,6 +851,20 @@ def _handle_reaction_event(event: dict[str, Any]) -> None:
             args=(channel_id, user_id, result["name"], status, incident_id),
             daemon=True,
         ).start()
+
+
+def _post_ephemeral(channel_id: str, user_id: str, text: str) -> None:
+    """Send one person a message only they can see. Used to refuse a check-in
+    that has no incident, which otherwise would have no reply path at all."""
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    if not HAS_SLACK or not bot_token:
+        return
+    try:
+        WebClient(token=bot_token).chat_postEphemeral(
+            channel=channel_id, user=user_id, text=text,
+        )
+    except Exception as exc:
+        logger.error(f"Failed to post refusal to {user_id}: {exc}")
 
 
 def _post_checkin_confirmation(
@@ -1084,20 +1156,20 @@ def _handle_board_query(channel_id: str, thread_ts: str) -> None:
 
 def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     """Generate and post a Law Enforcement Arrival Brief for the active incident."""
-    if not _active_incident_id or not _latest_incident:
+    if not incident_state.is_active():
         _post_bot_message(channel_id, ":warning: No active incident.", thread_ts=thread_ts)
         return
 
-    inc = _latest_incident
+    inc = incident_state.get_latest_incident()
     classification = inc.get("classification", {})
     location = inc.get("location", {})
     zone_id = location.get("zone_id", "") if isinstance(location, dict) else ""
     report_text = inc.get("report", "")
-    accountability = compute_accountability_summary(_active_incident_id)
+    accountability = compute_accountability_summary(incident_state.get_active_incident_id())
     threat_loc = extract_threat_observation(report_text)
 
     brief = generate_arrival_brief(
-        incident_id=_active_incident_id,
+        incident_id=incident_state.get_active_incident_id(),
         incident_type=classification.get("incident_type", "unknown"),
         severity=classification.get("severity", "unknown"),
         location=location.get("resolved_location", report_text) if isinstance(location, dict) else str(location),
@@ -1115,10 +1187,10 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     nearby = brief["nearby_services"]
     kb = KnowledgeBase.get()
 
-    elapsed_min = int((time.time() - _incident_start_time) / 60) if _incident_start_time else 0
+    elapsed_min = incident_state.elapsed_minutes()
 
     lines = [
-        f":shield: *LAW ENFORCEMENT ARRIVAL BRIEF — {_active_incident_id}*",
+        f":shield: *LAW ENFORCEMENT ARRIVAL BRIEF — {incident_state.get_active_incident_id()}*",
         f":warning: *REQUIRES INCIDENT COMMANDER APPROVAL BEFORE SHARING*",
         "",
         f"*{brief['scope_notice']}*",
@@ -1262,11 +1334,14 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
 
 def _run_followup_query(channel_id: str, user_id: str, query: str, thread_ts: str = "") -> None:
     """Route a question to Gemini with a single direct API call."""
-    logger.info(f"Follow-up query for {_active_incident_id}: {query[:80]}")
+    logger.info(f"Follow-up query for {incident_state.get_active_incident_id()}: {query[:80]}")
 
     checkin = _parse_checkin(query)
     if checkin:
         _room_checkins[checkin["room"]] = checkin
+        # Shared store, so a teacher reporting from WhatsApp and an incident
+        # commander reading the board in Slack see the same rooms.
+        room_board.record(incident_state.get_active_incident_id(), checkin, source="slack")
         logger.info(f"Check-in logged: Room {checkin['room']} — {checkin['safe']} safe, {checkin['missing']} missing")
         _handle_checkin_direct(channel_id, user_id, checkin, thread_ts)
         return
@@ -1281,8 +1356,8 @@ def _run_followup_query(channel_id: str, user_id: str, query: str, thread_ts: st
         return
 
     incident_ctx = ""
-    if _active_incident_id and _latest_incident:
-        inc = _latest_incident
+    if incident_state.is_active():
+        inc = incident_state.get_latest_incident()
         classification = inc.get("classification", {})
         location = inc.get("location", {})
         location_name = location.get("primary_zone", "") if isinstance(location, dict) else str(location)
@@ -1290,7 +1365,7 @@ def _run_followup_query(channel_id: str, user_id: str, query: str, thread_ts: st
         report_text = inc.get("report", "")
 
         ctx_parts = [
-            f"ACTIVE INCIDENT: {_active_incident_id}",
+            f"ACTIVE INCIDENT: {incident_state.get_active_incident_id()}",
             f"Type: {classification.get('incident_type', 'unknown')}",
             f"Severity: {classification.get('severity', 'unknown')}",
             f"Location: {location_name}",
@@ -1389,13 +1464,13 @@ def _run_followup_query(channel_id: str, user_id: str, query: str, thread_ts: st
         client = WebClient(token=bot_token)
         kwargs: dict[str, Any] = {
             "channel": channel_id,
-            "text": f"CrisisMesh — {_active_incident_id or 'query'}",
+            "text": f"CrisisMesh — {incident_state.get_active_incident_id() or 'query'}",
             "blocks": blocks,
         }
         if thread_ts:
             kwargs["thread_ts"] = thread_ts
         client.chat_postMessage(**kwargs)
-        logger.info(f"Follow-up response posted for {_active_incident_id}")
+        logger.info(f"Follow-up response posted for {incident_state.get_active_incident_id()}")
     except Exception as e:
         logger.error(f"Failed to post follow-up response: {e}")
 
@@ -1473,7 +1548,6 @@ def _handle_file_shared(event: dict[str, Any]) -> None:
 
 def _run_mention_pipeline(channel_id: str, user_id: str, text: str) -> None:
     """Run the incident pipeline from an @mention (background thread)."""
-    global _incident_channel, _incident_declared_by, _incident_start_time
 
     result = run_incident_pipeline(text, source="slack")
     if result.get("blocked"):
@@ -1483,9 +1557,7 @@ def _run_mention_pipeline(channel_id: str, user_id: str, text: str) -> None:
         )
         return
 
-    _incident_channel = channel_id
-    _incident_declared_by = user_id
-    _incident_start_time = time.time()
+    incident_state.attach_origin(declared_by=user_id, origin_channel=channel_id)
 
     _post_bot_message(
         channel_id,
@@ -1548,6 +1620,26 @@ def format_playbook_message(playbook_key: str) -> str:
 # ── Block Kit formatting ──
 
 
+def _assembly_line(incident_type: str, assembly_name: str) -> str:
+    """Render the assembly point, or explain why it is being withheld.
+
+    An assembly point is a named open space with a published location. During a
+    fire that is exactly where people should go. During a lockdown it is where
+    a threat would expect people to gather, so the fan-out message deliberately
+    omits it — and this card has to agree, because staff read it on the same
+    phones. Withheld rather than blank: an absent field looks like missing data,
+    which invites someone to go and look it up.
+    """
+    from src.core.tactical_reasoning import LOCKDOWN_TYPES
+
+    if incident_type in LOCKDOWN_TYPES:
+        return (
+            "*Assembly:* withheld during lockdown — do not direct movement to a "
+            "published open area until law enforcement clears it"
+        )
+    return f"*Assembly:* {assembly_name}"
+
+
 def _post_incident_block_kit(
     client: Any,
     channel_id: str,
@@ -1603,7 +1695,7 @@ def _post_incident_block_kit(
                     f"*Accountability*\n"
                     f":busts_in_silhouette: Personnel tracked: *{acct.get('personnel_tracked', 0)}*\n"
                     f"Mobility needs: *{len(acct.get('mobility_needs', []))}*\n\n"
-                    f"*Assembly:* {assembly_name}\n"
+                    f"{_assembly_line(c['incident_type'], assembly_name)}\n"
                     f"*{nearby_label}:* {nearby_info}"
                 ),
             },
@@ -1725,7 +1817,16 @@ def create_slack_app() -> AsyncApp:
             return
 
         status = text if text in ("safe", "injured", "need_help", "evacuated") else "safe"
-        incident_id = _active_incident_id or "active"
+        if not checkin_policy.can_accept():
+            checkin_policy.log_refusal("slack-bolt", status, user_id)
+            await client.chat_postEphemeral(
+                channel=body["channel_id"],
+                user=user_id,
+                text=f":warning: {checkin_policy.refusal_message(status)}",
+            )
+            return
+
+        incident_id = incident_state.get_active_incident_id()
         result = process_checkin(incident_id, person_id, status)
 
         await client.chat_postEphemeral(

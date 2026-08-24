@@ -26,12 +26,14 @@ def fresh_state(tmp_path, monkeypatch):
     Tracer.reset()
     from src.services.sms_transport import _phone_to_person
     _phone_to_person.clear()
-    import src.services.slack_transport as st
-    st._active_incident_id = ""
-    st._latest_incident = {}
+    from src.core import incident_state, observations
+    incident_state.reset()
+    observations.reset()
     from src.services.slack_transport import _slack_to_person
     _slack_to_person.clear()
     yield
+    incident_state.reset()
+    observations.reset()
     sms_consent.reset()
     KnowledgeBase.reset()
     _phone_to_person.clear()
@@ -275,3 +277,181 @@ class TestSMSAgenticDispatch:
         result = handle_inbound_sms("+15559876543", "Gas leak in the basement")
         assert result["action"] == "incident"
         assert "911" in result["twiml"]
+
+
+class TestTwilioAuthResolution:
+    """Ported from anbu-care: an API key is revocable on its own, the account
+    auth token is not — it also signs inbound webhooks."""
+
+    def test_api_key_preferred_over_auth_token(self, monkeypatch):
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_account")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "account_token")
+        monkeypatch.setenv("TWILIO_API_KEY_SID", "SK_key")
+        monkeypatch.setenv("TWILIO_API_KEY_SECRET", "key_secret")
+        from src.services.sms_transport import _twilio_auth
+        assert _twilio_auth() == ("SK_key", "key_secret")
+
+    def test_falls_back_to_auth_token(self, monkeypatch):
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_account")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "account_token")
+        monkeypatch.delenv("TWILIO_API_KEY_SID", raising=False)
+        monkeypatch.delenv("TWILIO_API_KEY_SECRET", raising=False)
+        from src.services.sms_transport import _twilio_auth
+        assert _twilio_auth() == ("AC_account", "account_token")
+
+    def test_partial_api_key_does_not_count(self, monkeypatch):
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_account")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "account_token")
+        monkeypatch.setenv("TWILIO_API_KEY_SID", "SK_key")
+        monkeypatch.delenv("TWILIO_API_KEY_SECRET", raising=False)
+        from src.services.sms_transport import _twilio_auth
+        assert _twilio_auth() == ("AC_account", "account_token")
+
+    def test_no_account_sid_means_no_auth(self, monkeypatch):
+        monkeypatch.delenv("TWILIO_ACCOUNT_SID", raising=False)
+        from src.services.sms_transport import _twilio_auth
+        assert _twilio_auth() is None
+
+    def test_api_key_used_for_the_request(self, monkeypatch):
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_account")
+        monkeypatch.setenv("TWILIO_API_KEY_SID", "SK_key")
+        monkeypatch.setenv("TWILIO_API_KEY_SECRET", "key_secret")
+        monkeypatch.setenv("TWILIO_PHONE_NUMBER", "+17722971783")
+        captured = {}
+
+        class _Resp:
+            ok = True
+            status_code = 201
+
+            def json(self):
+                return {"sid": "SM1", "status": "queued"}
+
+        def _fake_post(url, **kwargs):
+            captured["auth"] = kwargs["auth"]
+            captured["url"] = url
+            return _Resp()
+
+        import requests
+        monkeypatch.setattr(requests, "post", _fake_post)
+        from src.services.sms_transport import send_sms
+        send_sms("+15551234567", "hello")
+        assert captured["auth"] == ("SK_key", "key_secret")
+        # The URL still carries the Account SID — only the username changes.
+        assert "AC_account" in captured["url"]
+
+
+class TestTerminalDeliveryStates:
+    """A 2xx from the create call is not delivery."""
+
+    @pytest.fixture(autouse=True)
+    def creds(self, monkeypatch):
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_test")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok")
+        monkeypatch.setenv("TWILIO_PHONE_NUMBER", "+17722971783")
+        monkeypatch.delenv("CRISISMESH_SMS_MODE", raising=False)
+
+    def _respond(self, monkeypatch, payload):
+        class _Resp:
+            ok = True
+            status_code = 201
+
+            def json(self):
+                return payload
+
+        import requests
+        monkeypatch.setattr(requests, "post", lambda url, **kw: _Resp())
+
+    @pytest.mark.parametrize("status", ["failed", "undelivered", "canceled"])
+    def test_terminal_status_is_not_delivered(self, monkeypatch, status):
+        self._respond(monkeypatch, {
+            "sid": "SM_dead", "status": status, "error_message": "Unreachable",
+        })
+        from src.services.sms_transport import send_sms
+        result = send_sms("+15551234567", "SITREP")
+        assert result["delivered"] is False
+        assert result["provider_status"] == status
+        assert "did not reach" in result["detail"]
+
+    def test_queued_is_acceptance_not_receipt(self, monkeypatch):
+        self._respond(monkeypatch, {"sid": "SM_ok", "status": "queued"})
+        from src.services.sms_transport import send_sms
+        result = send_sms("+15551234567", "SITREP")
+        assert result["delivered"] is True
+        assert "acceptance, not receipt" in result["detail"]
+
+
+class TestSmsModeSwitch:
+    """Credentials being present is not consent to send."""
+
+    @pytest.fixture(autouse=True)
+    def creds(self, monkeypatch):
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_test")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok")
+        monkeypatch.setenv("TWILIO_PHONE_NUMBER", "+17722971783")
+
+    @pytest.mark.parametrize("value", ["off", "OFF", "none", "false", ""])
+    def test_off_blocks_send(self, monkeypatch, value):
+        monkeypatch.setenv("CRISISMESH_SMS_MODE", value)
+
+        def _explode(*a, **kw):
+            raise AssertionError("no HTTP call may be made when the mode is off")
+
+        import requests
+        monkeypatch.setattr(requests, "post", _explode)
+        from src.services.sms_transport import can_send_sms, send_sms
+        assert can_send_sms() is False
+        result = send_sms("+15551234567", "SITREP")
+        assert result["delivered"] is False
+        assert "no message left the platform" in result["detail"]
+
+    def test_unset_mode_still_sends(self, monkeypatch):
+        monkeypatch.delenv("CRISISMESH_SMS_MODE", raising=False)
+        from src.services.sms_transport import can_send_sms
+        assert can_send_sms() is True
+
+
+class TestPublicUrl:
+    """Twilio signs the public address it posted to, not what Cloud Run sees."""
+
+    def test_forwarded_headers_win(self):
+        from src.services.sms_transport import public_url
+        headers = {
+            "X-Forwarded-Proto": "https",
+            "X-Forwarded-Host": "crisismesh.example.app",
+            "Host": "internal:8080",
+        }
+        assert public_url(headers, "/sms") == "https://crisismesh.example.app/sms"
+
+    def test_proxy_chain_takes_the_first_value(self):
+        from src.services.sms_transport import public_url
+        headers = {
+            "X-Forwarded-Proto": "https,http",
+            "X-Forwarded-Host": "public.app, internal.local",
+        }
+        assert public_url(headers, "/sms") == "https://public.app/sms"
+
+    def test_falls_back_to_host_and_https(self):
+        from src.services.sms_transport import public_url
+        assert public_url({"Host": "crisismesh.run.app"}, "/sms") == \
+            "https://crisismesh.run.app/sms"
+
+    def test_path_comes_from_the_request_not_the_header(self):
+        """A spoofed header must not redirect verification at another endpoint."""
+        from src.services.sms_transport import public_url
+        headers = {"X-Forwarded-Host": "evil.example/attacker-path"}
+        assert public_url(headers, "/sms").endswith("/sms")
+
+
+class TestSignatureWithRepeatedFields:
+    def test_repeated_param_verifies_as_it_arrived(self):
+        from src.services.sms_transport import verify_twilio_signature
+        token = "test_auth_token"
+        url = "https://example.com/sms"
+        pairs = [("From", "+15551234567"), ("Body", "fire"), ("Body", "smoke")]
+        data = url + "".join(f"{k}{v}" for k, v in sorted(pairs, key=lambda kv: kv[0]))
+        sig = b64encode(
+            hmac.new(token.encode(), data.encode(), hashlib.sha1).digest()
+        ).decode()
+        assert verify_twilio_signature(token, url, pairs, sig) is True
+        # Collapsing to a dict drops the second Body and must NOT still pass.
+        assert verify_twilio_signature(token, url, dict(pairs), sig) is False

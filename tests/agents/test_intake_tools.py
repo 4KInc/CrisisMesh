@@ -100,3 +100,91 @@ class TestSelectPlaybook:
     def test_unknown_type_fallback(self):
         result = select_playbook("unknown_type")
         assert result["playbook_id"] == "playbook-general-v1"
+
+
+class TestSeverityIsNotConfidence:
+    """Severity must come from what the reporter said, never from how many
+    type keywords happened to match. `keywords_matched` measures how
+    confidently the report was CLASSIFIED; a report nobody can categorise is
+    not a mild one."""
+
+    def test_occupancy_escalates_a_single_keyword_report(self):
+        """The regression: this exact message came back "low" over WhatsApp."""
+        result = classify_incident(
+            "Smoke coming from the science lab on floor 2, students still inside"
+        )
+        assert result["keywords_matched"] == 1
+        assert result["severity"] == "high"
+
+    @pytest.mark.parametrize("phrase", [
+        "students still inside",
+        "kids inside",
+        "children inside",
+        "people inside",
+        "still in the building",
+        "can't get out",
+        "unable to evacuate",
+        "3 students unaccounted",
+    ])
+    def test_every_occupancy_signal_escalates(self, phrase):
+        assert classify_incident(f"Smoke in the gym, {phrase}")["severity"] in (
+            "high", "critical",
+        )
+
+    def test_low_confidence_is_never_low_severity(self):
+        """One keyword, no de-escalating language — moderate, not low."""
+        result = classify_incident("Smoke in the hallway")
+        assert result["keywords_matched"] == 1
+        assert result["severity"] == "moderate"
+
+    @pytest.mark.parametrize("text,expected", [
+        ("Fire drill scheduled for 10am, building will be evacuated", "low"),
+        ("Small smoke smell, contained, no injuries", "low"),
+        ("Alarm went off, false alarm confirmed", "low"),
+    ])
+    def test_low_requires_explicit_de_escalation(self, text, expected):
+        assert classify_incident(text)["severity"] == expected
+
+    def test_medical_arrest_is_critical(self):
+        result = classify_incident("Student unconscious in the gymnasium, not breathing")
+        assert result["severity"] == "critical"
+
+    def test_de_escalation_beats_occupancy(self):
+        """A drill says people are inside on purpose — do not page as high."""
+        assert classify_incident(
+            "Fire drill, students still inside until the bell"
+        )["severity"] == "low"
+
+
+class TestUnclassifiedIsNotMedical:
+    """MEDICAL used to be both a real category and the fallback, so anything
+    the keyword tables missed was reported as a medical incident."""
+
+    @pytest.mark.parametrize("text", [
+        "hi",
+        "wrong number sorry",
+        "there is no active CrisisMesh incident, nothing was recorded",
+        "asdfgh",
+    ])
+    def test_unrecognised_text_is_other(self, text):
+        result = classify_incident(text)
+        assert result["incident_type"] == "other"
+        assert result["unclassified"] is True
+        assert result["keywords_matched"] == 0
+
+    def test_real_medical_still_classifies_as_medical(self):
+        result = classify_incident("Student unconscious in the gym, not breathing")
+        assert result["incident_type"] == "medical"
+        assert result["unclassified"] is False
+
+    def test_unclassified_keeps_its_severity(self):
+        """Failing to name the emergency is not deciding there isn't one."""
+        result = classify_incident("Something is very wrong, students still inside")
+        assert result["incident_type"] == "other"
+        assert result["severity"] == "high"
+
+    def test_noise_is_not_urgent(self):
+        assert classify_incident("hi")["severity"] == "moderate"
+
+    def test_other_falls_back_to_the_general_playbook(self):
+        assert select_playbook("other")["playbook_id"] == "playbook-general-v1"

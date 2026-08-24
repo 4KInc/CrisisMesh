@@ -37,6 +37,46 @@ _TYPE_KEYWORDS: dict[IncidentType, list[str]] = {
 }
 
 
+# Severity signals. Deliberately NOT derived from how many type keywords matched:
+# that number measures how confidently the report was classified, and a report
+# nobody can categorise is not a mild one. Treating low confidence as low
+# severity is how "smoke, students still inside" — one keyword — came back LOW.
+_CRITICAL_WORDS = [
+    "critical", "multiple", "spreading", "uncontrolled", "mass", "armed",
+    "not breathing", "unconscious", "collapsed",
+]
+_HIGH_WORDS = ["urgent", "serious", "large", "expanding", "trapped"]
+
+# Who is still in harm's way. In a school this is the most decision-relevant
+# fact in the message and it previously carried no weight at all.
+_OCCUPANCY_WORDS = [
+    "still inside", "still in the building", "still in there",
+    "students inside", "kids inside", "children inside", "people inside",
+    "occupants inside", "can't get out", "cannot get out", "unable to evacuate",
+    "unaccounted",
+]
+
+# Explicit de-escalation. LOW must be something the reporter said, never
+# something inferred from the classifier's own uncertainty.
+_LOW_WORDS = [
+    "drill", "test", "false alarm", "all clear", "contained", "minor",
+    "no injuries", "no one inside", "building empty",
+]
+
+
+def _assess_severity(text_lower: str) -> str:
+    """Grade a report by what it says, never by how well it parsed."""
+    if any(w in text_lower for w in _LOW_WORDS):
+        return Severity.LOW
+    if any(w in text_lower for w in _CRITICAL_WORDS):
+        return Severity.CRITICAL
+    if any(w in text_lower for w in _HIGH_WORDS):
+        return Severity.HIGH
+    if any(w in text_lower for w in _OCCUPANCY_WORDS):
+        return Severity.HIGH
+    return Severity.MODERATE
+
+
 def classify_incident(report_text: str) -> dict[str, Any]:
     """Classify an incident report into type and severity based on content analysis.
 
@@ -48,7 +88,11 @@ def classify_incident(report_text: str) -> dict[str, Any]:
     """
     text_lower = report_text.lower()
 
-    best_type = IncidentType.MEDICAL
+    # OTHER, not MEDICAL. The fallback used to be a real category, so anything
+    # the keyword tables did not recognise — a wrong number, a typo, a pasted
+    # sentence — came back as a medical incident with a straight face. Saying
+    # "I could not classify this" is the only honest answer when nothing matched.
+    best_type = IncidentType.OTHER
     best_score = 0
 
     for itype, keywords in _TYPE_KEYWORDS.items():
@@ -57,16 +101,7 @@ def classify_incident(report_text: str) -> dict[str, Any]:
             best_score = score
             best_type = itype
 
-    severity = Severity.MODERATE
-    critical_words = ["critical", "multiple", "spreading", "uncontrolled", "mass", "armed"]
-    high_words = ["urgent", "serious", "large", "expanding", "trapped"]
-
-    if any(w in text_lower for w in critical_words):
-        severity = Severity.CRITICAL
-    elif any(w in text_lower for w in high_words):
-        severity = Severity.HIGH
-    elif best_score <= 1:
-        severity = Severity.LOW
+    severity = _assess_severity(text_lower)
 
     now = datetime.now(timezone.utc)
     incident_id = f"{best_type.upper()}-{now.year}-{now.strftime('%H%M%S')}"
@@ -77,6 +112,10 @@ def classify_incident(report_text: str) -> dict[str, Any]:
         "severity": severity,
         "confidence": min(best_score / 3.0, 1.0),
         "keywords_matched": best_score,
+        # True when no category matched at all. Severity is still assessed from
+        # the words used: failing to name the type of emergency is not the same
+        # as deciding there isn't one.
+        "unclassified": best_score == 0,
         "emergency_notice": "REMINDER: If this is a life-threatening emergency, call 911 immediately.",
     }
 

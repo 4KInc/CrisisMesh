@@ -337,6 +337,27 @@ HELP reply.*
 | 30921 | All three pages served with no authentication. |
 | — | `HELP` no longer registers an emergency check-in status; `STOP` no longer opens an incident; outbound SMS suppressed after `STOP`. |
 
+### Transport hardening ported from anbu-care
+
+`anbu_care/comms/transport.py` and `comms/inbound.py` had four things this
+transport did not. All four are now in `src/services/sms_transport.py`:
+
+| Ported | Why it matters here |
+|---|---|
+| **API-key auth preference** (`_twilio_auth`) — `TWILIO_API_KEY_SID`/`SECRET` before `TWILIO_AUTH_TOKEN` | The account auth token also signs inbound webhooks, so rotating it after a leak breaks `/sms` at the same time. An API key can be revoked on its own. |
+| **Terminal delivery states** (`TERMINAL_FAILURE`) | Twilio can return `failed`/`undelivered`/`canceled` inside a 201. The old code reported `delivered: True` for all of them — an incident commander reading "sent" would stop chasing an unaccounted person. |
+| **`public_url` from forwarded headers** | The URL was built as `https://{Host}{path}`. Behind Cloud Run's proxy the signed host can differ, and signature verification fails closed on every legitimate message. Only scheme and host come from the headers; the path comes from the request, so a spoofed header cannot redirect verification at another endpoint. |
+| **Signature over arrival-order pairs** | Params were collapsed to a dict before verification, silently dropping a repeated field. `/sms` now verifies the `parse_qsl` pairs exactly as they arrived. |
+
+Also added: `CRISISMESH_SMS_MODE=off`, an explicit outbound kill switch, on
+anbu-care's principle that having credentials is not consent to send — a drill
+or a replayed incident must not page a real roster.
+
+**Not ported.** anbu-care's `media_from` (inbound MMS: photo of smoke, a voice
+note) and `comms/voice.py` (placing a real call, because a text at 2am goes
+unread until morning) have no equivalent here. Both are real capabilities for a
+crisis system; neither exists in CrisisMesh today.
+
 ### New environment variables
 
 | Variable | Default | Purpose |
@@ -344,6 +365,9 @@ HELP reply.*
 | `CRISISMESH_SUPPORT_EMAIL` | `heartlinmachado@blockintelai.com` | Surfaced in the SMS HELP reply. |
 | `CRISISMESH_PUBLIC_URL` | the Cloud Run URL | Base for the terms/privacy links in the HELP reply. |
 | `CRISISMESH_CONSENT_LOG` | `data/consent/sms_consent.jsonl` | Consent audit log path. |
+| `CRISISMESH_SMS_MODE` | `twilio` | `off` sends nothing — use for drills and replays. |
+| `TWILIO_API_KEY_SID` / `TWILIO_API_KEY_SECRET` | — | Preferred outbound auth. |
+| `TWILIO_PHONE_NUMBER` | — | `+17722971783` — the CrisisMesh sender. A2P campaign linking pending. |
 
 ### Verification
 

@@ -392,3 +392,34 @@ class TestCoordinatorTool:
             playbook_id="playbook-none-v1",
         )
         assert result["origin"] == "improvised"
+
+
+class TestLockdownBackstop:
+    """An active threat is not an evacuation, and the safety floor has to say so."""
+
+    def test_lockdown_lines_appended_for_active_threat(self):
+        from src.core.tactical_reasoning import apply_safety_backstop
+        result = apply_safety_backstop("Move everyone to the assembly point.", "active_threat")
+        assert "Do NOT direct a general evacuation" in result
+        assert "Do NOT pull the fire alarm" in result
+        assert "silence phones" in result.lower()
+
+    def test_lockdown_lines_not_appended_for_fire(self):
+        from src.core.tactical_reasoning import apply_safety_backstop
+        result = apply_safety_backstop("Evacuate via stairwell B.", "fire")
+        assert "Do NOT pull the fire alarm" not in result
+        # the universal floor still applies
+        assert "call 911" in result.lower()
+
+    def test_bomb_threat_is_a_lockdown(self):
+        from src.core.tactical_reasoning import apply_safety_backstop
+        result = apply_safety_backstop("Guidance.", "bomb_threat")
+        assert "Do NOT pull the fire alarm" in result
+
+    def test_evacuation_types_alias_preserved(self):
+        from src.core.tactical_reasoning import EVACUATION_TYPES, LIFE_SAFETY_TYPES
+        assert EVACUATION_TYPES is LIFE_SAFETY_TYPES
+
+    def test_lockdown_types_are_a_subset(self):
+        from src.core.tactical_reasoning import LIFE_SAFETY_TYPES, LOCKDOWN_TYPES
+        assert LOCKDOWN_TYPES <= LIFE_SAFETY_TYPES

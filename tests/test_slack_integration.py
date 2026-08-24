@@ -24,9 +24,8 @@ def fresh_state():
     Tracer.reset()
     from src.services.slack_transport import _slack_to_person
     _slack_to_person.clear()
-    import src.services.slack_transport as st
-    st._active_incident_id = ""
-    st._latest_incident = {}
+    from src.core import incident_state
+    incident_state.reset()
     yield
     KnowledgeBase.reset()
     _slack_to_person.clear()
@@ -96,11 +95,23 @@ class TestSlashCommandDispatch:
         assert "Incident ID:" in result["text"]
 
     def test_checkin_known_user(self):
+        from src.core import incident_state
         from src.services.slack_transport import dispatch_slash_command
+        incident_state.declare("INC-CHK", {"incident_id": "INC-CHK"}, source="slack")
         result = dispatch_slash_command("/checkin", {
             "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "safe",
         })
         assert "Check-in recorded" in result["text"]
+
+    def test_checkin_refused_with_no_active_incident(self):
+        """It used to answer "Check-in recorded" and drop the row into a bucket
+        no incident id ever matches."""
+        from src.services.slack_transport import dispatch_slash_command
+        result = dispatch_slash_command("/checkin", {
+            "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "safe",
+        })
+        assert "Check-in recorded" not in result["text"]
+        assert "no active" in result["text"].lower()
 
     def test_checkin_unknown_user(self):
         from src.services.slack_transport import dispatch_slash_command
@@ -139,8 +150,8 @@ class TestSlackEventDispatch:
 
     def test_reaction_added(self):
         from src.services.slack_transport import dispatch_slack_event
-        import src.services.slack_transport as st
-        st._active_incident_id = "INC-TEST"
+        from src.core import incident_state
+        incident_state.declare("INC-TEST", {"incident_id": "INC-TEST"}, source="slack")
         result = dispatch_slack_event({
             "type": "event_callback",
             "event": {
@@ -192,9 +203,9 @@ class TestIncidentPipeline:
 class TestReactionCheckin:
     def test_known_reaction_known_user(self):
         from src.services.slack_transport import _handle_reaction_event
-        import src.services.slack_transport as st
         from src.agents.accountability.tools import _checkin_store, send_checkin_request
-        st._active_incident_id = "INC-RXN"
+        from src.core import incident_state
+        incident_state.declare("INC-RXN", {"incident_id": "INC-RXN"}, source="slack")
         send_checkin_request("INC-RXN", facility_id="jefferson")
         _handle_reaction_event({
             "reaction": "white_check_mark",
@@ -211,9 +222,9 @@ class TestReactionCheckin:
 
     def test_thumbsup_maps_to_safe(self):
         from src.services.slack_transport import _handle_reaction_event
-        import src.services.slack_transport as st
         from src.agents.accountability.tools import _checkin_store, send_checkin_request
-        st._active_incident_id = "INC-THUMB"
+        from src.core import incident_state
+        incident_state.declare("INC-THUMB", {"incident_id": "INC-THUMB"}, source="slack")
         send_checkin_request("INC-THUMB", facility_id="jefferson")
         _handle_reaction_event({
             "reaction": "thumbsup",
@@ -223,9 +234,9 @@ class TestReactionCheckin:
 
     def test_ok_hand_maps_to_safe(self):
         from src.services.slack_transport import _handle_reaction_event
-        import src.services.slack_transport as st
         from src.agents.accountability.tools import _checkin_store, send_checkin_request
-        st._active_incident_id = "INC-OK"
+        from src.core import incident_state
+        incident_state.declare("INC-OK", {"incident_id": "INC-OK"}, source="slack")
         send_checkin_request("INC-OK", facility_id="jefferson")
         _handle_reaction_event({
             "reaction": "ok_hand",
@@ -235,9 +246,9 @@ class TestReactionCheckin:
 
     def test_hospital_maps_to_injured(self):
         from src.services.slack_transport import _handle_reaction_event
-        import src.services.slack_transport as st
         from src.agents.accountability.tools import _checkin_store, send_checkin_request
-        st._active_incident_id = "INC-HOSP"
+        from src.core import incident_state
+        incident_state.declare("INC-HOSP", {"incident_id": "INC-HOSP"}, source="slack")
         send_checkin_request("INC-HOSP", facility_id="jefferson")
         _handle_reaction_event({
             "reaction": "hospital",
@@ -247,9 +258,9 @@ class TestReactionCheckin:
 
     def test_door_maps_to_evacuated(self):
         from src.services.slack_transport import _handle_reaction_event
-        import src.services.slack_transport as st
         from src.agents.accountability.tools import _checkin_store, send_checkin_request
-        st._active_incident_id = "INC-DOOR"
+        from src.core import incident_state
+        incident_state.declare("INC-DOOR", {"incident_id": "INC-DOOR"}, source="slack")
         send_checkin_request("INC-DOOR", facility_id="jefferson")
         _handle_reaction_event({
             "reaction": "door",
@@ -259,9 +270,9 @@ class TestReactionCheckin:
 
     def test_raised_hand_maps_to_need_help(self):
         from src.services.slack_transport import _handle_reaction_event
-        import src.services.slack_transport as st
         from src.agents.accountability.tools import _checkin_store, send_checkin_request
-        st._active_incident_id = "INC-HAND"
+        from src.core import incident_state
+        incident_state.declare("INC-HAND", {"incident_id": "INC-HAND"}, source="slack")
         send_checkin_request("INC-HAND", facility_id="jefferson")
         _handle_reaction_event({
             "reaction": "raised_hand",
@@ -292,7 +303,7 @@ class TestSubcommands:
         result = dispatch_slash_command("/incident", {
             "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "status",
         })
-        assert "No active incidents" in result["text"]
+        assert "no active incident" in result["text"].lower()
 
     def test_status_with_active_incident(self):
         from src.services.slack_transport import dispatch_slash_command, run_incident_pipeline
@@ -308,7 +319,7 @@ class TestSubcommands:
         result = dispatch_slash_command("/incident", {
             "channel_id": "C123", "user_id": "U_PRINCIPAL", "text": "resolve",
         })
-        assert "No active incidents" in result["text"]
+        assert "no active incident" in result["text"].lower()
 
     def test_resolve_active_incident(self):
         from src.services.slack_transport import dispatch_slash_command, run_incident_pipeline
@@ -592,3 +603,45 @@ class TestMentionAgenticDispatch:
         ack_text = " ".join(messages)
         assert "911" in ack_text
         assert "Incident Report Received" in ack_text
+
+
+class TestLockdownBlockKit:
+    """The Slack card and the WhatsApp alert must agree. Staff read both on the
+    same phone, so a lockdown assembly point suppressed in one and printed in
+    the other is worse than either choice made consistently."""
+
+    def test_assembly_withheld_for_active_threat(self):
+        from src.services.slack_transport import _assembly_line
+        line = _assembly_line("active_threat", "Athletic Field (Primary)")
+        assert "Athletic Field" not in line
+        assert "withheld during lockdown" in line
+
+    def test_assembly_withheld_for_bomb_threat(self):
+        from src.services.slack_transport import _assembly_line
+        assert "Athletic Field" not in _assembly_line("bomb_threat", "Athletic Field")
+
+    def test_assembly_shown_for_fire(self):
+        from src.services.slack_transport import _assembly_line
+        assert "Athletic Field (Primary)" in _assembly_line("fire", "Athletic Field (Primary)")
+
+    def test_block_kit_omits_assembly_during_lockdown(self):
+        from src.services.slack_transport import _post_incident_block_kit
+        captured = []
+
+        class FakeClient:
+            def chat_postMessage(self, channel, text, blocks):
+                captured.extend(blocks)
+
+        result = {
+            "incident_id": "ACTIVE_THREAT-1",
+            "classification": {"incident_type": "active_threat", "severity": "critical"},
+            "location": {"zone_name": "West Wing"},
+            "playbook": {"playbook_id": "playbook-active-threat-v1"},
+            "accountability": {"personnel_tracked": 34, "mobility_needs": []},
+            "assembly": {"name": "Athletic Field"},
+            "nearby_service": {},
+        }
+        _post_incident_block_kit(FakeClient(), "C123", result)
+        rendered = str(captured)
+        assert "Athletic Field" not in rendered
+        assert "withheld during lockdown" in rendered

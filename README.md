@@ -98,13 +98,26 @@ Text the CrisisMesh number with an incident description. The system classifies a
 
 SMS is an A2P 10DLC program, so the carrier-reserved keywords take precedence over everything else: `STOP` unsubscribes, `START` resubscribes, and `HELP` returns program info — which is why the "I need assistance" check-in is `SOS`, not `HELP`. Numbers enroll at [`/sms-optin`](docs/A2P_10DLC_RESUBMISSION.md) with a double opt-in confirmation; consent records live in `src/services/sms_consent.py`. See [docs/A2P_10DLC_RESUBMISSION.md](docs/A2P_10DLC_RESUBMISSION.md).
 
-The immediate TwiML ack uses the deterministic pipeline (fast). The background agentic fleet + follow-up SMS require outbound credentials (`TWILIO_ACCOUNT_SID` + `TWILIO_PHONE_NUMBER`). Without outbound creds, the agentic thread does not spawn and SMS is deterministic-only. Uses the Twilio REST API directly via `requests` — no Twilio SDK needed.
+The immediate TwiML ack uses the deterministic pipeline (fast). The background agentic fleet + follow-up SMS require outbound credentials (`TWILIO_ACCOUNT_SID` + `TWILIO_PHONE_NUMBER`, plus an API key or the auth token). Without outbound creds — or with `CRISISMESH_SMS_MODE=off` — the agentic thread does not spawn and SMS is deterministic-only. Uses the Twilio REST API directly via `requests` — no Twilio SDK needed.
+
+The transport follows anbu-care's honesty rule: `delivered` is True only when Twilio accepted the message. A 2xx response carrying a terminal status (`failed`, `undelivered`, `canceled`) reports `delivered: False` with the reason, because an incident commander reading "sent" for a message that was never carried would stop chasing that person.
 
 > Requires `TWILIO_AUTH_TOKEN` env var for inbound. Add `TWILIO_ACCOUNT_SID` and `TWILIO_PHONE_NUMBER` for outbound follow-up. Without `TWILIO_AUTH_TOKEN`, the `/sms` endpoint returns HTTP 503.
 
 ### 3. WhatsApp (Business API) — Deterministic Only
 
-Message the CrisisMesh WhatsApp number with an incident description. The system classifies and responds with a confirmation including the incident ID and a 911 reminder. Reply with `SAFE`, `HELP`, `INJURED`, or `EVACUATED` to check in. (WhatsApp is a Meta channel, not A2P 10DLC, so `HELP` remains a check-in keyword there.)
+Message the CrisisMesh WhatsApp number with an incident description. The system classifies and responds with a confirmation including the incident ID and a 911 reminder. Reply with `SAFE`, `SOS`, `INJURED`, or `EVACUATED` to check in.
+
+WhatsApp is a Meta channel, not A2P 10DLC, so `HELP` is not carrier-reserved and stays a check-in keyword here — but every SMS check-in word works too, so staff trained on one channel are not failed by the other. A test enforces that parity.
+
+Two providers, selected by `CRISISMESH_WHATSAPP_MODE`:
+
+| Mode | Inbound route | Signature | Outbound |
+|---|---|---|---|
+| `meta` (default) | `POST /whatsapp` | `X-Hub-Signature-256` | Graph API |
+| `twilio` | `POST /whatsapp/twilio` | `X-Twilio-Signature` | Twilio Messages API, `whatsapp:` prefixed |
+| `off` | — | — | nothing leaves |
+
 
 WhatsApp runs the deterministic pipeline only (no Gemini agent fleet). The same incident is visible in the command console for the Gemini-driven stream.
 
@@ -403,7 +416,15 @@ adk run
 | `ARMOR_TEMPLATE` | template ID | `crisismesh-guard` | Model Armor template name |
 | `SLACK_BOT_TOKEN` | `xoxb-...` | — | Slack Bot OAuth token (for posting messages) |
 | `SLACK_SIGNING_SECRET` | secret | — | Slack request signature verification |
-| `TWILIO_AUTH_TOKEN` | token | — | Twilio webhook signature verification (optional) |
+| `TWILIO_AUTH_TOKEN` | token | — | Twilio webhook signature verification; outbound fallback auth |
+| `TWILIO_ACCOUNT_SID` | `AC…` | — | Twilio account, required for outbound SMS |
+| `TWILIO_API_KEY_SID` / `TWILIO_API_KEY_SECRET` | `SK…` / secret | — | Preferred outbound auth — revocable without rotating the webhook-signing token |
+| `TWILIO_PHONE_NUMBER` | `+17722971783` | — | The CrisisMesh sender |
+| `CRISISMESH_SMS_MODE` | `twilio` \| `off` | `twilio` | Outbound SMS kill switch — `off` sends nothing |
+| `CRISISMESH_WHATSAPP_MODE` | `meta` \| `twilio` \| `off` | `meta` | WhatsApp provider |
+| `CRISISMESH_DEMO_PHONE` | `+1…` | — | Demo only — maps one real handset to a roster person so check-ins attribute, without committing the number |
+| `CRISISMESH_DEMO_PERSON` | `p001` | `p001` | Which roster person `CRISISMESH_DEMO_PHONE` resolves to |
+| `TWILIO_WHATSAPP_FROM` | `whatsapp:+1…` | — | Sender for Twilio-hosted WhatsApp |
 | `WHATSAPP_VERIFY_TOKEN` | token | — | WhatsApp webhook verification token (optional) |
 | `WHATSAPP_APP_SECRET` | secret | — | WhatsApp app secret for signature verification (optional) |
 | `WHATSAPP_ACCESS_TOKEN` | token | — | WhatsApp Cloud API access token (optional) |

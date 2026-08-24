@@ -18,6 +18,10 @@ class IncidentType(StrEnum):
     UTILITY_OUTAGE = "utility_outage"
     HAZMAT = "hazmat"
     BOMB_THREAT = "bomb_threat"
+    # Nothing in the report matched a known category. Distinct from MEDICAL,
+    # which used to serve as both a real category and the fallback — so a wrong
+    # number, a typo or a greeting was reported as a medical incident.
+    OTHER = "other"
 
 
 class Severity(StrEnum):

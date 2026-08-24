@@ -13,16 +13,37 @@ import re
 from typing import Any
 
 from src.config.playbooks import PLAYBOOKS, INCIDENT_TYPE_TO_PLAYBOOK_KEY
-from src.core.knowledge_base import KnowledgeBase
 
 
-EVACUATION_TYPES = {"fire", "active_threat", "bomb_threat", "hazmat", "flood", "severe_weather"}
+# Incident types whose output carries a non-negotiable safety floor.
+#
+# This was called EVACUATION_TYPES, which asserted something false: an active
+# threat is not an evacuation. The approved playbook is RUN / HIDE / FIGHT —
+# run only where a safe path exists, otherwise lock and barricade. Naming the
+# set after evacuation invited exactly the guidance that walks people into a
+# hallway the shooter is standing in. The membership was always right; the
+# claim in the name was not.
+LIFE_SAFETY_TYPES = {"fire", "active_threat", "bomb_threat", "hazmat", "flood", "severe_weather"}
+
+# Retained so existing importers keep working.
+EVACUATION_TYPES = LIFE_SAFETY_TYPES
 
 BACKSTOP_LINES = [
     "EMERGENCY: If this is a life-threatening emergency, call 911 immediately.",
     "Do NOT send untrained personnel to search for missing individuals.",
     "Do NOT task occupants with mobility limitations to search or evacuate unaided.",
 ]
+
+# Appended on top of BACKSTOP_LINES when the threat is a person, not a hazard.
+# A hazard is escaped by leaving; a threat may be standing on the exit route.
+LOCKDOWN_BACKSTOP_LINES = [
+    "Do NOT direct a general evacuation: move only along a route confirmed away "
+    "from the threat, otherwise lock and barricade in place.",
+    "Do NOT pull the fire alarm — it draws people into hallways and open areas.",
+    "Tell occupants to silence phones and devices before sending anything further.",
+]
+
+LOCKDOWN_TYPES = {"active_threat", "bomb_threat"}
 
 
 def get_tactical_context(
@@ -72,16 +93,22 @@ def get_tactical_context(
 
 
 def apply_safety_backstop(text: str, incident_type: str) -> str:
-    """Append non-negotiable safety lines to active-threat/evacuation output.
+    """Append non-negotiable safety lines to life-safety incident output.
 
     This is CODE post-processing — the model cannot suppress these lines.
+    Lockdown incidents get additional lines, because the guidance that saves
+    people in a fire is the guidance that kills them in a shooting.
     """
-    if incident_type not in EVACUATION_TYPES:
+    if incident_type not in LIFE_SAFETY_TYPES:
         return text
+
+    lines = list(BACKSTOP_LINES)
+    if incident_type in LOCKDOWN_TYPES:
+        lines += LOCKDOWN_BACKSTOP_LINES
 
     missing = []
     text_lower = text.lower()
-    for line in BACKSTOP_LINES:
+    for line in lines:
         if line.lower() not in text_lower:
             key_phrase = _extract_key_phrase(line)
             if key_phrase not in text_lower:
