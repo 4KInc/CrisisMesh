@@ -15,6 +15,8 @@ Endpoints:
   GET  /whatsapp                 — WhatsApp webhook verification
   POST /whatsapp                 — WhatsApp inbound webhook (Meta Cloud API)
   POST /whatsapp/twilio          — WhatsApp inbound webhook (Twilio-hosted)
+  POST /incident/{id}/tick      — single-step reconciliation (IC-scoped)
+  POST /incident/{id}/intents   — decisions the loop has recorded
   POST /incident/{id}/resolve   — end the active incident (any channel)
   POST /incident/{id}/approve   — approve a pending gated action
   POST /incident/{id}/deny      — deny a pending gated action
@@ -77,7 +79,13 @@ from src.core.tactical_reasoning import (
     strip_origin_from_payload,
     validate_routing_directives,
 )
-from src.core import incident_resolve, incident_state, notify, observations
+from src.core import (
+    incident_resolve,
+    incident_state,
+    notify,
+    observations,
+    reconciliation_store,
+)
 from src.services.slack_transport import (
     _publish_declared,
     dispatch_slash_command,
@@ -117,6 +125,14 @@ init_memory_bank()
 # Attach the fan-out. Without this the bus has no subscribers at all and an
 # incident declared on one channel reaches nobody on the others.
 notify.subscribe()
+# Pull the active incident back after a restart. Reconciliation state is not
+# eagerly restored: the first tick rebuilds it from the surviving incident's
+# roster, which makes a restart between declare and first tick correct without
+# a repair path rather than a window to guard.
+try:
+    incident_state.rehydrate()
+except Exception as _exc:  # noqa: BLE001
+    logger.error(f"Incident rehydrate failed at startup: {_exc}")
 
 
 def _json_response(handler: BaseHTTPRequestHandler, data: Any, status: int = 200) -> None:
@@ -1014,6 +1030,68 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             text = body.get("text", "")
             result = ContentScanner.get().scan_message(text)
             _json_response(self, result)
+
+        elif path.endswith("/tick") and path.startswith("/incident/"):
+            # Single-step the reconciliation loop and report what it decided.
+            #
+            # Synchronous on purpose. Kicking a background task and returning
+            # would leave the tick's execution dependent on Cloud Run not
+            # reclaiming the thread after the response flushes — a property
+            # currently asserted only in YAML (cpu-throttling: false), never
+            # observed. Running inside the request sidesteps that question for
+            # the observation phase and returns the decisions as JSON rather
+            # than burying them in logs.
+            #
+            # IC-scoped and fails closed: this advances real accountability
+            # state, and once delivery is wired it is what triggers real pages.
+            # Unlike the approval gate, an unconfigured IC list refuses rather
+            # than opening.
+            parts = path.split("/")
+            if len(parts) != 4:
+                _json_response(self, {"error": "Not found"}, 404)
+                return
+
+            from src.core.agent_gateway import AUTHORIZED_IC_IDS, _load_authorized_ics
+            from src.core import reconciliation_loop
+
+            _load_authorized_ics()
+            if not AUTHORIZED_IC_IDS:
+                _json_response(self, {
+                    "error": "No incident commanders configured; refusing to "
+                             "advance incident state. Set AUTHORIZED_IC_IDS.",
+                    "code": "no_authorized_ics",
+                }, 503)
+                return
+
+            body = _read_body(self)
+            ic_id = str(body.get("ic_id", "")).strip()
+            if not ic_id:
+                _json_response(self, {
+                    "error": "Missing ic_id — advancing an incident has to be "
+                             "attributable.",
+                }, 400)
+                return
+
+            if not any(hmac.compare_digest(ic_id, known) for known in AUTHORIZED_IC_IDS):
+                logger.error(f"Rejected /tick from unauthorized id {ic_id!r}")
+                _json_response(self, {"error": "Not an authorized incident commander"}, 403)
+                return
+
+            result = reconciliation_loop.run_tick(parts[2])
+            result["ic_id"] = ic_id
+            result["store"] = reconciliation_store.backend_name()
+            _json_response(self, result)
+
+        elif path.endswith("/intents") and path.startswith("/incident/"):
+            from src.core import reconciliation_loop
+
+            parts = path.split("/")
+            if len(parts) != 4:
+                _json_response(self, {"error": "Not found"}, 404)
+                return
+            recorded = reconciliation_loop.intents(parts[2])
+            _json_response(self, {"incident_id": parts[2], "count": len(recorded),
+                                  "intents": recorded})
 
         elif path.endswith("/resolve") and path.startswith("/incident/"):
             # Ending an incident is destructive: it stops the coordination

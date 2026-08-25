@@ -342,7 +342,7 @@ def handle_inbound_sms(
         return {"twiml": _twiml_response(incident_digest.status_line()), "action": "status"}
 
     if action == inbound_router.ACTION_OBSERVATION:
-        reply = incident_queries.answer(payload, source="sms")
+        reply = incident_queries.answer(payload, source=from_number)
         if reply is not None:
             return {"twiml": _twiml_response(reply), "action": "query"}
         return _handle_sms_observation(from_number, payload)

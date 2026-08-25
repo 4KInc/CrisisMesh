@@ -37,6 +37,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.core import movement_policy
 from src.core.knowledge_base import KnowledgeBase
 # Imported rather than redefined so the notifier and the safety backstop
 # cannot drift apart on which incidents count as a lockdown.
@@ -55,6 +56,18 @@ CHANNEL_SLACK = "slack"
 # has already walked away from.
 CHANNEL_PRIORITY = (CHANNEL_SMS, CHANNEL_WHATSAPP, CHANNEL_SLACK)
 
+# Distinguishable, because the unreachable list is only useful if the incident
+# commander can act on it. "Reach her by radio, her Slack id does not resolve"
+# is a different instruction from "no channel on file for her".
+REASON_NO_SLACK_ID = "no Slack user id on the roster"
+REASON_SLACK_UNVERIFIED = "Slack: id does not resolve to a workspace member"
+REASON_SLACK_UNVERIFIABLE = "Slack: could not verify id (lookup unavailable)"
+
+# An id's resolution does not change within an incident, so verify once and
+# cache. Verifying 34 ids every tick would be rate-limit surface and latency
+# inside a synchronous /tick.
+_slack_id_cache: dict[str, bool] = {}
+
 # During a lockdown every extra message is another buzz in a room where someone
 # is hiding. Only these two fan out: the alert that starts it and the all-clear
 # that ends it. Anything else waits.
@@ -66,6 +79,7 @@ URGENT_SEVERITIES = frozenset({"high", "critical"})
 
 _last_result: dict[str, Any] = {}
 _lock = threading.Lock()
+_cache_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -151,13 +165,57 @@ def resolve_reach(person: dict[str, Any]) -> Reach:
 
         elif channel == CHANNEL_SLACK:
             if not slack_id:
-                blockers.append("no Slack user id on the roster")
+                blockers.append(REASON_NO_SLACK_ID)
             elif not _slack_ready():
                 blockers.append("Slack: no bot token")
+            elif not slack_id_resolves(slack_id):
+                # A string in the column is not a person. The seed roster
+                # carries U_PRINCIPAL, U_VP and so on, which look like ids and
+                # address nobody — so the loop reported 34 reachable when the
+                # true figure was roughly the reverse.
+                blockers.append(REASON_SLACK_UNVERIFIED)
             else:
                 return Reach(person_id, name, CHANNEL_SLACK, slack_id)
 
     return Reach(person_id, name, reason="; ".join(blockers) or "no channel available")
+
+
+def slack_id_resolves(slack_id: str) -> bool:
+    """Does this id address a real workspace member?
+
+    Fails closed. An id we cannot confirm is unreachable-pending-verification,
+    never reachable-by-assumption: a falsely reachable person is one the loop
+    keeps chasing down a dead channel while the IC is never told to reach them
+    another way. Catching the exception and returning True would be failing
+    open wearing a helmet.
+    """
+    import os
+
+    with _cache_lock:
+        if slack_id in _slack_id_cache:
+            return _slack_id_cache[slack_id]
+
+    verified = False
+    try:
+        from src.services import slack_transport
+
+        token = os.environ.get("SLACK_BOT_TOKEN", "")
+        if token and slack_transport.WebClient:
+            response = slack_transport.WebClient(token=token).users_info(user=slack_id)
+            verified = bool(response.get("ok"))
+    except Exception as exc:  # noqa: BLE001 - unverifiable means unreachable
+        logger.info(f"Slack id {slack_id} could not be verified ({exc}) — treating as unreachable")
+        verified = False
+
+    with _cache_lock:
+        _slack_id_cache[slack_id] = verified
+    return verified
+
+
+def reset_slack_id_cache() -> None:
+    """Invalidate after a roster reload."""
+    with _cache_lock:
+        _slack_id_cache.clear()
 
 
 def _slack_ready() -> bool:
@@ -167,7 +225,23 @@ def _slack_ready() -> bool:
 
 
 def _send(reach: Reach, message: str) -> dict[str, Any]:
-    """Deliver on the resolved channel. Never raises."""
+    """Deliver on the resolved channel. Never raises.
+
+    The movement-policy critic runs immediately before the send, so a
+    contradiction cannot leave even if a composer upstream introduced one.
+    """
+    from src.core import incident_state
+
+    record = incident_state.get_latest_incident()
+    incident_type = (record.get("classification", {}) or {}).get("incident_type", "")
+    assembly = (record.get("assembly", {}) or {}).get("name", "")
+    message, violation = movement_policy.enforce(
+        incident_type, message, assembly_name=assembly,
+        surface=f"fanout_{reach.channel}",
+    )
+    if violation:
+        logger.error(f"Fan-out contradiction blocked for {reach.person_id}: {violation.detail}")
+
     try:
         if reach.channel == CHANNEL_SMS:
             from src.services.sms_transport import send_sms
@@ -291,6 +365,12 @@ def _compose_evacuation_alert(record: dict[str, Any]) -> str:
     incident_id = record.get("incident_id", "")
     location = (record.get("location", {}) or {}).get("zone_name", "")
     assembly = (record.get("assembly", {}) or {}).get("name", "")
+
+    # Consume the directive rather than re-deriving it. The lockdown composer
+    # already omits the rally point, but this path must not print one for any
+    # other type the policy restricts — an unclassified incident included.
+    if not movement_policy.for_incident(incident_type).may_publish_assembly_point:
+        assembly = ""
 
     if incident_type == UNCLASSIFIED_TYPE:
         # No category to name, so quote what was actually reported — a reader

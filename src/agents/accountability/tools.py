@@ -7,6 +7,7 @@ check-in store for incident-scoped accountability tracking.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from typing import Any
 
 from src.core.knowledge_base import KnowledgeBase
@@ -14,6 +15,8 @@ from src.models.person import PersonStatus
 
 
 # In-memory check-in store: {incident_id: {person_id: {status, name, location, time}}}
+logger = logging.getLogger(__name__)
+
 _checkin_store: dict[str, dict[str, dict[str, Any]]] = {}
 
 
@@ -80,6 +83,30 @@ def read_roster(
     }
 
 
+def _mirror_to_reconciliation(incident_id: str, person_id: str, status: str) -> None:
+    """Tell the reconciliation state machine that this person is accounted for.
+
+    Two stores hold per-person state: this one, which the console and SITREPs
+    read, and the reconciliation state machine, which decides who to chase. Six
+    call sites wrote here and none wrote there, so a teacher who texted SAFE
+    stayed SILENT to the loop — re-pinged, then escalated to their own floor
+    warden. The `SAFE`-cancels-pending contract was correct and unconnected.
+
+    Never called from inside a store transaction: check-ins arrive at transport
+    top level, so this cannot reproduce the self-contention livelock.
+    """
+    if status in (PersonStatus.UNKNOWN, PersonStatus.SILENT):
+        return
+    try:
+        from src.core import reconciliation
+        reconciliation.record_checkin(incident_id, person_id, source="checkin")
+    except Exception as exc:  # noqa: BLE001 - a mirror failure must not lose the check-in
+        logger.error(
+            f"Check-in for {person_id} recorded but not mirrored to reconciliation "
+            f"({exc}) — the loop may re-ping them"
+        )
+
+
 def process_checkin(
     incident_id: str,
     person_id: str,
@@ -118,6 +145,8 @@ def process_checkin(
         "notes": notes,
         "time": datetime.now(timezone.utc).isoformat(),
     }
+
+    _mirror_to_reconciliation(incident_id, person_id, person_status)
 
     return {
         "incident_id": incident_id,

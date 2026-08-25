@@ -233,7 +233,7 @@ def handle_inbound_message(
 
     if action == inbound_router.ACTION_OBSERVATION:
         # A question or a room report is answered, not filed as an observation.
-        reply = incident_queries.answer(payload, source="whatsapp")
+        reply = incident_queries.answer(payload, source=from_number)
         if reply is not None:
             return {"reply": reply, "action": "query"}
         return _handle_observation(from_number, payload)

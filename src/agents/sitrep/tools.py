@@ -41,6 +41,21 @@ def extract_threat_observation(report: str) -> str:
     return ""
 
 
+def _assembly_for(incident_type: str, assembly: list[dict[str, Any]]) -> str:
+    """The rally point, or the withheld notice, per the movement directive.
+
+    Applied here rather than in each renderer: these tools feed the Slack
+    arrival brief, the responder card and the Gemini SITREP, and every one of
+    them used to print the rally point regardless of incident type.
+    """
+    from src.core import movement_policy
+
+    name = assembly[0]["name"] if assembly else "Athletic Field"
+    if movement_policy.for_incident(incident_type).may_publish_assembly_point:
+        return name
+    return movement_policy.WITHHELD_LINE
+
+
 def generate_sitrep(
     incident_id: str,
     incident_type: str,
@@ -193,7 +208,7 @@ def generate_responder_card(
 
     # Assembly points
     assembly = kb.get_assembly_points(facility_id, primary_only=True)
-    assembly_info = assembly[0]["name"] if assembly else "Athletic Field"
+    assembly_info = _assembly_for(incident_type, assembly)
 
     # Command contact
     ic = next((p for p in kb.personnel if p.get("evacuation_role") == "Incident Commander"), None)
@@ -297,7 +312,7 @@ def generate_arrival_brief(
     resources.extend([f"Fire Ext: {r['location_description']}" for r in extinguishers[:3]])
 
     assembly = kb.get_assembly_points(facility_id, primary_only=True)
-    assembly_info = assembly[0]["name"] if assembly else "Athletic Field"
+    assembly_info = _assembly_for(incident_type, assembly)
 
     ic = next((p for p in kb.personnel if p.get("evacuation_role") == "Incident Commander"), None)
     command_contact = f"{ic['name']} — {ic.get('phone', '')}" if ic else "Main Office"

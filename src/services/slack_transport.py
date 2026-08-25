@@ -1573,6 +1573,45 @@ def _run_mention_pipeline(channel_id: str, user_id: str, text: str) -> None:
     _post_slack_results(channel_id, result)
 
 
+def _enforced(text: str, surface: str) -> str:
+    """Strip any movement-policy contradiction before this text leaves.
+
+    The critic acts here rather than filing a verdict: a violation that is only
+    logged is the same defect as an `escalate` that notifies nobody. Runs on
+    the current incident, and is a no-op when none is active.
+    """
+    from src.core import incident_state, movement_policy
+
+    record = incident_state.get_latest_incident()
+    if not record:
+        return text
+    incident_type = (record.get("classification", {}) or {}).get("incident_type", "")
+    assembly = (record.get("assembly", {}) or {}).get("name", "")
+    cleaned, violation = movement_policy.enforce(
+        incident_type, text, assembly_name=assembly, surface=surface,
+    )
+    if violation:
+        _record_policy_violation(violation)
+    return cleaned
+
+
+def _record_policy_violation(violation: Any) -> None:
+    """Trace the block so it is visible, having already acted on it."""
+    try:
+        from src.core.observability import Tracer
+        from src.core import incident_state
+
+        trace = Tracer.get().get_trace(incident_state.get_active_incident_id())
+        if trace:
+            span = trace.start_span("movement_policy_violation", "critic")
+            span.set_attribute("surface", violation.surface)
+            span.set_attribute("incident_type", violation.incident_type)
+            span.set_attribute("detail", violation.detail)
+            span.end()
+    except Exception as exc:  # noqa: BLE001 - never let tracing break a send
+        logger.error(f"Could not trace policy violation: {exc}")
+
+
 def _post_bot_message(channel_id: str, text: str, thread_ts: str = "") -> None:
     """Post a message as the bot to the given channel."""
     bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
@@ -1581,7 +1620,10 @@ def _post_bot_message(channel_id: str, text: str, thread_ts: str = "") -> None:
         return
     try:
         client = WebClient(token=bot_token)
-        kwargs: dict[str, Any] = {"channel": channel_id, "text": text}
+        kwargs: dict[str, Any] = {
+            "channel": channel_id,
+            "text": _enforced(text, surface="slack_bot_message"),
+        }
         if thread_ts:
             kwargs["thread_ts"] = thread_ts
         client.chat_postMessage(**kwargs)
@@ -1621,23 +1663,10 @@ def format_playbook_message(playbook_key: str) -> str:
 
 
 def _assembly_line(incident_type: str, assembly_name: str) -> str:
-    """Render the assembly point, or explain why it is being withheld.
+    """Delegates to the single movement policy every surface consumes."""
+    from src.core import movement_policy
 
-    An assembly point is a named open space with a published location. During a
-    fire that is exactly where people should go. During a lockdown it is where
-    a threat would expect people to gather, so the fan-out message deliberately
-    omits it — and this card has to agree, because staff read it on the same
-    phones. Withheld rather than blank: an absent field looks like missing data,
-    which invites someone to go and look it up.
-    """
-    from src.core.tactical_reasoning import LOCKDOWN_TYPES
-
-    if incident_type in LOCKDOWN_TYPES:
-        return (
-            "*Assembly:* withheld during lockdown — do not direct movement to a "
-            "published open area until law enforcement clears it"
-        )
-    return f"*Assembly:* {assembly_name}"
+    return movement_policy.assembly_line(incident_type, assembly_name)
 
 
 def _post_incident_block_kit(

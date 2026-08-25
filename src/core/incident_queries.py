@@ -97,6 +97,7 @@ def answer(text: str, source: str = "", allow_sensitive: bool = False) -> str | 
 def _record_room(text: str, incident_id: str, source: str) -> str:
     entry = room_board.parse(text)
     room_board.record(incident_id, entry, source=source)
+    _account_for_the_reporter(incident_id, source)
     s = room_board.summarise(incident_id)
 
     confirmation = f"Room {entry['room']} recorded: {entry['safe']} safe"
@@ -107,6 +108,38 @@ def _record_room(text: str, incident_id: str, source: str) -> str:
         f"{confirmation} Board now {s['reported_count']}/{s['total_rooms']} rooms, "
         f"{s['total_safe']} safe, {s['total_missing']} missing."
     )
+
+
+def _account_for_the_reporter(incident_id: str, from_address: str) -> None:
+    """Someone typing a room report is demonstrably alive and functional.
+
+    Without this the loop re-pings and then escalates the teacher who is doing
+    the reporting — the same disconnect as check-ins reaching accountability but
+    not the reconciliation state machine, arriving through the room-report door
+    instead of the SAFE-keyword one.
+
+    The reporter only. "23 of 25 safe" never says which 23, and a falsely
+    accounted person is one nobody goes looking for.
+    """
+    if not from_address:
+        return
+    try:
+        from src.core import reconciliation
+        from src.services.sms_consent import normalize_phone
+
+        person_id = _person_for_address(normalize_phone(from_address))
+        if person_id:
+            reconciliation.record_room_report(
+                incident_id, room_id="", reporter_person_id=person_id)
+    except Exception as exc:  # noqa: BLE001 - never lose the room report itself
+        logger.error(f"Room report recorded but reporter not accounted ({exc})")
+
+
+def _person_for_address(phone: str) -> str:
+    from src.services.sms_transport import _build_phone_map, _phone_to_person
+
+    _build_phone_map()
+    return _phone_to_person.get(phone, "")
 
 
 def _unaccounted(incident_id: str) -> str:

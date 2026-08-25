@@ -18,7 +18,10 @@ from src.models.events import EventType
 @pytest.fixture(autouse=True)
 def fresh_state(monkeypatch):
     monkeypatch.delenv("DEMO_AUTO_APPROVE", raising=False)
-    monkeypatch.delenv("AUTHORIZED_IC_IDS", raising=False)
+    # The gate fails closed on unconfigured auth, so tests exercising the
+    # approve/deny flow must name an IC. Tests about the unconfigured case
+    # clear it themselves — see TestUnconfiguredGateRefuses.
+    monkeypatch.setenv("AUTHORIZED_IC_IDS", "IC-USER-1")
     AgentGateway.reset()
     ContentScanner.reset()
     EventBus.reset()
@@ -310,14 +313,17 @@ class TestAuthorizedIC:
         assert result["status"] == 403
 
     @pytest.mark.asyncio
-    async def test_empty_ic_list_allows_anyone(self):
+    async def test_empty_ic_list_refuses_everyone(self, monkeypatch):
+        """Was `test_empty_ic_list_allows_anyone`. Unconfigured auth admitting
+        everyone is not a policy; it is the bug this gate exists to prevent."""
+        monkeypatch.delenv("AUTHORIZED_IC_IDS", raising=False)
+        AgentGateway.reset()
         gw = AgentGateway.get()
         decision = await gw.check_tool_call(
             "coordinator", "resolve_incident", incident_id="INC-001"
         )
-        result = await gw.approve_action(decision.pending_action_id, "ANY-USER")
-        assert result["status"] == "granted"
-
+        result = await gw.approve_action(decision.pending_action_id, "ANYONE")
+        assert result.get("error")
 
 class TestDemoAutoApprove:
     """DEMO_AUTO_APPROVE fires only with flag on, emits labeled event."""
@@ -570,18 +576,21 @@ class TestCardUpdateSeparation:
 
 
 class TestEmptyICWarning:
-    """B.5 item 2: empty IC list emits a warning."""
+    """An empty IC list refuses and says so at error level. It used to warn and
+    admit — a warning is fail-quiet's cousin, in the logs and read afterwards."""
 
     @pytest.mark.asyncio
-    async def test_empty_ic_list_logs_warning(self, caplog):
+    async def test_empty_ic_list_logs_warning(self, caplog, monkeypatch):
         import logging
+        monkeypatch.delenv("AUTHORIZED_IC_IDS", raising=False)
+        AgentGateway.reset()
         gw = AgentGateway.get()
         decision = await gw.check_tool_call(
             "coordinator", "resolve_incident", incident_id="INC-001"
         )
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.ERROR):
             await gw.approve_action(decision.pending_action_id, "ANY-USER")
-        assert "no authorized ICs configured" in caplog.text
+        assert "no authorized ics configured" in caplog.text.lower()
 
 
 class TestEndToEndGatePath:
@@ -626,7 +635,7 @@ class TestEndToEndGatePath:
         assert d3.allowed is False
         assert d3.pending_action_id != ""
 
-        result = await gw.approve_action(d3.pending_action_id, "IC-CMD")
+        result = await gw.approve_action(d3.pending_action_id, "IC-USER-1")
         assert result["status"] == "granted"
 
         pa = gw._pending_actions[d3.pending_action_id]
@@ -659,3 +668,45 @@ class TestGatewayEvents:
         assert len(events) == 1
         assert str(events[0].type) == "policy.violation"
         assert events[0].data["policy"] == "agent_identity"
+
+
+class TestUnconfiguredGateRefuses:
+    """The gate guards send_external_message and share_medical_info. It used to
+    return True with a warning when no ICs were configured, so any deployment
+    that had not set AUTHORIZED_IC_IDS ran with the gate open — and a warning
+    is fail-quiet's cousin, in the logs and read afterwards.
+
+    `/incident/{id}/tick` refuses on the same condition. Two auth surfaces
+    disagreeing about what "unconfigured" means is worse than either answer
+    applied consistently."""
+
+    @pytest.mark.asyncio
+    async def test_approval_is_refused_when_no_ics_are_configured(self, monkeypatch):
+        monkeypatch.delenv("AUTHORIZED_IC_IDS", raising=False)
+        AgentGateway.reset()
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001")
+        result = await gw.approve_action(decision.pending_action_id, "ANYONE")
+        assert result.get("status") != 200 or result.get("error")
+
+    @pytest.mark.asyncio
+    async def test_the_action_stays_pending_after_a_refused_approval(self, monkeypatch):
+        monkeypatch.delenv("AUTHORIZED_IC_IDS", raising=False)
+        AgentGateway.reset()
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001")
+        await gw.approve_action(decision.pending_action_id, "ANYONE")
+        pending = gw.get_pending_actions(incident_id="INC-001")
+        assert pending, "a refused approval must leave the action queued"
+
+    @pytest.mark.asyncio
+    async def test_a_configured_ic_still_approves(self, monkeypatch):
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "IC-USER-1")
+        AgentGateway.reset()
+        gw = AgentGateway.get()
+        decision = await gw.check_tool_call(
+            "coordinator", "resolve_incident", incident_id="INC-001")
+        result = await gw.approve_action(decision.pending_action_id, "IC-USER-1")
+        assert not result.get("error")

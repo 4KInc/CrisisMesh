@@ -367,11 +367,16 @@ function renderSit(d){
         <span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
       </div>`).join('')}</div>`;
 
-  const ap=d.assembly_point?.assembly_points?.[0],fs=d.nearby_fire_station?.services?.[0];
+  /* Shelter incidents never publish a rally point — a named open space is
+     where a threat would expect people to gather. Mirrors the server-side
+     movement policy; the critic checks both agree. */
+  const LOCKDOWN_TYPES=['active_threat','bomb_threat'];
+  const sheltering=LOCKDOWN_TYPES.includes((c.incident_type||'').toLowerCase());
+  const ap=sheltering?null:d.assembly_point?.assembly_points?.[0],fs=d.nearby_fire_station?.services?.[0];
   document.getElementById('sit-assembly').innerHTML=`
     <div class="card-header w-full"><span class="card-header-label flex items-center gap-2"><span class="material-symbols-outlined text-primary text-[16px]">groups</span>ASSEMBLY POINT</span></div>
     <div class="p-4 flex items-center justify-between w-full">
-      <div><div class="text-on-surface font-bold font-mono">${ap?ap.name:'—'}</div></div>
+      <div><div class="text-on-surface font-bold font-mono">${sheltering?'WITHHELD — LOCKDOWN':ap?ap.name:'—'}</div></div>
       ${ap?`<div class="text-right"><div class="text-[10px] text-on-surface-variant font-mono uppercase tracking-widest">CAPACITY</div><div class="text-primary font-mono font-bold">${ap.capacity}</div></div>`:''}
     </div>`;
   document.getElementById('sit-svc').innerHTML=`

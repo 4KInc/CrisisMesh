@@ -340,12 +340,22 @@ class AgentGateway:
         }
 
     def _is_authorized_ic(self, approver_id: str) -> bool:
+        """Fail closed. Unconfigured auth refuses; it does not admit everyone.
+
+        This used to return True with a warning when AUTHORIZED_IC_IDS was
+        unset, which meant the gate guarding `send_external_message` and
+        `share_medical_info` was open on any deployment that had not set the
+        variable — and a warning is fail-quiet's cousin, in the logs and read
+        after. `/incident/{id}/tick` refuses on the same condition, and two
+        auth surfaces disagreeing about what "unconfigured" means is worse
+        than either answer applied consistently.
+        """
         if not AUTHORIZED_IC_IDS:
-            logger.warning(
-                "WARN: no authorized ICs configured — approval gates are OPEN. "
-                "Set AUTHORIZED_IC_IDS to restrict approvals."
+            logger.error(
+                "No authorized ICs configured — refusing approval. "
+                "Set AUTHORIZED_IC_IDS."
             )
-            return True
+            return False
         return any(
             hmac.compare_digest(approver_id, ic_id)
             for ic_id in AUTHORIZED_IC_IDS

@@ -1,0 +1,547 @@
+"""The integrator: what calls the units on a schedule.
+
+890 tests exercise `tick_person`, `transition`, `commit_transition`. Nothing
+exercises the thing that runs them on a timer, and orchestration has its own
+bug class — did the loop visit everyone, advance the counter once, survive a
+per-person throw without dying or double-counting the tick.
+
+Two boundaries this file holds:
+
+  The dict is a weaker-concurrency and faster-timing environment than a network
+  store, so any timing assumption the loop makes will hold here and may not
+  hold under latency. Re-entrancy is therefore pinned explicitly rather than
+  left to be true by accident.
+
+  The timer records intents. It does not send. Delivery is the one place a bug
+  has a consequence outside the system, so it is wired last — after the loop
+  has been watched running over several ticks.
+"""
+
+import threading
+import time
+
+import pytest
+
+from src.core import reconciliation as rec
+from src.core import reconciliation_loop as loop
+from src.core import reconciliation_store as store
+from src.core import incident_state
+from src.core.knowledge_base import KnowledgeBase, init_knowledge_base
+
+import os
+SEED_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "seed")
+
+
+@pytest.fixture(autouse=True)
+def fresh(tmp_path, monkeypatch):
+    monkeypatch.setenv("CRISISMESH_CONSENT_LOG", str(tmp_path / "c.jsonl"))
+    monkeypatch.setenv("CRISISMESH_RECONCILIATION_STORE", "memory")
+    monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
+    KnowledgeBase.reset()
+    init_knowledge_base(SEED_DIR)
+    store.reset_backend()
+    rec.reset()
+    loop.reset()
+    incident_state.declare(
+        "T-1", {"incident_id": "T-1",
+                "classification": {"incident_type": "active_threat", "severity": "critical"}},
+        source="slack")
+    yield
+    loop.stop()
+    loop.reset()
+    rec.reset()
+    incident_state.reset()
+    KnowledgeBase.reset()
+
+
+class TestItRecordsIntentsNotSends:
+    """The hard boundary. Delivery goes last."""
+
+    def test_a_tick_produces_intents(self):
+        result = loop.run_tick("T-1")
+        assert result["intents"]
+        assert all("action" in i and "person_id" in i for i in result["intents"])
+
+    def test_nothing_is_actually_sent(self, monkeypatch):
+        def _explode(*a, **kw):
+            raise AssertionError("the timer must not deliver")
+
+        monkeypatch.setattr("src.services.sms_transport.send_sms", _explode)
+        monkeypatch.setattr("src.services.whatsapp_transport.send_whatsapp", _explode)
+        loop.run_tick("T-1")
+
+    def test_an_intent_names_the_channel_it_would_have_used(self):
+        result = loop.run_tick("T-1")
+        assert all("channel" in i for i in result["intents"])
+
+    def test_intents_accumulate_across_ticks(self):
+        loop.run_tick("T-1")
+        loop.run_tick("T-1")
+        assert len(loop.intents("T-1")) >= 2
+
+
+class TestTheLoopVisitsEveryone:
+    def test_every_roster_person_is_evaluated(self):
+        result = loop.run_tick("T-1")
+        assert result["evaluated"] == len(KnowledgeBase.get().personnel)
+
+    def test_an_accounted_person_is_not_acted_on(self):
+        rec.record_checkin("T-1", "p001", source="whatsapp")
+        result = loop.run_tick("T-1")
+        assert "p001" not in {i["person_id"] for i in result["intents"]}
+
+    def test_unreachable_people_are_flagged_once(self):
+        first = loop.run_tick("T-1")
+        second = loop.run_tick("T-1")
+        flagged_first = [i for i in first["intents"] if i["action"] == loop.ACTION_FLAG_IC]
+        flagged_second = [i for i in second["intents"] if i["action"] == loop.ACTION_FLAG_IC]
+        assert flagged_first
+        assert not flagged_second, "the IC was re-told about the same people"
+
+
+class TestTickCounterAdvancesOnce:
+    def test_the_counter_advances_one_per_tick(self):
+        assert loop.run_tick("T-1")["tick"] == 1
+        assert loop.run_tick("T-1")["tick"] == 2
+        assert loop.run_tick("T-1")["tick"] == 3
+
+    def test_a_thrown_person_does_not_double_count_the_tick(self, monkeypatch):
+        real = store.tick_person
+
+        def _explodes_on_p005(incident_id, person_id, target, tick):
+            if person_id == "p005":
+                raise RuntimeError("unanticipated")
+            return real(incident_id, person_id, target, tick)
+
+        monkeypatch.setattr(store, "tick_person", _explodes_on_p005)
+        assert loop.run_tick("T-1")["tick"] == 1
+        assert loop.run_tick("T-1")["tick"] == 2
+
+    def test_counters_are_per_incident(self):
+        loop.run_tick("T-1")
+        incident_state.declare("T-2", {"incident_id": "T-2",
+                                       "classification": {"incident_type": "fire",
+                                                          "severity": "high"}},
+                               source="slack")
+        assert loop.run_tick("T-2")["tick"] == 1
+
+
+class TestReEntrancy:
+    """The dict is faster than a network store, so a timing assumption that
+    holds here may not hold under latency. Skip the beat; never queue."""
+
+    def test_a_second_tick_cannot_start_while_one_runs(self):
+        started = threading.Event()
+        release = threading.Event()
+        outcomes = {}
+
+        real = loop._reconcile
+
+        def _slow(*a, **kw):
+            started.set()
+            release.wait(timeout=2)
+            return real(*a, **kw)
+
+        loop._reconcile = _slow
+        try:
+            t = threading.Thread(target=lambda: outcomes.update(first=loop.run_tick("T-1")))
+            t.start()
+            started.wait(timeout=2)
+            outcomes["second"] = loop.run_tick("T-1")
+            release.set()
+            t.join(timeout=3)
+        finally:
+            loop._reconcile = real
+
+        assert outcomes["second"]["skipped_reason"] == "already_running"
+        assert outcomes["first"]["tick"] == 1
+
+    def test_a_skipped_beat_does_not_advance_the_counter(self):
+        release = threading.Event()
+        started = threading.Event()
+        real = loop._reconcile
+
+        def _slow(*a, **kw):
+            started.set()
+            release.wait(timeout=2)
+            return real(*a, **kw)
+
+        loop._reconcile = _slow
+        try:
+            t = threading.Thread(target=lambda: loop.run_tick("T-1"))
+            t.start()
+            started.wait(timeout=2)
+            loop.run_tick("T-1")
+            release.set()
+            t.join(timeout=3)
+        finally:
+            loop._reconcile = real
+        assert loop.run_tick("T-1")["tick"] == 2
+
+
+class TestAThrownTickStillSchedulesTheNext:
+    """A silently dead loop is the missed-ping failure at maximum scale."""
+
+    def test_the_timer_survives_a_throwing_tick(self, monkeypatch):
+        calls = {"n": 0}
+
+        def _throws_once(incident_id):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("tick blew up")
+            return {"tick": calls["n"], "intents": [], "evaluated": 0}
+
+        monkeypatch.setattr(loop, "run_tick", _throws_once)
+        loop.start("T-1", interval_seconds=0.05)
+        deadline = time.time() + 2
+        while calls["n"] < 3 and time.time() < deadline:
+            time.sleep(0.02)
+        loop.stop()
+        assert calls["n"] >= 3, "the loop died on the first throw"
+
+    def test_stop_is_idempotent(self):
+        loop.start("T-1", interval_seconds=0.05)
+        loop.stop()
+        loop.stop()
+        assert loop.is_running() is False
+
+
+class TestQuietTicksAreClean:
+    """No phantom writes, no log spam burying the demo."""
+
+    def test_a_tick_with_nobody_silent_writes_nothing(self):
+        for person in KnowledgeBase.get().personnel:
+            rec.record_checkin("T-1", person["person_id"], source="test")
+        store.reset_counters()
+        result = loop.run_tick("T-1")
+        assert result["intents"] == []
+        assert store.write_count() == 0
+
+    def test_a_quiet_tick_is_still_counted(self):
+        for person in KnowledgeBase.get().personnel:
+            rec.record_checkin("T-1", person["person_id"], source="test")
+        assert loop.run_tick("T-1")["tick"] == 1
+
+    def test_no_active_incident_is_a_no_op(self):
+        incident_state.reset()
+        result = loop.run_tick("T-1")
+        assert result["skipped_reason"] == "no_active_incident"
+        assert result["intents"] == []
+
+
+class TestTickEndpoint:
+    """/tick advances real accountability state and will later be what triggers
+    real pages. It is credentialed, and it fails closed — unlike the approval
+    gate, which returns True when no ICs are configured."""
+
+    def _post(self, path, body=None, ic_env=None, monkeypatch=None):
+        import json
+        from io import BytesIO
+        from src.core.server import CrisisMeshHandler
+
+        if monkeypatch is not None:
+            if ic_env is None:
+                monkeypatch.delenv("AUTHORIZED_IC_IDS", raising=False)
+            else:
+                monkeypatch.setenv("AUTHORIZED_IC_IDS", ic_env)
+
+        h = CrisisMeshHandler.__new__(CrisisMeshHandler)
+        h.response_code = None
+        h._headers = {}
+        raw = json.dumps(body).encode() if body else b""
+        h.rfile = BytesIO(raw)
+        h.wfile = BytesIO()
+        h.path = path
+        h.command = "POST"
+        h.headers = {"Content-Length": str(len(raw))}
+        h.send_response = lambda c: setattr(h, "response_code", c)
+        h.send_header = lambda k, v: None
+        h.end_headers = lambda: None
+        h.do_POST()
+        return h.response_code, json.loads(h.wfile.getvalue())
+
+    def test_refuses_when_no_ics_are_configured(self, monkeypatch):
+        """Fails closed. An unconfigured deployment must not let anyone
+        advance a live incident's accountability state."""
+        code, body = self._post("/incident/T-1/tick", {"ic_id": "U_ANY"},
+                                ic_env=None, monkeypatch=monkeypatch)
+        assert code == 503
+        assert body["code"] == "no_authorized_ics"
+
+    def test_rejects_an_unknown_caller(self, monkeypatch):
+        code, _ = self._post("/incident/T-1/tick", {"ic_id": "U_INTRUDER"},
+                             ic_env="U_PRINCIPAL", monkeypatch=monkeypatch)
+        assert code == 403
+
+    def test_requires_an_attributable_caller(self, monkeypatch):
+        code, _ = self._post("/incident/T-1/tick", {},
+                             ic_env="U_PRINCIPAL", monkeypatch=monkeypatch)
+        assert code == 400
+
+    def test_an_authorized_ic_gets_the_decisions_back(self, monkeypatch):
+        code, body = self._post("/incident/T-1/tick", {"ic_id": "U_PRINCIPAL"},
+                                ic_env="U_PRINCIPAL", monkeypatch=monkeypatch)
+        assert code == 200
+        assert body["tick"] == 1
+        assert body["evaluated"] == len(KnowledgeBase.get().personnel)
+        assert body["intents"], "the tick returned no decisions"
+        assert body["store"] == "memory"
+
+    def test_it_runs_synchronously_not_in_a_background_thread(self, monkeypatch):
+        """The decisions must be in the response, not pending on a thread Cloud
+        Run may reclaim after the response flushes."""
+        code, body = self._post("/incident/T-1/tick", {"ic_id": "U_PRINCIPAL"},
+                                ic_env="U_PRINCIPAL", monkeypatch=monkeypatch)
+        assert code == 200
+        assert len(body["intents"]) == len(loop.intents("T-1"))
+
+    def test_stepping_twice_advances_the_counter(self, monkeypatch):
+        self._post("/incident/T-1/tick", {"ic_id": "U_PRINCIPAL"},
+                   ic_env="U_PRINCIPAL", monkeypatch=monkeypatch)
+        _, body = self._post("/incident/T-1/tick", {"ic_id": "U_PRINCIPAL"},
+                             ic_env="U_PRINCIPAL", monkeypatch=monkeypatch)
+        assert body["tick"] == 2
+
+    def test_it_still_does_not_send(self, monkeypatch):
+        def _explode(*a, **kw):
+            raise AssertionError("the endpoint must not deliver")
+
+        monkeypatch.setattr("src.services.sms_transport.send_sms", _explode)
+        monkeypatch.setattr("src.services.whatsapp_transport.send_whatsapp", _explode)
+        code, _ = self._post("/incident/T-1/tick", {"ic_id": "U_PRINCIPAL"},
+                             ic_env="U_PRINCIPAL", monkeypatch=monkeypatch)
+        assert code == 200
+
+
+class TestVerificationFailureIsPerPerson:
+    """A users.info call that throttles on person 17 is the read-failure hazard
+    through a new door — and it is now a network call inside what used to be a
+    local lookup."""
+
+    def test_a_throttled_lookup_mid_roster_does_not_end_the_tick(self, monkeypatch):
+        from src.core import notify
+
+        notify.reset_slack_id_cache()
+        seen = {"n": 0}
+
+        def _throttles_on_the_seventeenth(slack_id):
+            seen["n"] += 1
+            if seen["n"] == 17:
+                raise RuntimeError("rate limited")
+            return False
+
+        monkeypatch.setattr(notify, "slack_id_resolves", _throttles_on_the_seventeenth)
+        result = loop.run_tick("T-1")
+        assert result["evaluated"] == len(KnowledgeBase.get().personnel)
+        assert result["skipped_reason"] == ""
+
+    def test_unverified_people_land_on_the_unreachable_list(self, monkeypatch):
+        from src.core import notify
+
+        notify.reset_slack_id_cache()
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
+        monkeypatch.setattr(notify, "_slack_ready", lambda: True)
+        monkeypatch.setattr(notify, "slack_id_resolves", lambda sid: False)
+        result = loop.run_tick("T-1")
+        flagged = [i for i in result["intents"] if i["action"] == loop.ACTION_FLAG_IC]
+        assert flagged, "nobody was flagged despite no id resolving"
+        assert any(notify.REASON_SLACK_UNVERIFIED in i["reason"] for i in flagged)
+
+
+class TestWholeTickBudget:
+    """Per-call deadlines bound one call. A healthy-but-slow tick makes ~100
+    serial network calls at roster scale, and the sum can exceed the request
+    budget — so the tick is bounded too, and a blown budget commits what
+    completed rather than losing everything."""
+
+    def test_a_uniformly_slow_tick_returns_within_budget(self, monkeypatch):
+        """The healthy-degradation case: every call succeeds, just slowly."""
+        import time as _time
+
+        monkeypatch.setenv("CRISISMESH_TICK_BUDGET", "5")
+        real = store.tick_person
+
+        def _slow_but_fine(incident_id, person_id, target, tick):
+            _time.sleep(0.4)
+            return real(incident_id, person_id, target, tick)
+
+        monkeypatch.setattr(store, "tick_person", _slow_but_fine)
+        began = _time.monotonic()
+        result = loop.run_tick("T-1")
+        elapsed = _time.monotonic() - began
+
+        assert elapsed < 12, f"tick ran {elapsed:.1f}s with a 5s budget"
+        assert result["not_evaluated"], "nobody was reported as unevaluated"
+        assert result["intents"], "no partial work was committed"
+
+    def test_the_tail_is_named_not_silently_dropped(self, monkeypatch):
+        import time as _time
+
+        monkeypatch.setenv("CRISISMESH_TICK_BUDGET", "5")
+
+        def _slow(incident_id, person_id, target, tick):
+            _time.sleep(0.4)
+            return None
+
+        monkeypatch.setattr(store, "tick_person", _slow)
+        result = loop.run_tick("T-1")
+        assert len(result["not_evaluated"]) > 0
+        assert result["evaluated"] == len(KnowledgeBase.get().personnel)
+
+    def test_the_next_tick_picks_up_the_tail(self, monkeypatch):
+        """`last_acted_tick` makes the re-run skip whoever was already reached,
+        so the unevaluated tail is what tick N+1 acts on."""
+        import time as _time
+
+        monkeypatch.setenv("CRISISMESH_TICK_BUDGET", "5")
+        real = store.tick_person
+        calls = {"n": 0}
+
+        def _slow_for_the_first_few(incident_id, person_id, target, tick):
+            calls["n"] += 1
+            if calls["n"] < 12:
+                _time.sleep(0.5)
+            return real(incident_id, person_id, target, tick)
+
+        monkeypatch.setattr(store, "tick_person", _slow_for_the_first_few)
+        first = loop.run_tick("T-1")
+        tail = set(first["not_evaluated"])
+        monkeypatch.setattr(store, "tick_person", real)
+        second = loop.run_tick("T-1")
+        acted_second = {i["person_id"] for i in second["intents"]}
+        assert tail & acted_second, "the tail was never picked up"
+
+    def test_a_quiet_tick_reports_an_empty_tail(self):
+        result = loop.run_tick("T-1")
+        assert result["not_evaluated"] == []
+
+    def test_the_budget_is_configurable(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_TICK_BUDGET", "12")
+        assert store.tick_budget_seconds() == 12.0
+
+    def test_a_garbage_budget_falls_back(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_TICK_BUDGET", "not-a-number")
+        assert store.tick_budget_seconds() == store.TICK_BUDGET_SECONDS
+
+
+class TestCheckinsReachTheStateMachine:
+    """Two stores hold per-person state. Six call sites wrote to accountability
+    and none wrote to reconciliation, so a teacher who texted SAFE stayed SILENT
+    to the loop — re-pinged, then escalated to their own floor warden. The
+    contract was correct and unconnected."""
+
+    def test_a_checkin_accounts_the_person_in_reconciliation(self):
+        from src.agents.accountability.tools import process_checkin
+        process_checkin("T-1", "p001", "safe")
+        assert rec.get_state("T-1", "p001").status == rec.ACCOUNTED
+
+    def test_the_loop_stops_chasing_someone_who_checked_in(self):
+        """The world-claim, not the field-claim."""
+        from src.agents.accountability.tools import process_checkin
+        loop.run_tick("T-1")
+        process_checkin("T-1", "p001", "safe")
+        second = loop.run_tick("T-1")
+        assert "p001" not in {i["person_id"] for i in second["intents"]}
+
+    def test_a_checkin_cancels_a_pending_escalation(self, monkeypatch):
+        from src.agents.accountability.tools import process_checkin
+        monkeypatch.setenv("CRISISMESH_REPING_CAP", "1")
+        rec.transition("T-1", "p001", rec.ESCALATED, tick=1)
+        process_checkin("T-1", "p001", "safe")
+        assert rec.get_state("T-1", "p001").pending_escalation is False
+
+    @pytest.mark.parametrize("status", ["safe", "injured", "need_help", "evacuated"])
+    def test_every_real_status_accounts_them(self, status):
+        from src.agents.accountability.tools import process_checkin
+        process_checkin("T-1", "p001", status)
+        assert rec.get_state("T-1", "p001").status == rec.ACCOUNTED
+
+    def test_a_seeded_unknown_row_does_not_account_anyone(self):
+        """send_checkin_request seeds UNKNOWN rows for the whole roster. If that
+        mirrored, the loop would think everyone was accounted for the moment an
+        incident was declared."""
+        from src.agents.accountability.tools import send_checkin_request
+        send_checkin_request("T-1", facility_id="jefferson")
+        assert rec.get_state("T-1", "p001").status == rec.SILENT
+
+    def test_a_mirror_failure_does_not_lose_the_checkin(self, monkeypatch):
+        from src.agents.accountability import tools
+
+        def _boom(*a, **kw):
+            raise RuntimeError("reconciliation unavailable")
+
+        monkeypatch.setattr("src.core.reconciliation.record_checkin", _boom)
+        result = tools.process_checkin("T-1", "p001", "safe")
+        assert result["recorded"] is True
+
+
+class TestRoomReportReachesTheStateMachine:
+    """The second door. `rec.record_room_report` existed, was tested in the
+    contract, and was called by nobody — so a teacher typing "room 101: all 25
+    students are safe" was still re-pinged and escalated for being silent. The
+    check-in funnel fix did not touch this path."""
+
+    def _teacher_phone(self):
+        from src.core.knowledge_base import KnowledgeBase
+        person = KnowledgeBase.get().get_person("p005")
+        raw = person["phone"].replace("-", "")
+        return f"+1{raw}"
+
+    def test_the_loop_stops_chasing_the_teacher_who_filed_the_report(self):
+        """The world-claim: it can only pass if the room-report path actually
+        reaches the state machine."""
+        from src.services.whatsapp_transport import handle_inbound_message
+
+        loop.run_tick("T-1")
+        handle_inbound_message(self._teacher_phone(),
+                               "room 101: all 25 students are safe")
+        second = loop.run_tick("T-1")
+        assert "p005" not in {i["person_id"] for i in second["intents"]}, (
+            "the teacher who filed the report was chased for being silent"
+        )
+
+    def test_it_cancels_her_pending_escalation(self, monkeypatch):
+        from src.services.whatsapp_transport import handle_inbound_message
+
+        rec.transition("T-1", "p005", rec.ESCALATED, tick=1)
+        handle_inbound_message(self._teacher_phone(),
+                               "room 101: 23 students are safe, 2 are missing")
+        assert rec.get_state("T-1", "p005").pending_escalation is False
+
+    def test_it_accounts_for_the_reporter_only(self):
+        """"23 of 25 safe" never says which 23."""
+        from src.services.whatsapp_transport import handle_inbound_message
+
+        handle_inbound_message(self._teacher_phone(),
+                               "room 101: 23 students are safe, 2 are missing")
+        assert rec.get_state("T-1", "p005").status == rec.ACCOUNTED
+        assert rec.get_state("T-1", "p012").status == rec.SILENT
+
+    def test_an_unrecognised_reporter_accounts_for_nobody(self):
+        from src.services.whatsapp_transport import handle_inbound_message
+
+        handle_inbound_message("+15559990000", "room 101: all 25 students are safe")
+        assert rec.get_state("T-1", "p005").status == rec.SILENT
+
+
+class TestTheMirrorDoesNotOverFire:
+    """The inverse failure. Mirroring check-ins could over-fire and mirror the
+    initial roster seed as if all 34 had reported — the fix for one direction of
+    a seam bug is the likeliest place to introduce the other."""
+
+    def test_declaring_an_incident_leaves_everyone_silent(self):
+        from src.agents.accountability.tools import send_checkin_request
+
+        send_checkin_request("T-1", facility_id="jefferson")
+        statuses = {rec.get_state("T-1", p["person_id"]).status
+                    for p in KnowledgeBase.get().personnel}
+        assert statuses == {rec.SILENT}, "declaring an incident accounted for people"
+
+    def test_the_first_tick_still_has_work_to_do(self):
+        """The observable consequence of over-mirroring would be a loop with
+        nothing to chase the moment an incident is declared."""
+        from src.agents.accountability.tools import send_checkin_request
+
+        send_checkin_request("T-1", facility_id="jefferson")
+        assert loop.run_tick("T-1")["intents"], "the loop had nobody to chase"

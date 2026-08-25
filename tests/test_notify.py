@@ -356,3 +356,80 @@ class TestUnclassifiedFanOut:
         assert "UNCLASSIFIED INCIDENT" in msg
         assert "students still inside" in msg
         assert "911" in msg
+
+
+class TestSlackIdMustResolve:
+    """A string in the slack_user_id column is not a person. The seed roster
+    carries U_PRINCIPAL, U_VP and so on — ids in shape, addressing nobody — and
+    with a bot token present the loop reported 34 reachable when the true
+    figure was roughly the reverse. Optimistic-green in production."""
+
+    @pytest.fixture(autouse=True)
+    def slack_configured(self, monkeypatch):
+        # slack_sdk is absent locally and present on Cloud Run, which is the
+        # fuller reason the deployed trace diverged from the in-process one.
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
+        monkeypatch.setattr(notify, "_slack_ready", lambda: True)
+        notify.reset_slack_id_cache()
+        yield
+        notify.reset_slack_id_cache()
+
+    def test_a_placeholder_id_is_unreachable(self, monkeypatch):
+        monkeypatch.setattr(notify, "slack_id_resolves", lambda sid: False)
+        reach = notify.resolve_reach(_person(slack_id="U_PRINCIPAL"))
+        assert reach.reachable is False
+        assert notify.REASON_SLACK_UNVERIFIED in reach.reason
+
+    def test_the_reason_is_distinguishable_from_having_no_id(self, monkeypatch):
+        """"Reach her by radio, her id does not resolve" is a different
+        instruction from "no channel on file"."""
+        monkeypatch.setattr(notify, "slack_id_resolves", lambda sid: False)
+        unverified = notify.resolve_reach(_person(slack_id="U_PRINCIPAL")).reason
+        missing = notify.resolve_reach(_person(slack_id="")).reason
+        assert unverified != missing
+        assert notify.REASON_NO_SLACK_ID in missing
+
+    def test_a_resolving_id_is_reachable(self, monkeypatch):
+        monkeypatch.setattr(notify, "slack_id_resolves", lambda sid: True)
+        reach = notify.resolve_reach(_person(slack_id="U0123REAL"))
+        assert reach.channel == notify.CHANNEL_SLACK
+
+    def test_a_lookup_failure_counts_as_unreachable(self, monkeypatch):
+        """Fails closed. Returning True "to be safe" is failing open wearing a
+        helmet — the person stops being chased and the IC is never told."""
+        class _Boom:
+            def __init__(self, token):
+                pass
+
+            def users_info(self, user):
+                raise RuntimeError("rate limited")
+
+        monkeypatch.setattr("src.services.slack_transport.WebClient", _Boom)
+        assert notify.slack_id_resolves("U_ANY") is False
+
+    def test_a_missing_token_counts_as_unverified(self, monkeypatch):
+        monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
+        assert notify.slack_id_resolves("U_ANY") is False
+
+    def test_verification_is_cached_per_id(self, monkeypatch):
+        """34 ids x every tick would be rate-limit surface and latency inside a
+        synchronous /tick."""
+        calls = {"n": 0}
+
+        class _Counting:
+            def __init__(self, token):
+                pass
+
+            def users_info(self, user):
+                calls["n"] += 1
+                return {"ok": True}
+
+        monkeypatch.setattr("src.services.slack_transport.WebClient", _Counting)
+        for _ in range(5):
+            notify.slack_id_resolves("U0123REAL")
+        assert calls["n"] == 1
+
+    def test_the_cache_can_be_invalidated_for_a_roster_reload(self, monkeypatch):
+        monkeypatch.setattr(notify, "slack_id_resolves", lambda sid: True)
+        notify.reset_slack_id_cache()
+        assert notify._slack_id_cache == {}
