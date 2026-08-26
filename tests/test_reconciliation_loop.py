@@ -800,3 +800,43 @@ class TestAskingReportsRatherThanActs:
                             lambda ch, msg, thread_ts="": None)
         slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
         assert loop.last_result("T-1")["tick"] == 1
+
+
+class TestTheTimerSurvivesAnInstanceRestart:
+    """The incident is durable and the timer is a thread. A container replaced
+    mid-incident comes back coordinating an emergency with nobody chasing the
+    silent — and nothing errors, so reconciliation just quietly stops."""
+
+    def test_a_live_incident_with_no_timer_restarts_it(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("CRISISMESH_TICK_SECONDS", "30")
+        loop.stop()                       # the restart: the thread is gone
+        assert loop.is_running() is False
+        try:
+            assert loop.ensure_running() is True
+            assert loop.is_running() is True
+        finally:
+            loop.stop()
+
+    def test_it_does_not_start_a_second_timer(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("CRISISMESH_TICK_SECONDS", "30")
+        loop.ensure_running()
+        try:
+            assert loop.ensure_running() is False
+        finally:
+            loop.stop()
+
+    def test_it_does_nothing_with_no_active_incident(self, monkeypatch):
+        from src.core import incident_state
+
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        incident_state.reset()
+        loop.stop()
+        assert loop.ensure_running() is False
+        assert loop.is_running() is False
+
+    def test_it_respects_the_auto_tick_switch(self, monkeypatch):
+        monkeypatch.delenv("CRISISMESH_AUTO_TICK", raising=False)
+        loop.stop()
+        assert loop.ensure_running() is False

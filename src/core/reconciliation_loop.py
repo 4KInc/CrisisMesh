@@ -383,6 +383,25 @@ def auto_tick_enabled() -> bool:
     return raw not in {"off", "none", "false", ""}
 
 
+def ensure_running() -> bool:
+    """Restart the timer if an incident is live and nothing is ticking.
+
+    The incident is durable and the timer is a thread, so a container replaced
+    mid-incident comes back coordinating an emergency with nobody chasing the
+    silent. Nothing errors — reconciliation just quietly stops, which is the
+    worst way for this particular thing to fail. Called at startup and from
+    any path that touches a live incident.
+    """
+    from src.core import incident_state
+
+    if not auto_tick_enabled() or is_running() or not incident_state.is_active():
+        return False
+    incident_id = incident_state.get_active_incident_id()
+    logger.info(f"Reconciliation was not running for live incident {incident_id} — restarting")
+    start(incident_id)
+    return True
+
+
 def start_for_incident(incident_id: str) -> None:
     """Begin ticking for a newly declared incident, if auto-tick is enabled."""
     if not auto_tick_enabled():

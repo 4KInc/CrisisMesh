@@ -1264,6 +1264,7 @@ def _handle_reconciliation_tick(channel_id: str, user_id: str, thread_ts: str) -
         return
 
     incident_id = incident_state.get_active_incident_id()
+    reconciliation_loop.ensure_running()
 
     # When the scheduler is running, asking reports the latest completed tick
     # rather than forcing an extra one. Advancing on every question would let

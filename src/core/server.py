@@ -131,6 +131,10 @@ notify.subscribe()
 # a repair path rather than a window to guard.
 try:
     incident_state.rehydrate()
+    # A container replaced mid-incident comes back with the incident restored
+    # from Firestore and no timer, so reconciliation would silently stop.
+    from src.core import reconciliation_loop as _loop
+    _loop.ensure_running()
 except Exception as _exc:  # noqa: BLE001
     logger.error(f"Incident rehydrate failed at startup: {_exc}")
 
