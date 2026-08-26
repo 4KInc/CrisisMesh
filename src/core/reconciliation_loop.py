@@ -340,6 +340,31 @@ def _warden_for(person: dict[str, Any]) -> str:
 
 # ── Timer ───────────────────────────────────────────────────────────────────
 
+def auto_tick_enabled() -> bool:
+    """Whether the loop ticks on its own.
+
+    Off by default, and separate from CRISISMESH_DELIVERY on purpose: one
+    switch says "may this system transmit", the other says "may it decide
+    without being asked". Turning both on is the fully autonomous posture and
+    it should take two deliberate acts, not one.
+    """
+    import os
+
+    raw = (os.environ.get("CRISISMESH_AUTO_TICK") or "off").strip().lower()
+    return raw not in {"off", "none", "false", ""}
+
+
+def start_for_incident(incident_id: str) -> None:
+    """Begin ticking for a newly declared incident, if auto-tick is enabled."""
+    if not auto_tick_enabled():
+        logger.info(
+            f"Auto-tick is off — {incident_id} will only reconcile when asked. "
+            "Set CRISISMESH_AUTO_TICK=on to run it on a schedule."
+        )
+        return
+    start(incident_id)
+
+
 def is_running() -> bool:
     return bool(_timer and _timer.is_alive())
 

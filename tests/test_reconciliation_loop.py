@@ -661,8 +661,87 @@ class TestUnreachableListIsReadable:
                    for i in range(30)]
         rendered = _format_tick({"tick": 1, "evaluated": 34, "intents": flagged})
         assert "works" not in rendered
-        assert "and 22 more" in rendered
+        # Every name, not a count: these are the people the commander has to
+        # raise on a radio, and "and 22 more" is their problem restated.
+        for i in range(30):
+            assert f"Person {i}" in rendered
+        assert "more" not in rendered
 
     def test_an_empty_reason_still_says_something(self):
         from src.services.slack_transport import _summarise_reason
         assert _summarise_reason("") == "no channel available"
+
+
+class TestEscalationIsTerminalForTheLoop:
+    """Harmless when a human asks for three ticks; on a schedule it is the same
+    warden paged about the same person every minute, forever."""
+
+    def test_an_escalated_person_is_not_acted_on_again(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_REPING_CAP", "2")
+        for t in (1, 2):
+            rec.transition("T-1", "p001", rec.REPINGED, tick=t)
+        rec.transition("T-1", "p001", rec.ESCALATED, tick=3)
+        for t in (4, 5, 6):
+            assert rec.should_act("T-1", "p001", tick=t) is False
+
+    def test_a_check_in_brings_them_back_to_accounted(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_REPING_CAP", "2")
+        rec.transition("T-1", "p001", rec.ESCALATED, tick=1)
+        rec.record_checkin("T-1", "p001", source="sms")
+        assert rec.get_state("T-1", "p001").status == rec.ACCOUNTED
+
+    def test_a_reopen_makes_them_chaseable_again(self):
+        rec.transition("T-1", "p001", rec.ESCALATED, tick=1)
+        rec.record_checkin("T-1", "p001", source="sms")
+        rec.reopen("T-1", "p001", reason="zone re-blocked", tick=2)
+        assert rec.should_act("T-1", "p001", tick=3) is True
+
+    def test_ticking_forever_settles_instead_of_repeating(self, monkeypatch):
+        """The scheduler case: run many ticks and assert the intents stop."""
+        monkeypatch.setenv("CRISISMESH_REPING_CAP", "2")
+        counts = [len(loop.run_tick("T-1")["intents"]) for _ in range(8)]
+        assert counts[-1] == 0, f"the loop never settled: {counts}"
+        assert sum(counts[4:]) == 0
+
+
+class TestAutoTick:
+    """One switch says "may this system transmit", the other says "may it
+    decide without being asked". Both on is the fully autonomous posture and
+    should take two deliberate acts."""
+
+    def test_it_is_off_by_default(self, monkeypatch):
+        monkeypatch.delenv("CRISISMESH_AUTO_TICK", raising=False)
+        assert loop.auto_tick_enabled() is False
+
+    @pytest.mark.parametrize("value", ["off", "none", "false", ""])
+    def test_off_variants(self, monkeypatch, value):
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", value)
+        assert loop.auto_tick_enabled() is False
+
+    def test_on_enables_it(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        assert loop.auto_tick_enabled() is True
+
+    def test_declaring_does_not_start_a_timer_when_off(self, monkeypatch):
+        monkeypatch.delenv("CRISISMESH_AUTO_TICK", raising=False)
+        loop.start_for_incident("T-1")
+        assert loop.is_running() is False
+
+    def test_declaring_starts_a_timer_when_on(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("CRISISMESH_TICK_SECONDS", "5")
+        loop.start_for_incident("T-1")
+        try:
+            assert loop.is_running() is True
+        finally:
+            loop.stop()
+
+    def test_resolving_stops_the_timer(self, monkeypatch):
+        from src.core import notify
+
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("CRISISMESH_TICK_SECONDS", "5")
+        loop.start_for_incident("T-1")
+        assert loop.is_running() is True
+        notify._stop_reconciliation()
+        assert loop.is_running() is False

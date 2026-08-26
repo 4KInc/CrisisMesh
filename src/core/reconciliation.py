@@ -315,10 +315,21 @@ def already_acted(incident_id: str, person_id: str, tick: int) -> bool:
     return last is not None and last >= tick
 
 
+# States where the loop has done everything it can and further ticks would only
+# repeat themselves. Harmless when a human asks for three ticks; on a schedule
+# it is the same warden paged about the same person every minute forever.
+TERMINAL_FOR_THE_LOOP = frozenset({ACCOUNTED, ESCALATED})
+
+
 def should_act(incident_id: str, person_id: str, tick: int) -> bool:
-    """Does this tick have anything to do for this person?"""
+    """Does this tick have anything to do for this person?
+
+    An escalated person is finished as far as the loop is concerned: the cap
+    was reached, a named human was told, and there is no further autonomous
+    step. Only a check-in or an explicit reopen brings them back.
+    """
     state = get_state(incident_id, person_id)
-    if state.status == ACCOUNTED:
+    if state.status in TERMINAL_FOR_THE_LOOP:
         return False
     return not already_acted(incident_id, person_id, tick)
 

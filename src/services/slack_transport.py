@@ -1313,10 +1313,10 @@ def _format_tick(result: dict[str, Any]) -> str:
         # names an incident commander is actually going to read out.
         for reason, names in _group_by_reason(flagged):
             lines.append(f"  _{reason}_")
-            shown = ", ".join(names[:8])
-            if len(names) > 8:
-                shown += f", and {len(names) - 8} more"
-            lines.append(f"    {shown}")
+            # Every name, not a count. "and 25 more" is the incident
+            # commander's problem restated as a number — these are the people
+            # they have to raise on a radio, and they need to read them out.
+            lines.append(f"    {', '.join(names)}")
 
     if not intents:
         lines.append(":white_check_mark: Nobody left to chase — everyone tracked "

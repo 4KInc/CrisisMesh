@@ -560,6 +560,23 @@ def reset() -> None:
 _subscribed = False
 
 
+def _start_reconciliation(incident_id: str) -> None:
+    """Begin autonomous reconciliation for a newly declared incident."""
+    try:
+        from src.core import reconciliation_loop
+        reconciliation_loop.start_for_incident(incident_id)
+    except Exception as exc:  # noqa: BLE001 - never let this break a declaration
+        logger.error(f"Could not start reconciliation for {incident_id}: {exc}")
+
+
+def _stop_reconciliation() -> None:
+    try:
+        from src.core import reconciliation_loop
+        reconciliation_loop.stop()
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"Could not stop reconciliation: {exc}")
+
+
 def _on_declared(event: Any) -> None:
     """Fan out in the background — a Slack ack must not wait on 34 HTTP calls."""
     from src.core import incident_state
@@ -574,11 +591,15 @@ def _on_declared(event: Any) -> None:
         kwargs={"exclude": (reporter,) if reporter else ()},
         daemon=True,
     ).start()
+    _start_reconciliation(event.incident_id)
 
 
 def _on_resolved(event: Any) -> None:
     previous = dict(event.data or {})
     previous.setdefault("incident_id", event.incident_id)
+    # Stop before announcing: a tick firing after the all-clear would chase
+    # people about an incident that is over.
+    _stop_reconciliation()
     threading.Thread(target=announce_resolution, args=(previous,), daemon=True).start()
 
 
