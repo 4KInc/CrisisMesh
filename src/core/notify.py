@@ -138,7 +138,9 @@ def resolve_reach(person: dict[str, Any]) -> Reach:
     person_id = person.get("person_id", "")
     name = person.get("name", person_id)
     phone = _normalize(person.get("phone", ""))
-    slack_id = person.get("slack_user_id", "")
+    from src.core import demo_identity
+
+    slack_id = demo_identity.slack_id_for(person_id, person.get("slack_user_id", ""))
 
     blockers: list[str] = []
 

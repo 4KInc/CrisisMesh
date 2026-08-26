@@ -108,3 +108,47 @@ class TestTransportResolution:
         assert result["action"] == "checkin"
         assert result["person_id"] == "p001"
         incident_state.reset()
+
+
+class TestSlackIdOverride:
+    """Mapping a few real workspace ids makes those people genuinely reachable
+    without putting workspace-specific ids in version control — and without
+    making everyone reachable, so the unreachable list stays true."""
+
+    def test_no_override_uses_the_roster_value(self, monkeypatch):
+        monkeypatch.delenv("CRISISMESH_DEMO_SLACK_MAP", raising=False)
+        assert demo_identity.slack_id_for("p001", "U_PRINCIPAL") == "U_PRINCIPAL"
+
+    def test_an_override_replaces_the_placeholder(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_DEMO_SLACK_MAP", "p001=U0REAL001")
+        assert demo_identity.slack_id_for("p001", "U_PRINCIPAL") == "U0REAL001"
+
+    def test_unmapped_people_keep_their_placeholder(self, monkeypatch):
+        """The point: four mapped, thirty unreachable, and that is the truth."""
+        monkeypatch.setenv("CRISISMESH_DEMO_SLACK_MAP", "p001=U0REAL001")
+        assert demo_identity.slack_id_for("p002", "U_VP") == "U_VP"
+
+    def test_multiple_mappings(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_DEMO_SLACK_MAP",
+                           "p001=U0REAL001, p005=U0REAL005")
+        assert demo_identity.slack_id_for("p005", "U_RODRIGUEZ") == "U0REAL005"
+
+    def test_malformed_entries_are_skipped(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_DEMO_SLACK_MAP", "garbage,p001=U0REAL001,=U0X")
+        assert demo_identity.slack_overrides() == {"p001": "U0REAL001"}
+
+    def test_the_loop_sees_a_mapped_person_as_reachable(self, monkeypatch):
+        from src.core import notify
+
+        monkeypatch.setenv("CRISISMESH_DEMO_SLACK_MAP", "p001=U0REAL001")
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
+        monkeypatch.setattr(notify, "_slack_ready", lambda: True)
+        monkeypatch.setattr(notify, "slack_id_resolves", lambda sid: sid == "U0REAL001")
+        notify.reset_slack_id_cache()
+
+        reach = notify.resolve_reach(
+            {"person_id": "p001", "name": "Principal Johnson",
+             "phone": "", "slack_user_id": "U_PRINCIPAL"})
+        assert reach.channel == notify.CHANNEL_SLACK
+        assert reach.address == "U0REAL001"
+        notify.reset_slack_id_cache()

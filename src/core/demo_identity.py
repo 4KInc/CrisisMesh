@@ -10,6 +10,17 @@ version control, permanently. This does the same job from the environment:
 
     CRISISMESH_DEMO_PHONE_MAP="+15550001111=p001,+15551230000=p004"
 
+Slack ids work the same way:
+
+    CRISISMESH_DEMO_SLACK_MAP="p001=U0BE0A0BWGH,p005=U0BDWBL9NCE"
+
+The seed roster carries placeholders (`U_PRINCIPAL`), which look like ids and
+address nobody — so the reachability check counts them unreachable, correctly.
+Mapping a few real workspace ids here makes those people genuinely reachable
+without putting workspace-specific ids in version control, and without making
+*everyone* reachable: the unreachable list stays true, which is the half of the
+loop's output an incident commander actually acts on.
+
 or, for the common single-handset case:
 
     CRISISMESH_DEMO_PHONE=+15550001111
@@ -40,7 +51,7 @@ def overrides() -> dict[str, str]:
     mapping: dict[str, str] = {}
 
     raw_map = (os.environ.get("CRISISMESH_DEMO_PHONE_MAP") or "").strip()
-    for pair in raw_map.split(","):
+    for pair in raw_map.replace("^", ",").split(","):
         if "=" not in pair:
             continue
         phone, _, person_id = pair.partition("=")
@@ -63,6 +74,31 @@ def overrides() -> dict[str, str]:
             f"{', '.join(sorted(set(mapping.values())))}"
         )
     return mapping
+
+
+def slack_overrides() -> dict[str, str]:
+    """person_id -> real Slack user id, from the environment."""
+    mapping: dict[str, str] = {}
+    raw = (os.environ.get("CRISISMESH_DEMO_SLACK_MAP") or "").strip()
+    # `^` as well as `,`: gcloud reserves the comma as its own separator in
+    # --update-env-vars, so a multi-pair value has to arrive delimited some
+    # other way. Accepting both means the same string works from a shell, a
+    # .env file and a Cloud Run flag.
+    for pair in raw.replace("^", ",").split(","):
+        if "=" not in pair:
+            continue
+        person_id, _, slack_id = pair.partition("=")
+        person_id, slack_id = person_id.strip(), slack_id.strip()
+        if person_id and slack_id:
+            mapping[person_id] = slack_id
+    if mapping:
+        logger.info(f"Demo Slack ids mapped for {len(mapping)} roster person(s)")
+    return mapping
+
+
+def slack_id_for(person_id: str, roster_value: str) -> str:
+    """The id to use for this person — the override when one exists."""
+    return slack_overrides().get(person_id, roster_value)
 
 
 def apply_to(phone_map: dict[str, str]) -> None:
