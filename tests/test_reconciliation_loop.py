@@ -815,11 +815,17 @@ class TestAskingReportsRatherThanActs:
         from src.services import slack_transport
 
         monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("CRISISMESH_TICK_SECONDS", "300")
         monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_PRINCIPAL")
         monkeypatch.setattr(slack_transport, "_post_bot_message",
                             lambda ch, msg, thread_ts="": None)
-        slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
-        assert loop.last_result("T-1")["tick"] == 1
+        try:
+            slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
+            assert loop.last_result("T-1")["tick"] == 1
+        finally:
+            # ensure_running() starts a real timer; leaving it alive lets a
+            # tick land in another test's state after its fixture has reset.
+            loop.stop()
 
 
 class TestTheTimerSurvivesAnInstanceRestart:
@@ -927,3 +933,94 @@ class TestTickRenderingIsTight:
 
         rendered = _format_tick({"tick": 5, "evaluated": 34, "at": "", "intents": []})
         assert "Nobody left to chase" in rendered
+
+
+class TestEscalationReachesTheWarden:
+    """The escalation was delivered on the silent person's own channel, so
+    "X has not answered, please locate them" went to X — the one person who
+    demonstrably could not be reached was the only one told."""
+
+    INCIDENT = "T-WARDEN"
+
+    def _setup(self, monkeypatch, reachable):
+        """Own incident id: earlier tests in this file start real timers, and a
+        tick in flight during their teardown can write to a shared id after it
+        has been reset."""
+        from src.core import incident_state, notify
+        from src.services import whatsapp_transport
+
+        # Earlier tests in this file message in as p005, which opens their 24h
+        # WhatsApp window — module state that outlives the test and quietly
+        # makes the warden reachable here.
+        whatsapp_transport.reset_session_windows()
+
+        incident_state.declare(
+            self.INCIDENT,
+            {"incident_id": self.INCIDENT,
+             "classification": {"incident_type": "active_threat", "severity": "critical"}},
+            source="slack")
+
+        monkeypatch.setenv("CRISISMESH_DELIVERY", "on")
+        monkeypatch.setenv("CRISISMESH_REPING_CAP", "1")
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
+        monkeypatch.setenv("CRISISMESH_DEMO_SLACK_MAP",
+                           "^".join(f"{p}=U0REAL" for p in reachable))
+        monkeypatch.setattr(notify, "_slack_ready", lambda: True)
+        monkeypatch.setattr(notify, "slack_id_resolves", lambda sid: sid == "U0REAL")
+        notify.reset_slack_id_cache()
+        sent = []
+        monkeypatch.setattr(notify, "_send",
+                            lambda reach, msg: (sent.append((reach.person_id, msg)),
+                                                {"delivered": True, "outcome": "accepted"})[1])
+        return sent
+
+    def test_the_warden_receives_it_not_the_silent_person(self, monkeypatch):
+        sent = self._setup(monkeypatch, ["p001", "p005"])
+        loop.run_tick(self.INCIDENT)     # re-ping
+        sent.clear()
+        loop.run_tick(self.INCIDENT)     # cap reached -> escalate
+
+        escalations = [(pid, msg) for pid, msg in sent if "has not answered" in msg]
+        assert escalations, "no escalation was sent"
+        for recipient, message in escalations:
+            subject = message.split(" has not answered")[0].replace("CrisisMesh: ", "")
+            assert recipient != _person_id_for(subject), (
+                f"escalation about {subject} was delivered to {subject}"
+            )
+
+    def test_an_unreachable_warden_is_flagged_to_the_ic(self, monkeypatch):
+        """Only p001 reachable, so there is nobody to hand them to."""
+        self._setup(monkeypatch, ["p001"])
+        loop.run_tick(self.INCIDENT)
+        loop.run_tick(self.INCIDENT)
+        # The claim is that the commander is told rather than the person being
+        # silently dropped: their recorded reason names the missing warden.
+        state = rec.get_state(self.INCIDENT, "p001")
+        assert state.status == rec.UNREACHABLE
+        assert "warden" in state.reachability_reason
+        assert "unreachable" in state.reachability_reason
+
+    def test_a_warden_is_never_themselves(self):
+        from src.core.knowledge_base import KnowledgeBase
+
+        for person in KnowledgeBase.get().personnel:
+            warden = loop._warden_for(person)
+            if warden:
+                assert warden["person_id"] != person["person_id"]
+
+    def test_the_warden_is_on_the_same_floor_when_possible(self):
+        from src.core.knowledge_base import KnowledgeBase
+
+        person = KnowledgeBase.get().get_person("p012")
+        warden = loop._warden_for(person)
+        assert warden is not None
+        assert str(warden.get("floor")) == str(person.get("floor"))
+
+
+def _person_id_for(name: str) -> str:
+    from src.core.knowledge_base import KnowledgeBase
+
+    for p in KnowledgeBase.get().personnel:
+        if p["name"] == name.strip():
+            return p["person_id"]
+    return ""

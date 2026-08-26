@@ -67,7 +67,9 @@ def fresh(tmp_path, monkeypatch):
     monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
     monkeypatch.setattr(notify, "_slack_ready", lambda: True)
     monkeypatch.setattr(notify, "slack_id_resolves", lambda sid: sid == "U0REAL")
-    monkeypatch.setenv("CRISISMESH_DEMO_SLACK_MAP", "p001=U0REAL")
+    # p001 and their floor warden both reachable: escalation needs somewhere
+    # to escalate *to*.
+    monkeypatch.setenv("CRISISMESH_DEMO_SLACK_MAP", "p001=U0REAL^p005=U0REAL")
     notify.reset_slack_id_cache()
     KnowledgeBase.reset()
     init_knowledge_base(SEED_DIR)
@@ -111,18 +113,18 @@ class TestOnlyTheLoopsIntentsReachTheWire:
     def test_only_reachable_people_reach_the_wire(self, monkeypatch):
         sent = _wire(monkeypatch, "accepted")
         loop.run_tick("T-1")
-        assert {s["person_id"] for s in sent} == {"p001"}
+        assert {s["person_id"] for s in sent} == {"p001", "p005"}
 
     def test_each_intent_reaches_the_wire_exactly_once_per_tick(self, monkeypatch):
         sent = _wire(monkeypatch, "accepted")
         loop.run_tick("T-1")
-        assert len(sent) == 1
+        assert len(sent) == len({s["person_id"] for s in sent})
 
     def test_an_accounted_person_is_never_sent_to(self, monkeypatch):
         rec.record_checkin("T-1", "p001", source="whatsapp")
         sent = _wire(monkeypatch, "accepted")
         loop.run_tick("T-1")
-        assert sent == []
+        assert "p001" not in {s["person_id"] for s in sent}
 
 
 class TestOutcomeDecidesWhetherWeChaseAgain:
@@ -130,14 +132,15 @@ class TestOutcomeDecidesWhetherWeChaseAgain:
         sent = _wire(monkeypatch, "accepted")
         loop.run_tick("T-1")
         assert rec.get_state("T-1", "p001").attempts == 1
-        assert len(sent) == 1
+        assert "p001" in {s["person_id"] for s in sent}
 
     def test_a_rejected_send_does_not_advance_attempts_and_is_rechased(self, monkeypatch):
         sent = _wire(monkeypatch, "rejected", "carrier refused")
         loop.run_tick("T-1")
         assert rec.get_state("T-1", "p001").attempts == 0, "a refusal counted as a ping"
         loop.run_tick("T-1")
-        assert len(sent) == 2, "the person was not chased again"
+        assert len([x for x in sent if x["person_id"] == "p001"]) == 2, \
+            "the person was not chased again"
 
     def test_an_unknown_send_is_rechased_and_recorded_as_unknown(self, monkeypatch):
         sent = _wire(monkeypatch, "unknown", "the call did not complete")
@@ -146,13 +149,14 @@ class TestOutcomeDecidesWhetherWeChaseAgain:
         recorded = [i for i in loop.intents("T-1") if i["person_id"] == "p001"]
         assert recorded[0]["outcome"] == "unknown", "an unknown send was recorded as failed"
         loop.run_tick("T-1")
-        assert len(sent) == 2
+        assert len([x for x in sent if x["person_id"] == "p001"]) == 2
 
     def test_a_suppressed_send_is_not_retried(self, monkeypatch):
         sent = _wire(monkeypatch, "suppressed", "recipient replied STOP")
         loop.run_tick("T-1")
         loop.run_tick("T-1")
-        assert len(sent) == 1, "the system argued with a STOP"
+        assert len([x for x in sent if x["person_id"] == "p001"]) == 1, \
+            "the system argued with a STOP"
         assert rec.get_state("T-1", "p001").status == rec.UNREACHABLE
 
     def test_escalation_happens_only_after_accepted_repings(self, monkeypatch):

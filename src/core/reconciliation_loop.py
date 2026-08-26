@@ -226,11 +226,7 @@ def _reconcile_person(
         return produced
 
     if rec.should_escalate(incident_id, person_id):
-        warden = _warden_for(person)
-        produced.extend(_act(
-            incident_id, tick, person, reach, rec.ESCALATED, ACTION_ESCALATE,
-            _escalation_message(incident_id, name, warden),
-            reason=f"{rec.attempt_cap()} re-pings unanswered; warden {warden}"))
+        produced.extend(_escalate(incident_id, tick, person, name))
         return produced
 
     produced.extend(_act(
@@ -238,6 +234,54 @@ def _reconcile_person(
         _reping_message(incident_id, name, reach.channel,
                         rec.get_state(incident_id, person_id).attempts + 1)))
     return produced
+
+
+def _escalate(
+    incident_id: str, tick: int, person: dict[str, Any], name: str,
+) -> list[dict[str, Any]]:
+    """Hand a silent person to a warden — by sending to the *warden*.
+
+    The escalation used to be delivered on the silent person's own channel, so
+    "X has not answered, please locate them" went to X. The one person who
+    demonstrably cannot be reached was the only one told. Escalation exists to
+    reach someone who can act, so it resolves the warden's channel and sends
+    there; if the warden cannot be reached either, that is a fact the incident
+    commander needs rather than a silent failure.
+    """
+    from src.core import notify
+
+    person_id = person["person_id"]
+    warden = _warden_for(person)
+    if not warden:
+        return _flag_no_warden(incident_id, tick, person_id, name,
+                               "no floor warden on the roster to escalate to")
+
+    warden_reach = notify.resolve_reach(warden)
+    if not warden_reach.reachable:
+        return _flag_no_warden(
+            incident_id, tick, person_id, name,
+            f"warden {warden.get('name', '?')} is unreachable ({warden_reach.reason})")
+
+    return _act(
+        incident_id, tick, person, warden_reach, rec.ESCALATED, ACTION_ESCALATE,
+        _escalation_message(incident_id, name, warden.get("name", "")),
+        reason=(f"{rec.attempt_cap()} re-pings unanswered; "
+                f"handed to {warden.get('name', '?')} via {warden_reach.channel}"))
+
+
+def _flag_no_warden(
+    incident_id: str, tick: int, person_id: str, name: str, why: str,
+) -> list[dict[str, Any]]:
+    """Nobody to hand this person to — the commander has to do it themselves.
+
+    Records the reason and moves them into the unreachable set, but does not
+    emit here: the ledger in _finish is the only thing that knows whether the
+    IC has already been told, and emitting in both places listed the same
+    person twice in one tick.
+    """
+    rec.set_reachability_reason(incident_id, person_id, why)
+    store.tick_person(incident_id, person_id, rec.UNREACHABLE, tick)
+    return []
 
 
 def _act(
@@ -355,16 +399,30 @@ def _name_for(person_id: str) -> str:
     return person["name"] if person else person_id
 
 
-def _warden_for(person: dict[str, Any]) -> str:
-    """The floor warden a re-ping escalates to, or the incident commander."""
+def _warden_for(person: dict[str, Any]) -> dict[str, Any] | None:
+    """The roster row of the warden to hand this person to.
+
+    Same floor first, then any warden, then the incident commander. Never the
+    person themselves: escalating someone to their own attention is the same
+    non-action as sending them their own escalation.
+    """
     from src.core.knowledge_base import KnowledgeBase
 
     kb = KnowledgeBase.get()
+    person_id = person.get("person_id")
     floor = str(person.get("floor", ""))
-    for warden in kb.get_floor_wardens():
-        if str(warden.get("floor", "")) == floor and warden["person_id"] != person.get("person_id"):
-            return warden["name"]
-    return "incident commander"
+    wardens = [w for w in kb.get_floor_wardens() if w.get("person_id") != person_id]
+
+    for warden in wardens:
+        if str(warden.get("floor", "")) == floor:
+            return warden
+    if wardens:
+        return wardens[0]
+    for candidate in kb.personnel:
+        if (candidate.get("person_id") != person_id
+                and "commander" in (candidate.get("evacuation_role") or "").lower()):
+            return candidate
+    return None
 
 
 # ── Timer ───────────────────────────────────────────────────────────────────
@@ -452,5 +510,9 @@ def stop() -> None:
     global _timer
     _stop.set()
     if _timer and _timer.is_alive():
-        _timer.join(timeout=2)
+        # Long enough for a tick already in flight to finish. Abandoning it
+        # leaves a thread writing into state the caller believes it has torn
+        # down — which is a test-isolation problem here and, in production,
+        # a tick landing on an incident that has just been resolved.
+        _timer.join(timeout=max(10.0, rec.tick_interval_seconds() / 2))
     _timer = None
