@@ -1345,7 +1345,15 @@ def _format_tick(result: dict[str, Any], live: bool = False) -> str:
         lines.append("")
         lines.append("_Delivery is switched off: these are decisions, not messages "
                      "that were sent._")
-    return "\n".join(lines)
+
+    # Sections emit their own spacer, so a tick where two of the three are
+    # empty renders as a run of blank lines before the one that has content.
+    tightened: list[str] = []
+    for line in lines:
+        if not line and (not tightened or not tightened[-1]):
+            continue
+        tightened.append(line)
+    return "\n".join(tightened).rstrip()
 
 
 def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:

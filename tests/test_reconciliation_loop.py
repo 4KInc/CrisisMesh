@@ -895,3 +895,35 @@ class TestTheFirstTickIsPrompt:
             assert loop.last_result("T-1").get("tick", 0) >= 2
         finally:
             loop.stop()
+
+
+class TestTickRenderingIsTight:
+    """Each section emits its own spacer, so a tick where two of the three are
+    empty rendered as a run of blank lines before the one with content."""
+
+    def test_no_run_of_blank_lines(self):
+        from itertools import groupby
+        from src.services.slack_transport import _format_tick
+
+        rendered = _format_tick({
+            "tick": 3, "evaluated": 34, "at": "",
+            "intents": [{"action": loop.ACTION_ESCALATE, "person_id": "p002",
+                         "name": "VP Martinez", "channel": "slack",
+                         "reason": "2 re-pings unanswered; warden X"}],
+        })
+        longest = max((sum(1 for _ in g)
+                       for blank, g in groupby(rendered.split("\n"), key=lambda l: l == "")
+                       if blank), default=0)
+        assert longest <= 1
+
+    def test_it_does_not_end_on_whitespace(self):
+        from src.services.slack_transport import _format_tick
+
+        rendered = _format_tick({"tick": 1, "evaluated": 34, "at": "", "intents": []})
+        assert rendered == rendered.rstrip()
+
+    def test_a_quiet_tick_still_says_something(self):
+        from src.services.slack_transport import _format_tick
+
+        rendered = _format_tick({"tick": 5, "evaluated": 34, "at": "", "intents": []})
+        assert "Nobody left to chase" in rendered
