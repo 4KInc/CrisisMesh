@@ -546,3 +546,77 @@ class TestTheMirrorDoesNotOverFire:
 
         send_checkin_request("T-1", facility_id="jefferson")
         assert loop.run_tick("T-1")["intents"], "the loop had nobody to chase"
+
+
+class TestSlackReconciliationTrigger:
+    """The loop is the marquee capability; making it reachable only from a
+    terminal hides it. Same authorisation and same fail-closed rule as
+    POST /incident/{id}/tick, because it advances the same state."""
+
+    def test_it_refuses_when_no_ics_are_configured(self, monkeypatch):
+        from src.services import slack_transport
+
+        monkeypatch.delenv("AUTHORIZED_IC_IDS", raising=False)
+        posted = []
+        monkeypatch.setattr(slack_transport, "_post_bot_message",
+                            lambda ch, msg, thread_ts="": posted.append(msg))
+        slack_transport._handle_reconciliation_tick("C1", "U_ANY", "")
+        assert "No incident commanders configured" in posted[0]
+
+    def test_it_refuses_a_non_commander(self, monkeypatch):
+        from src.services import slack_transport
+
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_PRINCIPAL")
+        posted = []
+        monkeypatch.setattr(slack_transport, "_post_bot_message",
+                            lambda ch, msg, thread_ts="": posted.append(msg))
+        slack_transport._handle_reconciliation_tick("C1", "U_TEACHER", "")
+        assert "Only an incident commander" in posted[0]
+
+    def test_a_commander_gets_the_decisions(self, monkeypatch):
+        from src.services import slack_transport
+
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_PRINCIPAL")
+        posted = []
+        monkeypatch.setattr(slack_transport, "_post_bot_message",
+                            lambda ch, msg, thread_ts="": posted.append(msg))
+        slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
+        assert "RECONCILIATION — tick 1" in posted[0]
+        assert "cannot be reached at all" in posted[0]
+
+    def test_it_refuses_with_no_active_incident(self, monkeypatch):
+        from src.core import incident_state
+        from src.services import slack_transport
+
+        incident_state.reset()
+        posted = []
+        monkeypatch.setattr(slack_transport, "_post_bot_message",
+                            lambda ch, msg, thread_ts="": posted.append(msg))
+        slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
+        assert "No active incident" in posted[0]
+
+    def test_it_says_so_when_delivery_is_off(self, monkeypatch):
+        from src.services import slack_transport
+
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_PRINCIPAL")
+        monkeypatch.setenv("CRISISMESH_DELIVERY", "off")
+        posted = []
+        monkeypatch.setattr(slack_transport, "_post_bot_message",
+                            lambda ch, msg, thread_ts="": posted.append(msg))
+        slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
+        assert "decisions, not messages that were sent" in posted[0]
+
+    @pytest.mark.parametrize("phrase", [
+        "chase the ones who haven't answered",
+        "who hasn't answered",
+        "run reconciliation",
+        "tick",
+    ])
+    def test_the_phrases_route_to_the_loop(self, phrase, monkeypatch):
+        from src.services import slack_transport
+
+        called = []
+        monkeypatch.setattr(slack_transport, "_handle_reconciliation_tick",
+                            lambda ch, u, t: called.append(phrase))
+        slack_transport._run_followup_query("C1", "U_PRINCIPAL", phrase, "")
+        assert called == [phrase]

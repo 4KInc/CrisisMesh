@@ -1195,6 +1195,97 @@ def _handle_board_query(channel_id: str, thread_ts: str) -> None:
         logger.error(f"Failed to post board response: {e}")
 
 
+def _handle_reconciliation_tick(channel_id: str, user_id: str, thread_ts: str) -> None:
+    """Advance the reconciliation loop one tick and report what it decided.
+
+    Same authorisation as POST /incident/{id}/tick and the same fail-closed
+    rule: this advances real accountability state and, with delivery on, is
+    what pages people. An unconfigured IC list refuses rather than opening.
+    """
+    from src.core.agent_gateway import AUTHORIZED_IC_IDS, _load_authorized_ics
+    from src.core import reconciliation_loop
+
+    if not incident_state.is_active():
+        _post_bot_message(channel_id, ":warning: No active incident to reconcile.",
+                          thread_ts=thread_ts)
+        return
+
+    _load_authorized_ics()
+    if not AUTHORIZED_IC_IDS:
+        _post_bot_message(
+            channel_id,
+            ":no_entry: No incident commanders configured, so I will not advance "
+            "incident state. Set `AUTHORIZED_IC_IDS`.", thread_ts=thread_ts)
+        return
+    if not any(hmac.compare_digest(user_id, ic) for ic in AUTHORIZED_IC_IDS):
+        _post_bot_message(
+            channel_id,
+            ":no_entry: Only an incident commander can run reconciliation.",
+            thread_ts=thread_ts)
+        return
+
+    incident_id = incident_state.get_active_incident_id()
+    result = reconciliation_loop.run_tick(incident_id)
+    _post_bot_message(channel_id, _format_tick(result), thread_ts=thread_ts)
+
+
+def _format_tick(result: dict[str, Any]) -> str:
+    """Render a tick as what it decided and, honestly, what it could not do."""
+    from src.core import notify, reconciliation, reconciliation_loop as loop
+
+    if result.get("skipped_reason"):
+        return f":warning: Reconciliation skipped — {result['skipped_reason']}."
+
+    intents = result.get("intents", [])
+    by_action: dict[str, list[dict[str, Any]]] = {}
+    for i in intents:
+        by_action.setdefault(i["action"], []).append(i)
+
+    lines = [
+        f":arrows_counterclockwise: *RECONCILIATION — tick {result.get('tick')}*",
+        f"_Evaluated all {result.get('evaluated')} on the roster. "
+        f"Re-ping cap {reconciliation.attempt_cap()}._",
+        "",
+    ]
+
+    repings = by_action.get(loop.ACTION_REPING, [])
+    if repings:
+        lines.append(f":satellite_antenna: *Re-pinged {len(repings)}* "
+                     "— each on the channel that reaches them:")
+        for i in repings[:6]:
+            lines.append(f"  - *{i['name']}* via {i['channel']} "
+                         f"(`{i.get('outcome') or 'recorded'}`)")
+
+    escalations = by_action.get(loop.ACTION_ESCALATE, [])
+    if escalations:
+        lines.append("")
+        lines.append(f":arrow_up: *Escalated {len(escalations)} to a floor warden* "
+                     "— repeated requests unanswered:")
+        for i in escalations[:6]:
+            lines.append(f"  - *{i['name']}* — {i.get('reason', '')}")
+
+    flagged = by_action.get(loop.ACTION_FLAG_IC, [])
+    if flagged:
+        lines.append("")
+        lines.append(f":telephone_receiver: *{len(flagged)} cannot be reached at all "
+                     "— reach these by radio:*")
+        for i in flagged[:5]:
+            lines.append(f"  - *{i['name']}* — {i.get('reason', '')[:110]}")
+        if len(flagged) > 5:
+            lines.append(f"  - _…and {len(flagged) - 5} more; "
+                         "the full list is in the incident log._")
+
+    if not intents:
+        lines.append(":white_check_mark: Nobody left to chase — everyone tracked "
+                     "is accounted for.")
+
+    if not notify.delivery_enabled():
+        lines.append("")
+        lines.append("_Delivery is switched off: these are decisions, not messages "
+                     "that were sent._")
+    return "\n".join(lines)
+
+
 def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     """Generate and post a Law Enforcement Arrival Brief for the active incident."""
     if not incident_state.is_active():
@@ -1419,6 +1510,12 @@ def _run_followup_query(channel_id: str, user_id: str, query: str, thread_ts: st
 
     if any(kw in query_lower for kw in ["arrival brief", "law enforcement", "handoff", "le brief", "handoff package"]):
         _handle_arrival_brief(channel_id, thread_ts)
+        return
+
+    if any(kw in query_lower for kw in
+           ["chase", "who hasn't answered", "who hasnt answered", "reconcil",
+            "run the loop", "tick", "follow up on the silent"]):
+        _handle_reconciliation_tick(channel_id, user_id, thread_ts)
         return
 
     incident_ctx = ""
