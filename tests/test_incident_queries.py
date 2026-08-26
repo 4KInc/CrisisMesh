@@ -285,3 +285,67 @@ class TestThreatLocationPhrasing:
         phone = "+1" + KnowledgeBase.get().get_person("p005")["phone"].replace("-", "")
         handle_inbound_message(phone, "he is headed towards the gym")
         assert "gym" in observations.latest_threat_location("T-1").lower()
+
+
+class TestThreatTrack:
+    """One position tells a responder where the threat was. Two tell them which
+    way it is moving — the difference between arriving behind it and arriving
+    in front of it."""
+
+    def test_positions_are_ordered_oldest_first(self):
+        _incident()
+        observations.record("T-1", "gunshots heard from the east wing hallway", source="whatsapp")
+        observations.record("T-1", "he is headed towards the gym", source="whatsapp")
+        observations.record("T-1", "suspect now in the cafeteria", source="sms")
+        track = observations.threat_track("T-1")
+        assert [t["location"] for t in track] == \
+            ["east wing hallway", "gym", "cafeteria"]
+
+    def test_the_same_place_reported_twice_is_not_movement(self):
+        _incident()
+        observations.record("T-1", "he is headed towards the gym", source="sms")
+        observations.record("T-1", "he is in the gym", source="whatsapp")
+        assert len(observations.threat_track("T-1")) == 1
+
+    def test_observations_without_a_location_are_excluded(self):
+        _incident()
+        observations.record("T-1", "we are barricaded and quiet", source="sms")
+        assert observations.threat_track("T-1") == []
+
+    def test_each_position_keeps_who_reported_it(self):
+        """A responder weighs a sighting by who saw it."""
+        _incident()
+        observations.record("T-1", "he is headed towards the gym",
+                            source="whatsapp", person_name="Mr. Chen")
+        assert observations.threat_track("T-1")[0]["reported_by"] == "Mr. Chen"
+
+    def test_nothing_is_interpolated_between_sightings(self):
+        """Reported positions only. The brief must never invent a path."""
+        _incident()
+        observations.record("T-1", "he is headed towards the gym", source="sms")
+        observations.record("T-1", "suspect now in the cafeteria", source="sms")
+        assert len(observations.threat_track("T-1")) == 2
+
+
+class TestRelativeTimes:
+    """A responder reads this while moving. An ISO timestamp forces arithmetic
+    and "unknown" says nothing at all."""
+
+    def test_a_recent_sighting_reads_as_just_now(self):
+        from datetime import datetime, timezone
+        from src.services.slack_transport import _ago
+        assert _ago(datetime.now(timezone.utc).isoformat()) == "just now"
+
+    def test_minutes_are_rendered(self):
+        from datetime import datetime, timedelta, timezone
+        from src.services.slack_transport import _ago
+        then = (datetime.now(timezone.utc) - timedelta(minutes=7)).isoformat()
+        assert _ago(then) == "7 min ago"
+
+    def test_a_missing_time_says_so_rather_than_unknown(self):
+        from src.services.slack_transport import _ago
+        assert _ago("") == "time not recorded"
+
+    def test_an_unparseable_time_is_passed_through_not_dropped(self):
+        from src.services.slack_transport import _ago
+        assert _ago("not-a-timestamp") == "not-a-timestamp"

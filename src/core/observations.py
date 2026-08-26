@@ -84,6 +84,30 @@ def latest_threat_location(incident_id: str) -> str:
     return ""
 
 
+def threat_track(incident_id: str) -> list[dict[str, Any]]:
+    """Every reported threat position, oldest first.
+
+    A single "last known location" tells a responder where the threat was. Two
+    tell them which way it is moving, which is the difference between arriving
+    behind it and arriving in front of it. Reported positions only — never
+    inferred, never interpolated between sightings.
+    """
+    track: list[dict[str, Any]] = []
+    for entry in get(incident_id):
+        where = entry.get("threat_location_reported")
+        if not where:
+            continue
+        if track and track[-1]["location"].lower() == where.lower():
+            continue  # same place reported twice is not movement
+        track.append({
+            "location": where,
+            "at": entry.get("at", ""),
+            "source": entry.get("source", ""),
+            "reported_by": entry.get("person_name") or entry.get("from_address", ""),
+        })
+    return track
+
+
 def reset() -> None:
     with _lock:
         _observations.clear()

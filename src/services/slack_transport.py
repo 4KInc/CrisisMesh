@@ -1073,6 +1073,29 @@ def _handle_checkin_direct(channel_id: str, user_id: str, checkin: dict[str, Any
         logger.error(f"Failed to post check-in response: {e}")
 
 
+def _ago(iso_timestamp: str) -> str:
+    """"2 min ago" rather than an ISO string or the word unknown.
+
+    A responder reads this while moving. An absolute UTC timestamp forces them
+    to do arithmetic; "unknown" tells them nothing at all.
+    """
+    if not iso_timestamp:
+        return "time not recorded"
+    try:
+        from datetime import datetime, timezone
+
+        seen = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
+        seconds = int((datetime.now(timezone.utc) - seen).total_seconds())
+    except (ValueError, TypeError):
+        return iso_timestamp
+
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{seconds // 60} min ago"
+    return f"{seconds // 3600}h {(seconds % 3600) // 60}m ago"
+
+
 def _reported_rooms() -> dict[str, Any]:
     """Rooms that have reported, from every channel.
 
@@ -1245,7 +1268,19 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     if threat:
         lines.append("")
         lines.append(f":rotating_light: *THREAT OBSERVATION:* `{threat['status']}`")
-        lines.append(f"  Last reported: *{threat['last_reported_location']}* at {threat['last_reported_time']}")
+        lines.append(
+            f"  Last known location: *{threat['last_reported_location']}*"
+            f" — reported {_ago(threat.get('last_reported_time', ''))}")
+
+        # Two sightings tell a responder which way it is moving, which is the
+        # difference between arriving behind it and arriving in front of it.
+        track = observations.threat_track(incident_state.get_active_incident_id())
+        if len(track) > 1:
+            trail = " → ".join(t["location"] for t in track)
+            lines.append(f"  Reported movement: {trail}")
+            for t in reversed(track[:-1]):
+                who = t.get("reported_by") or t.get("source") or "unattributed"
+                lines.append(f"    · {t['location']} — {_ago(t['at'])}, via {who}")
         lines.append(f"  _{threat['caveat']}_")
 
     # ── Headcount ──
