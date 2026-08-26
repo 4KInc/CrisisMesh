@@ -132,10 +132,12 @@ class TestSeverityIsNotConfidence:
         )
 
     def test_low_confidence_is_never_low_severity(self):
-        """One keyword, no de-escalating language — moderate, not low."""
+        """One keyword, no de-escalating language. Not low — and, because a
+        fire carries a type floor, not moderate either."""
         result = classify_incident("Smoke in the hallway")
         assert result["keywords_matched"] == 1
-        assert result["severity"] == "moderate"
+        assert result["severity"] != "low"
+        assert result["severity"] == "high"
 
     @pytest.mark.parametrize("text,expected", [
         ("Fire drill scheduled for 10am, building will be evacuated", "low"),
@@ -188,3 +190,36 @@ class TestUnclassifiedIsNotMedical:
 
     def test_other_falls_back_to_the_general_playbook(self):
         assert select_playbook("other")["playbook_id"] == "playbook-general-v1"
+
+
+class TestSomeEmergenciesCannotBeMinor:
+    """"active shooter in the building" graded MODERATE, because `armed` is a
+    severity word while `shooter` and `gunshots` are not. The most dangerous
+    category the system models came out middling on its plainest description."""
+
+    @pytest.mark.parametrize("text", [
+        "active shooter in the building",
+        "active shooter reported in the east wing, gunshots heard",
+        "shooter on the second floor",
+        "someone with a gun near the cafeteria",
+    ])
+    def test_an_active_threat_is_never_below_critical(self, text):
+        assert classify_incident(text)["severity"] == "critical"
+
+    @pytest.mark.parametrize("text", ["smoke in the hallway", "fire alarm going off"])
+    def test_a_fire_is_never_below_high(self, text):
+        result = classify_incident(text)
+        assert result["severity"] in ("high", "critical")
+
+    def test_an_explicit_drill_still_outranks_the_floor(self):
+        """The reporter's own de-escalation beats the type. A drill is a drill."""
+        assert classify_incident("active threat drill scheduled for 10am")["severity"] == "low"
+
+    def test_a_contained_fire_with_no_injuries_stays_low(self):
+        assert classify_incident("smoke smell, contained, no injuries")["severity"] == "low"
+
+    def test_the_floor_never_lowers_a_severity(self):
+        assert classify_incident("uncontrolled fire spreading to multiple rooms")["severity"] == "critical"
+
+    def test_types_without_a_floor_are_unaffected(self):
+        assert classify_incident("hi")["severity"] == "moderate"

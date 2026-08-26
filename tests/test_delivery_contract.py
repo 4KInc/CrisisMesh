@@ -190,7 +190,7 @@ class TestTheCriticIsOnTheDeliveryPath:
 
         monkeypatch.setattr(notify, "_send", _fake_channel_send)
         monkeypatch.setattr(loop, "_reping_message",
-                            lambda i, n: "Proceed to Athletic Field and evacuate now.")
+                            lambda *a, **kw: "Proceed to Athletic Field and evacuate now.")
         loop.run_tick("T-1")
         assert wire, "nothing reached the wire"
         assert "Athletic Field" not in wire[0]
@@ -256,3 +256,63 @@ class TestTheTransportTellsTheTruthAboutWhatItKnows:
         assert sms_transport.send_sms("+15551110000", "x")["outcome"] == \
             sms_transport.OUTCOME_SUPPRESSED
         sms_consent.reset()
+
+
+class TestTheSwitchGovernsEveryPathToTheWire:
+    """CRISISMESH_DELIVERY gated the reconciliation loop but not the
+    declare-time fan-out, so the switch reported off while lockdown alerts were
+    still leaving the platform. A kill switch that covers one of two doors is
+    not a kill switch."""
+
+    def test_the_declare_fanout_is_suppressed_when_delivery_is_off(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_DELIVERY", "off")
+        sent = []
+        monkeypatch.setattr(notify, "_send",
+                            lambda reach, msg: sent.append(msg) or {"delivered": True})
+        result = notify.announce_incident({
+            "incident_id": "T-1", "report": "shooter",
+            "classification": {"incident_type": "active_threat", "severity": "critical"},
+        })
+        assert sent == [], "the fan-out sent with the switch off"
+        assert result.kind.endswith("suppressed")
+
+    def test_the_all_clear_is_suppressed_too(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_DELIVERY", "off")
+        sent = []
+        monkeypatch.setattr(notify, "_send",
+                            lambda reach, msg: sent.append(msg) or {"delivered": True})
+        notify.announce_resolution({"incident_id": "T-1", "incident_type": "fire"})
+        assert sent == []
+
+    def test_the_fanout_sends_when_the_switch_is_on(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_DELIVERY", "on")
+        sent = []
+        monkeypatch.setattr(notify, "_send",
+                            lambda reach, msg: sent.append(msg) or
+                            {"delivered": True, "outcome": "accepted"})
+        notify.announce_incident({
+            "incident_id": "T-1", "report": "shooter",
+            "classification": {"incident_type": "active_threat", "severity": "critical"},
+        })
+        assert sent, "the fan-out was suppressed with the switch on"
+
+
+class TestTheMessageAsksForSomethingPossible:
+    """A Slack app DM can have inbound messages disabled in the app config, in
+    which case "Reply SAFE" instructs something the recipient cannot do."""
+
+    def test_slack_recipients_are_told_a_route_that_works(self):
+        message = loop._reping_message("T-1", "Principal Johnson", channel="slack")
+        assert "/checkin" in message
+        assert "Reply SAFE" not in message
+
+    def test_phone_recipients_are_still_told_to_reply(self):
+        message = loop._reping_message("T-1", "Principal Johnson", channel="sms")
+        assert "Reply SAFE" in message
+
+    def test_repeat_requests_are_distinguishable(self):
+        """Two identical messages read as a duplicate rather than a second ask."""
+        first = loop._reping_message("T-1", "X", channel="sms", attempt=1)
+        second = loop._reping_message("T-1", "X", channel="sms", attempt=2)
+        assert first != second
+        assert "request 2" in second

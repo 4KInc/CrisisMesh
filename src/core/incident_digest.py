@@ -15,7 +15,7 @@ from __future__ import annotations
 from src.core import incident_state, observations
 
 
-def status_line() -> str:
+def status_line(include_checkin_hint: bool = True) -> str:
     """Summarise the active incident in one message, or say there isn't one."""
     if not incident_state.is_active():
         return (
@@ -48,5 +48,9 @@ def status_line() -> str:
         f"unaccounted {summary.get('unaccounted', 0)}."
     )
     parts.append(f"Running {incident_state.elapsed_minutes()} min.")
-    parts.append("Reply SAFE, SOS, INJURED or EVACUATED to check in.")
+    if include_checkin_hint:
+        # Suppressed when the caller has already given a channel-appropriate
+        # instruction: a Slack recipient told to run /checkin must not also be
+        # told to reply, which their app DM may not even permit.
+        parts.append("Reply SAFE, SOS, INJURED or EVACUATED to check in.")
     return " ".join(parts) + f" [{incident_id}]"

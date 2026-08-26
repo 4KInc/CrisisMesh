@@ -206,7 +206,8 @@ def _reconcile_person(
 
     produced.extend(_act(
         incident_id, tick, person, reach, rec.REPINGED, ACTION_REPING,
-        _reping_message(incident_id, name)))
+        _reping_message(incident_id, name, reach.channel,
+                        rec.get_state(incident_id, person_id).attempts + 1)))
     return produced
 
 
@@ -269,12 +270,22 @@ def _act(
         detail=str(result.get("detail", ""))[:200]))]
 
 
-def _reping_message(incident_id: str, name: str) -> str:
+def _reping_message(incident_id: str, name: str, channel: str = "", attempt: int = 0) -> str:
+    """Ask this person to check in, by a route that works on their channel.
+
+    Slack app DMs can have inbound messages disabled in the app configuration,
+    in which case "Reply SAFE" instructs something the recipient cannot do —
+    an instruction that asserts a capability the system does not have. The
+    slash command works regardless, so Slack recipients are told that instead.
+    """
     from src.core import incident_digest
 
-    return (f"CrisisMesh: {name}, you are not yet accounted for. "
-            f"Reply SAFE, SOS, INJURED or EVACUATED. "
-            + incident_digest.status_line())
+    how = ("Run `/checkin safe` (or injured / need_help / evacuated), or react "
+           "to the incident post." if channel == "slack"
+           else "Reply SAFE, SOS, INJURED or EVACUATED.")
+    nth = f" (request {attempt})" if attempt > 1 else ""
+    return (f"CrisisMesh: {name}, you are not yet accounted for{nth}. {how} "
+            + incident_digest.status_line(include_checkin_hint=False))
 
 
 def _escalation_message(incident_id: str, name: str, warden: str) -> str:

@@ -18,6 +18,7 @@ def fresh(tmp_path, monkeypatch):
     monkeypatch.setenv("CRISISMESH_CONSENT_LOG", str(tmp_path / "consent.jsonl"))
     monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
     monkeypatch.setenv("CRISISMESH_WHATSAPP_MODE", "twilio")
+    monkeypatch.setenv("CRISISMESH_DELIVERY", "on")
     sms_consent.reset()
     whatsapp_transport.reset_session_windows()
     notify.reset()

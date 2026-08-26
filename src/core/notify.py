@@ -361,6 +361,18 @@ def fan_out(
     has had a direct reply and does not need the broadcast as well.
     """
     result = FanOutResult(incident_id=incident_id, kind=kind)
+
+    if not delivery_enabled():
+        # The declare-time fan-out is delivery too. Gating only the
+        # reconciliation loop meant the switch reported off while lockdown
+        # alerts were still leaving the platform.
+        logger.info(
+            f"Fan-out {kind} for {incident_id or 'n/a'} suppressed — "
+            "CRISISMESH_DELIVERY is off"
+        )
+        result.kind = f"{kind}_suppressed"
+        return result
+
     excluded = {_normalize(e) if e.startswith("+") or e.isdigit() else e for e in exclude}
 
     for person in KnowledgeBase.get().personnel:

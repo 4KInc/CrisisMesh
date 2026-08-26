@@ -20,6 +20,7 @@ SEED_DIR = os.path.join(
 def fresh(tmp_path, monkeypatch):
     monkeypatch.setenv("CRISISMESH_CONSENT_LOG", str(tmp_path / "consent.jsonl"))
     monkeypatch.delenv("CRISISMESH_RESOLVE_TOKEN", raising=False)
+    monkeypatch.setenv("CRISISMESH_DELIVERY", "on")
     KnowledgeBase.reset()
     init_knowledge_base(SEED_DIR)
     incident_state.reset()

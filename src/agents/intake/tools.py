@@ -64,6 +64,37 @@ _LOW_WORDS = [
 ]
 
 
+# The incident type is itself evidence. "active shooter in the building" graded
+# MODERATE because `armed` happens to be a severity word while `shooter` and
+# `gunshots` are not — so the most dangerous category the system models came
+# out middling. A type floor is not a heuristic about wording; it is the claim
+# that some kinds of emergency cannot be minor.
+_SEVERITY_FLOOR: dict[str, str] = {
+    "active_threat": Severity.CRITICAL,
+    "bomb_threat": Severity.CRITICAL,
+    "fire": Severity.HIGH,
+    "hazmat": Severity.HIGH,
+}
+
+_SEVERITY_ORDER = [Severity.LOW, Severity.MODERATE, Severity.HIGH, Severity.CRITICAL]
+
+
+def _apply_type_floor(severity: str, incident_type: str) -> str:
+    """Raise a graded severity to its type's floor. Never lowers it.
+
+    Explicit de-escalation still wins: a drill is a drill. That is checked
+    before this runs, so "active threat drill" stays LOW.
+    """
+    floor = _SEVERITY_FLOOR.get(incident_type)
+    if not floor:
+        return severity
+    try:
+        return floor if _SEVERITY_ORDER.index(severity) < _SEVERITY_ORDER.index(floor) \
+            else severity
+    except ValueError:
+        return floor
+
+
 def _assess_severity(text_lower: str) -> str:
     """Grade a report by what it says, never by how well it parsed."""
     if any(w in text_lower for w in _LOW_WORDS):
@@ -102,6 +133,10 @@ def classify_incident(report_text: str) -> dict[str, Any]:
             best_type = itype
 
     severity = _assess_severity(text_lower)
+    if severity != Severity.LOW:
+        # An explicit drill or all-clear is the reporter's own de-escalation
+        # and outranks the floor.
+        severity = _apply_type_floor(severity, best_type)
 
     now = datetime.now(timezone.utc)
     incident_id = f"{best_type.upper()}-{now.year}-{now.strftime('%H%M%S')}"
