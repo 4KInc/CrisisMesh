@@ -755,30 +755,50 @@ class TestAskingReportsRatherThanActs:
     def test_asking_does_not_advance_the_tick_when_scheduled(self, monkeypatch):
         from src.services import slack_transport
 
+        import time as _time
+
         monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("CRISISMESH_TICK_SECONDS", "30")
         monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_PRINCIPAL")
-        loop.run_tick("T-1")                      # the scheduler's tick
-        before = loop.last_result("T-1")["tick"]
+        loop.start_for_incident("T-1")            # the scheduler, ticking on its own
+        try:
+            for _ in range(50):
+                if loop.last_result("T-1"):
+                    break
+                _time.sleep(0.05)
+            before = loop.last_result("T-1")["tick"]
 
-        posted = []
-        monkeypatch.setattr(slack_transport, "_post_bot_message",
-                            lambda ch, msg, thread_ts="": posted.append(msg))
-        slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
+            posted = []
+            monkeypatch.setattr(slack_transport, "_post_bot_message",
+                                lambda ch, msg, thread_ts="": posted.append(msg))
+            slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
 
-        assert loop.last_result("T-1")["tick"] == before, "asking advanced the tick"
-        assert f"tick {before}" in posted[0]
+            assert loop.last_result("T-1")["tick"] == before, "asking advanced the tick"
+            assert f"tick {before}" in posted[0]
+        finally:
+            loop.stop()
 
     def test_the_reading_says_it_ran_on_its_own(self, monkeypatch):
         from src.services import slack_transport
 
+        import time as _time
+
         monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("CRISISMESH_TICK_SECONDS", "30")
         monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_PRINCIPAL")
-        loop.run_tick("T-1")
-        posted = []
-        monkeypatch.setattr(slack_transport, "_post_bot_message",
-                            lambda ch, msg, thread_ts="": posted.append(msg))
-        slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
-        assert "on its own" in posted[0]
+        loop.start_for_incident("T-1")
+        try:
+            for _ in range(50):
+                if loop.last_result("T-1"):
+                    break
+                _time.sleep(0.05)
+            posted = []
+            monkeypatch.setattr(slack_transport, "_post_bot_message",
+                                lambda ch, msg, thread_ts="": posted.append(msg))
+            slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
+            assert "on its own" in posted[0]
+        finally:
+            loop.stop()
 
     def test_asking_still_advances_when_the_scheduler_is_off(self, monkeypatch):
         from src.services import slack_transport
@@ -840,3 +860,38 @@ class TestTheTimerSurvivesAnInstanceRestart:
         monkeypatch.delenv("CRISISMESH_AUTO_TICK", raising=False)
         loop.stop()
         assert loop.ensure_running() is False
+
+
+class TestTheFirstTickIsPrompt:
+    """Waiting a full interval before the opening tick left the first minute of
+    an incident — the minute in which nobody has checked in yet and chasing
+    matters most — with no reconciliation at all."""
+
+    def test_a_tick_lands_without_waiting_an_interval(self, monkeypatch):
+        import time as _time
+
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("CRISISMESH_TICK_SECONDS", "60")
+        loop.start_for_incident("T-1")
+        try:
+            for _ in range(60):
+                if loop.last_result("T-1"):
+                    break
+                _time.sleep(0.05)
+            assert loop.last_result("T-1").get("tick") == 1, (
+                "no tick inside the first seconds of a 60s interval"
+            )
+        finally:
+            loop.stop()
+
+    def test_it_keeps_ticking_on_the_interval_afterwards(self, monkeypatch):
+        import time as _time
+
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("CRISISMESH_TICK_SECONDS", "5")
+        loop.start_for_incident("T-1")
+        try:
+            _time.sleep(6.5)
+            assert loop.last_result("T-1").get("tick", 0) >= 2
+        finally:
+            loop.stop()

@@ -430,11 +430,17 @@ def start(incident_id: str, interval_seconds: float | None = None) -> None:
 
     def _pump() -> None:
         logger.info(f"Reconciliation timer started for {incident_id} ({interval}s)")
-        while not _stop.wait(interval):
+        # Tick first, then wait. Waiting an interval before the opening tick
+        # left the first minute of an incident — the minute in which nobody has
+        # checked in yet and every second of chasing counts most — with no
+        # reconciliation at all.
+        while True:
             try:
                 run_tick(incident_id)
             except Exception as exc:  # noqa: BLE001 - a dead loop chases nobody
                 logger.error(f"Tick failed for {incident_id}, continuing: {exc}")
+            if _stop.wait(interval):
+                break
         logger.info(f"Reconciliation timer stopped for {incident_id}")
 
     _timer = threading.Thread(target=_pump, daemon=True, name="reconciliation")
