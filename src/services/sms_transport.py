@@ -358,6 +358,7 @@ def handle_inbound_sms(
       - Check-in reply (single keyword: SAFE, SOS, INJURED, etc.)
       - Incident report (anything else — fires the deterministic pipeline)
     """
+    body = declaration_guard.strip_command_prefix(body)
     word = body.strip().lower().strip(".!?")
 
     compliance = _handle_compliance_keyword(from_number, word)

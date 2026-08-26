@@ -62,6 +62,23 @@ _OFF_TOPIC_PATTERNS = (
 MIN_REPORT_WORDS = 2
 
 
+# Slack slash commands typed into WhatsApp or SMS. The channel has no such
+# concept, so the prefix became part of the report and the arrival brief read
+# "Location: 1200 Oak Street — /incident active shooter reported in the east
+# wing". Strip it: the person meant the words after it.
+_COMMAND_PREFIXES = ("/incident", "/checkin", "/crisismesh", "@crisismesh")
+
+
+def strip_command_prefix(text: str) -> str:
+    """Remove a Slack-style command prefix from a phone-channel message."""
+    stripped = text.strip()
+    lowered = stripped.lower()
+    for prefix in _COMMAND_PREFIXES:
+        if lowered.startswith(prefix):
+            return stripped[len(prefix):].strip(" :,-") or stripped
+    return stripped
+
+
 def is_plausible_report(text: str) -> tuple[bool, str]:
     """Return (allowed, reason). Reason is empty when allowed."""
     stripped = text.strip()

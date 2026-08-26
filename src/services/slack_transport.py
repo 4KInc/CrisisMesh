@@ -1381,6 +1381,12 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
         if entry.get("threat_location_reported"):
             threat_seen_at = entry.get("at", "")
             break
+    if not threat_seen_at and threat_loc:
+        # No witness report yet, so the position is the one in the opening
+        # message and its time is the declaration. Rendering that as "reported
+        # unknown" hid the freshest fact the brief had.
+        track = observations.threat_track(incident_id)
+        threat_seen_at = track[0]["at"] if track else ""
 
     brief = generate_arrival_brief(
         incident_id=incident_state.get_active_incident_id(),

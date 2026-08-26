@@ -158,3 +158,48 @@ class TestSituationalQuestionsDuringAnIncident:
     def test_off_topic_stays_refused_even_during_an_incident(self):
         self._lockdown()
         assert declaration_guard.is_plausible_report("What is promises in javascript")[0] is False
+
+
+class TestSlashCommandsTypedIntoPhoneChannels:
+    """WhatsApp and SMS have no slash commands, so "/incident active shooter in
+    the east wing" became the report text verbatim — and the arrival brief read
+    "Location: 1200 Oak Street — /incident active shooter reported in the east
+    wing". The person meant the words after the prefix."""
+
+    @pytest.mark.parametrize("text,expected", [
+        ("/incident active shooter in the east wing", "active shooter in the east wing"),
+        ("/checkin safe", "safe"),
+        ("@CrisisMesh who hasn't answered", "who hasn't answered"),
+        ("/incident: smoke in the gym", "smoke in the gym"),
+    ])
+    def test_the_prefix_is_removed(self, text, expected):
+        assert declaration_guard.strip_command_prefix(text) == expected
+
+    @pytest.mark.parametrize("text", ["SAFE", "room 104: all safe",
+                                      "he is headed towards the gym"])
+    def test_ordinary_messages_are_untouched(self, text):
+        assert declaration_guard.strip_command_prefix(text) == text
+
+    def test_a_bare_prefix_is_left_alone(self):
+        """"/incident" with nothing after it is not an empty report."""
+        assert declaration_guard.strip_command_prefix("/incident") == "/incident"
+
+    def test_a_slash_command_still_declares_through_whatsapp(self):
+        from src.core import incident_state
+        from src.services.whatsapp_transport import handle_inbound_message
+
+        result = handle_inbound_message(
+            "+15551110000", "/incident active shooter in the east wing")
+        assert result["action"] == "incident"
+        assert not incident_state.get_latest_incident()["report"].startswith("/")
+
+    def test_a_slash_checkin_still_checks_in(self):
+        from src.core import incident_state
+        from src.services.whatsapp_transport import handle_inbound_message
+
+        incident_state.declare(
+            "T-1", {"incident_id": "T-1",
+                    "classification": {"incident_type": "fire", "severity": "high"}},
+            source="slack")
+        result = handle_inbound_message("+16155550101", "/checkin safe")
+        assert result["action"] == "checkin"

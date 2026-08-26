@@ -220,6 +220,7 @@ def handle_inbound_message(
 
     Returns a result dict with 'reply' text and 'action' type.
     """
+    body = declaration_guard.strip_command_prefix(body)
     note_inbound(from_number)
     word = body.strip().lower()
 
