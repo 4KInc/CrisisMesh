@@ -391,3 +391,55 @@ class TestTheTrailStartsAtTheDeclaration:
             source="slack")
         observations.record("T-2", "he is headed towards the gym", source="sms")
         assert [t["location"] for t in observations.threat_track("T-2")] == ["gym"]
+
+
+class TestTheBriefsRoomSectionSeesEveryChannel:
+    """The arrival brief keeps its own copy of the room logic — the third in
+    the file — and it read the Slack-only dict. Two rooms reported by WhatsApp
+    thirty seconds earlier were still listed under IN THREAT ZONE in the
+    document handed to police."""
+
+    def _phone(self):
+        from src.core.knowledge_base import KnowledgeBase
+        return "+1" + KnowledgeBase.get().get_person("p005")["phone"].replace("-", "")
+
+    def test_a_whatsapp_room_report_leaves_the_silent_list(self):
+        from src.services.whatsapp_transport import handle_inbound_message
+        from src.services.slack_transport import _reported_rooms
+
+        _incident()
+        handle_inbound_message(self._phone(), "room 104: 23 students are safe, 2 are missing")
+        handle_inbound_message(self._phone(), "room 101: all 25 students are safe")
+        board = _reported_rooms()
+        assert {"104", "101"} <= set(board)
+
+    def test_the_counts_come_from_every_channel(self):
+        from src.services.whatsapp_transport import handle_inbound_message
+        from src.services.slack_transport import _reported_rooms
+
+        _incident()
+        handle_inbound_message(self._phone(), "room 104: 23 students are safe, 2 are missing")
+        handle_inbound_message(self._phone(), "room 101: all 25 students are safe")
+        board = _reported_rooms()
+        assert sum(r["safe"] for r in board.values()) == 48
+        assert sum(r["missing"] for r in board.values()) == 2
+
+
+class TestTheICListParsesBothDelimiters:
+    """Set with a comma through gcloud and the whole string parses as one id
+    that matches nobody. The gate then refuses everyone — safe, and extremely
+    confusing, because the failure looks identical to being unauthorised."""
+
+    def test_carets_are_accepted(self, monkeypatch):
+        from src.core.agent_gateway import AUTHORIZED_IC_IDS, _load_authorized_ics
+
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_ONE^U_TWO")
+        _load_authorized_ics()
+        assert AUTHORIZED_IC_IDS == {"U_ONE", "U_TWO"}
+
+    def test_commas_still_work(self, monkeypatch):
+        from src.core.agent_gateway import AUTHORIZED_IC_IDS, _load_authorized_ics
+
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_ONE,U_TWO")
+        _load_authorized_ics()
+        assert AUTHORIZED_IC_IDS == {"U_ONE", "U_TWO"}

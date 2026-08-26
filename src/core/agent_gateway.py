@@ -79,7 +79,13 @@ def _load_authorized_ics() -> None:
     raw = os.environ.get("AUTHORIZED_IC_IDS", "")
     AUTHORIZED_IC_IDS.clear()
     if raw:
-        AUTHORIZED_IC_IDS.update(id.strip() for id in raw.split(",") if id.strip())
+        # `^` as well as `,`: gcloud reserves the comma in --update-env-vars,
+        # so a multi-id list cannot use one. Set with a comma and the whole
+        # string parses as a single id that matches nobody — the gate then
+        # refuses everyone, silently and fail-closed, which is safe and
+        # extremely confusing.
+        AUTHORIZED_IC_IDS.update(
+            i.strip() for i in raw.replace("^", ",").split(",") if i.strip())
 
 
 class PendingAction:

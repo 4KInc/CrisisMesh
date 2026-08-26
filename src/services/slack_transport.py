@@ -1383,16 +1383,20 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
         lines.append(f":warning: Need help: {headcount['need_help']}")
 
     # ── Room check-ins + silent rooms ──
+    # Reads the merged board, not the Slack-only dict. This is the third copy
+    # of the room logic in the file and the one that matters most: a teacher
+    # who reported her room by WhatsApp was still listed as silent in the
+    # document handed to police.
+    board = _reported_rooms()
     all_rooms = {r["room_id"]: r for r in kb.rooms}
-    reported_rooms = set(_room_checkins.keys())
-    silent_rooms = sorted(set(all_rooms.keys()) - reported_rooms)
+    silent_rooms = sorted(set(all_rooms.keys()) - set(board.keys()))
 
-    if _room_checkins:
-        total_safe = sum(r["safe"] for r in _room_checkins.values())
-        total_missing = sum(r["missing"] for r in _room_checkins.values())
+    if board:
+        total_safe = sum(r["safe"] for r in board.values())
+        total_missing = sum(r["missing"] for r in board.values())
         lines.append("")
-        lines.append(f":clipboard: *Room Check-ins ({len(_room_checkins)}/{len(all_rooms)} rooms reported):*")
-        for room_id, info in sorted(_room_checkins.items()):
+        lines.append(f":clipboard: *Room Check-ins ({len(board)}/{len(all_rooms)} rooms reported):*")
+        for room_id, info in sorted(board.items()):
             icon = ":white_check_mark:" if info["missing"] == 0 else ":red_circle:"
             room_data = all_rooms.get(room_id, {})
             teacher = room_data.get("notes", "")
