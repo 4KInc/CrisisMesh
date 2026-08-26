@@ -1849,18 +1849,73 @@ def _record_policy_violation(violation: Any) -> None:
         logger.error(f"Could not trace policy violation: {exc}")
 
 
+SLACK_TEXT_LIMIT = 3000
+
+
+def _split_for_slack(text: str, limit: int = SLACK_TEXT_LIMIT) -> list[str]:
+    """Break a long message on line boundaries, never mid-word.
+
+    Slack truncates a text block past ~3000 characters, which is how the
+    arrival brief came to end "East Wing F2it)" — a document handed to
+    responders, cut off mid-sentence with no indication that anything was
+    missing. Splitting on newlines keeps every line whole and every part
+    readable on its own.
+    """
+    if len(text) <= limit:
+        return [text]
+
+    parts: list[str] = []
+    current: list[str] = []
+    size = 0
+    for line in text.split("\n"):
+        # A single line longer than the limit is hard-wrapped; nothing else can
+        # be done with it, but it is the only case where a break lands
+        # mid-line.
+        while len(line) > limit:
+            if current:
+                parts.append("\n".join(current))
+                current, size = [], 0
+            parts.append(line[:limit])
+            line = line[limit:]
+        if size + len(line) + 1 > limit and current:
+            parts.append("\n".join(current))
+            current, size = [], 0
+        current.append(line)
+        size += len(line) + 1
+    if current:
+        parts.append("\n".join(current))
+    return parts
+
+
 def _post_bot_message(channel_id: str, text: str, thread_ts: str = "") -> None:
-    """Post a message as the bot to the given channel."""
+    """Post a message as the bot, splitting anything past Slack's text limit."""
     bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
     if not HAS_SLACK or not bot_token:
         logger.info("SLACK_BOT_TOKEN not set — skipping bot message")
         return
+
+    parts = _split_for_slack(_enforced(text, surface="slack_bot_message"))
+    if len(parts) > 1:
+        total = len(parts)
+        parts = [f"{p}\n\n_(part {i + 1} of {total})_" for i, p in enumerate(parts)]
+        for part in parts:
+            _post_one(channel_id, part, thread_ts)
+        return
+
+    try:
+        _post_one(channel_id, parts[0], thread_ts)
+    except Exception as e:
+        logger.error(f"Failed to post bot message: {e}")
+
+
+def _post_one(channel_id: str, text: str, thread_ts: str = "") -> None:
+    """Send one already-sized, already-enforced chunk."""
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    if not HAS_SLACK or not bot_token:
+        return
     try:
         client = WebClient(token=bot_token)
-        kwargs: dict[str, Any] = {
-            "channel": channel_id,
-            "text": _enforced(text, surface="slack_bot_message"),
-        }
+        kwargs: dict[str, Any] = {"channel": channel_id, "text": text}
         if thread_ts:
             kwargs["thread_ts"] = thread_ts
         client.chat_postMessage(**kwargs)
