@@ -620,3 +620,49 @@ class TestSlackReconciliationTrigger:
                             lambda ch, u, t: called.append(phrase))
         slack_transport._run_followup_query("C1", "U_PRINCIPAL", phrase, "")
         assert called == [phrase]
+
+
+class TestUnreachableListIsReadable:
+    """Thirty people with the same blocker rendered as thirty near-identical
+    sentences, each cut mid-word at 110 characters — which buries the names an
+    incident commander is going to read out over a radio."""
+
+    REASON = ("SMS: no confirmed opt-in; WhatsApp: outside the 24h window, "
+              "no template; Slack: id does not resolve to a workspace member")
+
+    def test_a_blocker_chain_becomes_one_readable_phrase(self):
+        from src.services.slack_transport import _summarise_reason
+        assert _summarise_reason(self.REASON) == (
+            "no SMS opt-in, no open WhatsApp session, Slack id does not resolve")
+
+    def test_names_are_grouped_under_a_shared_reason(self):
+        from src.services.slack_transport import _group_by_reason
+
+        flagged = [{"name": n, "reason": self.REASON}
+                   for n in ("Maria Santos", "Mr. Chen", "Ms. Williams")]
+        grouped = _group_by_reason(flagged)
+        assert len(grouped) == 1
+        assert grouped[0][1] == ["Maria Santos", "Mr. Chen", "Ms. Williams"]
+
+    def test_the_largest_group_comes_first(self):
+        """The systemic gap before the one-offs."""
+        from src.services.slack_transport import _group_by_reason
+
+        flagged = [{"name": n, "reason": self.REASON} for n in ("A", "B", "C")]
+        flagged.append({"name": "D", "reason": "no phone number on the roster"})
+        assert [len(names) for _, names in _group_by_reason(flagged)] == [3, 1]
+
+    def test_no_name_is_truncated_mid_word(self):
+        from src.services.slack_transport import _format_tick, _group_by_reason
+        from src.core import reconciliation_loop as loop
+
+        flagged = [{"action": loop.ACTION_FLAG_IC, "person_id": f"p{i}",
+                    "name": f"Person {i}", "reason": self.REASON}
+                   for i in range(30)]
+        rendered = _format_tick({"tick": 1, "evaluated": 34, "intents": flagged})
+        assert "works" not in rendered
+        assert "and 22 more" in rendered
+
+    def test_an_empty_reason_still_says_something(self):
+        from src.services.slack_transport import _summarise_reason
+        assert _summarise_reason("") == "no channel available"

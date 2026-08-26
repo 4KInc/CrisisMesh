@@ -1195,6 +1195,45 @@ def _handle_board_query(channel_id: str, thread_ts: str) -> None:
         logger.error(f"Failed to post board response: {e}")
 
 
+def _summarise_reason(reason: str) -> str:
+    """Turn a chain of per-channel blockers into one readable phrase."""
+    parts = [p.strip() for p in (reason or "").split(";") if p.strip()]
+    if not parts:
+        return "no channel available"
+
+    short = []
+    for part in parts:
+        lowered = part.lower()
+        if "no confirmed opt-in" in lowered:
+            short.append("no SMS opt-in")
+        elif "opted out" in lowered:
+            short.append("opted out of SMS")
+        elif "24h window" in lowered:
+            short.append("no open WhatsApp session")
+        elif "does not resolve" in lowered:
+            short.append("Slack id does not resolve")
+        elif "no slack user id" in lowered:
+            short.append("no Slack id on file")
+        elif "no phone number" in lowered:
+            short.append("no phone on file")
+        elif "no bot token" in lowered:
+            short.append("Slack not configured")
+        elif "transport off" in lowered:
+            short.append("WhatsApp off")
+        else:
+            short.append(part)
+    return ", ".join(dict.fromkeys(short))
+
+
+def _group_by_reason(flagged: list[dict[str, Any]]) -> list[tuple[str, list[str]]]:
+    """Largest group first — the systemic gap before the one-offs."""
+    grouped: dict[str, list[str]] = {}
+    for intent in flagged:
+        grouped.setdefault(_summarise_reason(intent.get("reason", "")), []).append(
+            intent.get("name", intent.get("person_id", "?")))
+    return sorted(grouped.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+
+
 def _handle_reconciliation_tick(channel_id: str, user_id: str, thread_ts: str) -> None:
     """Advance the reconciliation loop one tick and report what it decided.
 
@@ -1269,11 +1308,15 @@ def _format_tick(result: dict[str, Any]) -> str:
         lines.append("")
         lines.append(f":telephone_receiver: *{len(flagged)} cannot be reached at all "
                      "— reach these by radio:*")
-        for i in flagged[:5]:
-            lines.append(f"  - *{i['name']}* — {i.get('reason', '')[:110]}")
-        if len(flagged) > 5:
-            lines.append(f"  - _…and {len(flagged) - 5} more; "
-                         "the full list is in the incident log._")
+        # Grouped by reason. Thirty people with the same blocker rendered as
+        # thirty near-identical sentences, each cut mid-word, which buries the
+        # names an incident commander is actually going to read out.
+        for reason, names in _group_by_reason(flagged):
+            lines.append(f"  _{reason}_")
+            shown = ", ".join(names[:8])
+            if len(names) > 8:
+                shown += f", and {len(names) - 8} more"
+            lines.append(f"    {shown}")
 
     if not intents:
         lines.append(":white_check_mark: Nobody left to chase — everyone tracked "
