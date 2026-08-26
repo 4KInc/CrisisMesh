@@ -745,3 +745,58 @@ class TestAutoTick:
         assert loop.is_running() is True
         notify._stop_reconciliation()
         assert loop.is_running() is False
+
+
+class TestAskingReportsRatherThanActs:
+    """With the scheduler running, "who hasn't answered" is a reading, not an
+    action. Advancing on every question would let a commander's curiosity
+    re-ping people ahead of schedule."""
+
+    def test_asking_does_not_advance_the_tick_when_scheduled(self, monkeypatch):
+        from src.services import slack_transport
+
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_PRINCIPAL")
+        loop.run_tick("T-1")                      # the scheduler's tick
+        before = loop.last_result("T-1")["tick"]
+
+        posted = []
+        monkeypatch.setattr(slack_transport, "_post_bot_message",
+                            lambda ch, msg, thread_ts="": posted.append(msg))
+        slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
+
+        assert loop.last_result("T-1")["tick"] == before, "asking advanced the tick"
+        assert f"tick {before}" in posted[0]
+
+    def test_the_reading_says_it_ran_on_its_own(self, monkeypatch):
+        from src.services import slack_transport
+
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_PRINCIPAL")
+        loop.run_tick("T-1")
+        posted = []
+        monkeypatch.setattr(slack_transport, "_post_bot_message",
+                            lambda ch, msg, thread_ts="": posted.append(msg))
+        slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
+        assert "on its own" in posted[0]
+
+    def test_asking_still_advances_when_the_scheduler_is_off(self, monkeypatch):
+        from src.services import slack_transport
+
+        monkeypatch.delenv("CRISISMESH_AUTO_TICK", raising=False)
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_PRINCIPAL")
+        monkeypatch.setattr(slack_transport, "_post_bot_message",
+                            lambda ch, msg, thread_ts="": None)
+        slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
+        assert loop.last_result("T-1")["tick"] == 1
+
+    def test_the_first_ask_before_any_scheduled_tick_still_runs_one(self, monkeypatch):
+        """Otherwise a commander asking in the first minute gets nothing."""
+        from src.services import slack_transport
+
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_PRINCIPAL")
+        monkeypatch.setattr(slack_transport, "_post_bot_message",
+                            lambda ch, msg, thread_ts="": None)
+        slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
+        assert loop.last_result("T-1")["tick"] == 1

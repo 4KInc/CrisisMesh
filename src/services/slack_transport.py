@@ -1264,11 +1264,22 @@ def _handle_reconciliation_tick(channel_id: str, user_id: str, thread_ts: str) -
         return
 
     incident_id = incident_state.get_active_incident_id()
+
+    # When the scheduler is running, asking reports the latest completed tick
+    # rather than forcing an extra one. Advancing on every question would let
+    # a commander's curiosity re-ping people ahead of schedule, and the answer
+    # to "who hasn't answered" is a reading, not an action.
+    latest = reconciliation_loop.last_result(incident_id)
+    if reconciliation_loop.auto_tick_enabled() and latest:
+        _post_bot_message(channel_id, _format_tick(latest, live=True),
+                          thread_ts=thread_ts)
+        return
+
     result = reconciliation_loop.run_tick(incident_id)
     _post_bot_message(channel_id, _format_tick(result), thread_ts=thread_ts)
 
 
-def _format_tick(result: dict[str, Any]) -> str:
+def _format_tick(result: dict[str, Any], live: bool = False) -> str:
     """Render a tick as what it decided and, honestly, what it could not do."""
     from src.core import notify, reconciliation, reconciliation_loop as loop
 
@@ -1280,12 +1291,19 @@ def _format_tick(result: dict[str, Any]) -> str:
     for i in intents:
         by_action.setdefault(i["action"], []).append(i)
 
-    lines = [
-        f":arrows_counterclockwise: *RECONCILIATION — tick {result.get('tick')}*",
-        f"_Evaluated all {result.get('evaluated')} on the roster. "
-        f"Re-ping cap {reconciliation.attempt_cap()}._",
-        "",
-    ]
+    header = f":arrows_counterclockwise: *RECONCILIATION — tick {result.get('tick')}*"
+    subtitle = (f"_Evaluated all {result.get('evaluated')} on the roster. "
+                f"Re-ping cap {reconciliation.attempt_cap()}._")
+    if live:
+        from src.core import incident_state as _st
+
+        due = loop.seconds_until_next_tick(_st.get_active_incident_id())
+        ran = _ago(result.get("at", ""))
+        subtitle = (f"_Ran {ran} on its own"
+                    + (f", next in {due}s" if due is not None else "")
+                    + f". Evaluated all {result.get('evaluated')} on the roster. "
+                    f"Re-ping cap {reconciliation.attempt_cap()}._")
+    lines = [header, subtitle, ""]
 
     repings = by_action.get(loop.ACTION_REPING, [])
     if repings:

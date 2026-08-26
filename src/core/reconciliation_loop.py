@@ -64,6 +64,7 @@ class Intent:
 
 
 _intents: dict[str, list[dict[str, Any]]] = {}
+_last_result: dict[str, dict[str, Any]] = {}
 _tick_counter: dict[str, int] = {}
 _running_incidents: set[str] = set()
 _lock = threading.RLock()
@@ -75,8 +76,34 @@ _stop = threading.Event()
 def reset() -> None:
     with _lock:
         _intents.clear()
+        _last_result.clear()
         _tick_counter.clear()
         _running_incidents.clear()
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def last_result(incident_id: str) -> dict[str, Any]:
+    """The most recent completed tick, or {} if none has run."""
+    with _lock:
+        return dict(_last_result.get(incident_id, {}))
+
+
+def seconds_until_next_tick(incident_id: str) -> int | None:
+    """How long until the scheduler runs again, or None when it is not running."""
+    if not (auto_tick_enabled() and is_running()):
+        return None
+    last = last_result(incident_id).get("at")
+    if not last:
+        return rec.tick_interval_seconds()
+    try:
+        elapsed = (datetime.now(timezone.utc)
+                   - datetime.fromisoformat(last)).total_seconds()
+    except (ValueError, TypeError):
+        return rec.tick_interval_seconds()
+    return max(0, int(rec.tick_interval_seconds() - elapsed))
 
 
 def intents(incident_id: str) -> list[dict[str, Any]]:
@@ -124,6 +151,8 @@ def run_tick(incident_id: str) -> dict[str, Any]:
 
         recorded = _reconcile(incident_id, tick)
         rec.commit_tick(incident_id, tick)
+        with _lock:
+            _last_result[incident_id] = {**recorded, "at": _now_iso()}
         return recorded
     finally:
         with _lock:
