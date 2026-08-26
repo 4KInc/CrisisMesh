@@ -12,6 +12,24 @@ skipped until delivery exists; whoever wires it removes the skip and makes them
 pass, and the shape of the fix is dictated by what they demand rather than
 retrofitted to it.
 
+Six return paths, one flag, four distinct required behaviours. `send_sms`
+returns `delivered: False` for: opted out, mode off, not configured, HTTP
+rejection, a 2xx carrying a terminal status, and a thrown call. The first three
+are known-not-sent and must never be retried — they are decisions, not
+failures. The next two are known-not-sent and must be retried. The last is
+unknown and must be retried while being recorded as unknown.
+
+Rejected and unknown come from different code paths and must stay separate at
+the source: the terminal-status inspection genuinely knows the provider refused,
+while the exception boundary genuinely does not know whether the request reached
+the wire before it timed out. Collapsing the first into the second because both
+are "not delivered" re-creates this bug one level up, with better wording.
+
+`unknown` has to be a returned value, not an exception the caller catches and
+reinterprets — from inside the process, a timeout on a request that already hit
+the wire is indistinguishable from one that never did, and sometimes the answer
+stays unknown until a delivery receipt arrives asynchronously or never comes.
+
 Three outcomes, not two. `send_sms` currently catches its own exception and
 returns `delivered: False, "transport error, nothing was sent"` — so at the
 boundary the loop decides on, a carrier refusal and a call that never completed
