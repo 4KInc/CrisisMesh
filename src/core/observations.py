@@ -93,6 +93,26 @@ def threat_track(incident_id: str) -> list[dict[str, Any]]:
     inferred, never interpolated between sightings.
     """
     track: list[dict[str, Any]] = []
+
+    # The declaration is a sighting too, and it is the first one. Without it a
+    # trail reads "gym -> cafeteria" for an incident that opened with "shooter
+    # in the east wing", losing the point the threat started from.
+    from src.core import incident_state
+
+    record = incident_state.get_latest_incident()
+    if record.get("incident_id") == incident_id:
+        from src.agents.sitrep.tools import extract_threat_observation
+
+        first = extract_threat_observation(record.get("report", ""))
+        if first:
+            origin = incident_state.get_origin()
+            track.append({
+                "location": first,
+                "at": _started_at_iso(origin.get("started_at", 0.0)),
+                "source": origin.get("source", ""),
+                "reported_by": "initial report",
+            })
+
     for entry in get(incident_id):
         where = entry.get("threat_location_reported")
         if not where:
@@ -106,6 +126,12 @@ def threat_track(incident_id: str) -> list[dict[str, Any]]:
             "reported_by": entry.get("person_name") or entry.get("from_address", ""),
         })
     return track
+
+
+def _started_at_iso(started_at: float) -> str:
+    if not started_at:
+        return ""
+    return datetime.fromtimestamp(started_at, tz=timezone.utc).isoformat()
 
 
 def reset() -> None:

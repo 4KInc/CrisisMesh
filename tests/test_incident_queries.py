@@ -349,3 +349,45 @@ class TestRelativeTimes:
     def test_an_unparseable_time_is_passed_through_not_dropped(self):
         from src.services.slack_transport import _ago
         assert _ago("not-a-timestamp") == "not-a-timestamp"
+
+
+class TestTheTrailStartsAtTheDeclaration:
+    """The declaration is a sighting too, and it is the first one. Without it a
+    trail reads "gym → cafeteria" for an incident that opened with "shooter in
+    the east wing" — losing the point the threat started from, which is the one
+    responders are driving toward."""
+
+    def test_the_original_report_is_the_first_position(self):
+        incident_state.declare(
+            "T-1", {"incident_id": "T-1",
+                    "report": "active shooter reported in the east wing, gunshots heard",
+                    "classification": {"incident_type": "active_threat", "severity": "critical"}},
+            source="slack")
+        observations.record("T-1", "he is headed towards the gym", source="whatsapp")
+        track = observations.threat_track("T-1")
+        assert [t["location"] for t in track] == ["east wing", "gym"]
+        assert track[0]["reported_by"] == "initial report"
+
+    def test_a_declaration_with_no_location_adds_nothing(self):
+        incident_state.declare(
+            "T-1", {"incident_id": "T-1", "report": "something is very wrong",
+                    "classification": {"incident_type": "active_threat", "severity": "critical"}},
+            source="slack")
+        observations.record("T-1", "he is headed towards the gym", source="sms")
+        assert [t["location"] for t in observations.threat_track("T-1")] == ["gym"]
+
+    def test_a_witness_confirming_the_original_place_is_not_movement(self):
+        incident_state.declare(
+            "T-1", {"incident_id": "T-1", "report": "shooter in the east wing",
+                    "classification": {"incident_type": "active_threat", "severity": "critical"}},
+            source="slack")
+        observations.record("T-1", "he is still in the east wing", source="sms")
+        assert len(observations.threat_track("T-1")) == 1
+
+    def test_another_incidents_declaration_is_not_borrowed(self):
+        incident_state.declare(
+            "T-1", {"incident_id": "T-1", "report": "shooter in the east wing",
+                    "classification": {"incident_type": "active_threat", "severity": "critical"}},
+            source="slack")
+        observations.record("T-2", "he is headed towards the gym", source="sms")
+        assert [t["location"] for t in observations.threat_track("T-2")] == ["gym"]
