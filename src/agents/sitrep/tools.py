@@ -12,20 +12,61 @@ from typing import Any
 
 from src.core.knowledge_base import KnowledgeBase
 
+# How people actually report a moving threat. Measured against phrasings a
+# teacher types under stress rather than the two forms originally handled:
+# "he is headed towards the gym" and "shooter in the east wing" both matched
+# nothing, so the freshest observation in the incident never reached the
+# law-enforcement brief.
+_SUBJECT = r"(?:he|she|they|him|her|them|suspect|shooter|gunman|intruder|threat|male|female|person)"
+_PLACE = r"(?:the\s+)?(.+?)(?:\.|,|;|$)"
+
 _THREAT_PATTERNS = [
+    # "last seen heading toward the gym"
     re.compile(
-        r"last\s+(?:seen|spotted|reported)\s+(?:heading\s+)?(?:toward|towards|near|in|at|by)\s+(?:the\s+)?(.+?)(?:\.|,|$)",
+        r"last\s+(?:seen|spotted|reported)\s+(?:heading\s+)?"
+        r"(?:toward|towards|near|in|at|by|inside)\s+" + _PLACE,
         re.IGNORECASE,
     ),
+    # "shooter seen near the cafeteria"
     re.compile(
-        r"(?:shooter|suspect|intruder|threat|gunman)\s+(?:seen|spotted|reported|observed)\s+(?:near|in|at|by|heading\s+(?:toward|towards))\s+(?:the\s+)?(.+?)(?:\.|,|$)",
+        _SUBJECT + r"\s+(?:was\s+|is\s+)?(?:seen|spotted|reported|observed)\s+"
+        r"(?:near|in|at|by|inside|heading\s+(?:toward|towards))\s+" + _PLACE,
         re.IGNORECASE,
     ),
+    # "he is headed towards the gym" / "they are moving into the library"
     re.compile(
-        r"(?:gunshots?|shots?\s+fired)\s+(?:heard|reported)\s+(?:from|in|near)\s+(?:the\s+)?(.+?)(?:\.|,|$)",
+        _SUBJECT + r"(?:'s|\s+(?:is|are|was|were))?\s+"
+        r"(?:head(?:ing|ed)?|mov(?:ing|ed)|going|run(?:ning)?|walk(?:ing)?|"
+        r"com(?:ing)?|enter(?:ing|ed)?)\s+"
+        r"(?:toward|towards|to|into|for|down\s+to|up\s+to|through)\s+" + _PLACE,
+        re.IGNORECASE,
+    ),
+    # "he is now in the gym" / "suspect in the east wing"
+    re.compile(
+        _SUBJECT + r"\s+(?:is\s+)?(?:now\s+)?(?:in|inside|at|near|by)\s+" + _PLACE,
+        re.IGNORECASE,
+    ),
+    # "shooter in the east wing" — bare, no verb
+    re.compile(
+        r"(?:shooter|gunman|intruder|suspect)\s+(?:in|inside|at|near|by)\s+" + _PLACE,
+        re.IGNORECASE,
+    ),
+    # "multiple gunshots heard from the east wing hallway" — the sound is the
+    # observation. Present in the original patterns and dropped when these were
+    # broadened; restored, because it is how a report from cover reads.
+    re.compile(
+        r"(?:gunshots?|shots|screaming|banging)\s+(?:were\s+|was\s+)?"
+        r"(?:heard|reported|coming)\s+(?:from|in|near)\s+" + _PLACE,
+        re.IGNORECASE,
+    ),
+    # "moved to the library"
+    re.compile(
+        r"(?:mov(?:ed|ing)|head(?:ed|ing)|went|gone)\s+"
+        r"(?:toward|towards|to|into|for)\s+" + _PLACE,
         re.IGNORECASE,
     ),
 ]
+
 
 
 def extract_threat_observation(report: str) -> str:

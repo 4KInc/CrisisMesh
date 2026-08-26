@@ -57,7 +57,7 @@ from src.agents.safety_intel.tools import (
 from src.config.playbooks import PLAYBOOKS
 from src.core.content_scanner import ContentScanner
 from src.core.event_bus import EventBus, create_event
-from src.core import checkin_policy, incident_state
+from src.core import checkin_policy, incident_state, room_board
 from src.core.knowledge_base import KnowledgeBase, init_knowledge_base
 from src.core.observability import Tracer
 from src.core.tactical_reasoning import strip_origin_from_payload
@@ -981,19 +981,20 @@ def _parse_checkin(text: str) -> dict[str, Any] | None:
 
 def _format_checkin_board() -> str:
     """Format current check-in state as text for the Gemini prompt."""
-    if not _room_checkins:
+    board = _reported_rooms()
+    if not board:
         return "No rooms have reported yet."
     lines = ["CURRENT CHECK-IN BOARD:"]
     total_safe = 0
     total_missing = 0
-    for room, info in sorted(_room_checkins.items()):
+    for room, info in sorted(board.items()):
         icon = ":white_check_mark:" if info["missing"] == 0 else ":red_circle:"
         lines.append(
             f"{icon} Room {room}: {info['safe']} safe, {info['missing']} missing — {info['notes']}"
         )
         total_safe += info["safe"]
         total_missing += info["missing"]
-    lines.append(f"Totals: {total_safe} safe · {total_missing} missing · {len(_room_checkins)} rooms reported")
+    lines.append(f"Totals: {total_safe} safe · {total_missing} missing · {len(board)} rooms reported")
     return "\n".join(lines)
 
 
@@ -1039,10 +1040,11 @@ def _handle_checkin_direct(channel_id: str, user_id: str, checkin: dict[str, Any
     else:
         header = f":white_check_mark: *Room {room}* logged: {safe}/{safe} safe, 0 missing."
 
-    board_lines = [f"\n:clipboard: *Board — {len(_room_checkins)} rooms reported*"]
+    board = _reported_rooms()
+    board_lines = [f"\n:clipboard: *Board — {len(board)} rooms reported*"]
     total_safe = 0
     total_missing = 0
-    for r, info in sorted(_room_checkins.items()):
+    for r, info in sorted(board.items()):
         icon = ":white_check_mark:" if info["missing"] == 0 else ":red_circle:"
         board_lines.append(f"{icon} Room {r}: {info['safe']} safe, {info['missing']} missing")
         total_safe += info["safe"]
@@ -1071,6 +1073,21 @@ def _handle_checkin_direct(channel_id: str, user_id: str, checkin: dict[str, Any
         logger.error(f"Failed to post check-in response: {e}")
 
 
+def _reported_rooms() -> dict[str, Any]:
+    """Rooms that have reported, from every channel.
+
+    `_room_checkins` is Slack-only; `room_board` is the shared store that SMS
+    and WhatsApp write to. Reading just the former meant a teacher who reported
+    her room by text was still listed as silent in the law-enforcement brief —
+    the document responders act on fastest.
+    """
+    from src.core import room_board
+
+    merged = dict(_room_checkins)
+    merged.update(room_board.get(incident_state.get_active_incident_id()))
+    return merged
+
+
 def _handle_board_query(channel_id: str, thread_ts: str) -> None:
     """Show the full accountability board with all rooms."""
     import csv
@@ -1091,10 +1108,11 @@ def _handle_board_query(channel_id: str, thread_ts: str) -> None:
     total_missing = 0
     reported_lines: list[str] = []
     silent_rooms: list[str] = []
+    reported = _reported_rooms()
 
     for rid in sorted(all_rooms.keys()):
-        if rid in _room_checkins:
-            info = _room_checkins[rid]
+        if rid in _reported_rooms():
+            info = reported[rid]
             total_safe += info["safe"]
             total_missing += info["missing"]
             if info["missing"] > 0:
@@ -1166,7 +1184,19 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     zone_id = location.get("zone_id", "") if isinstance(location, dict) else ""
     report_text = inc.get("report", "")
     accountability = compute_accountability_summary(incident_state.get_active_incident_id())
-    threat_loc = extract_threat_observation(report_text)
+    # The most recent witness report, not a re-parse of the original message.
+    # A teacher texting "he is headed towards the gym" is the freshest thing
+    # anyone knows, and the brief was still quoting the opening report.
+    from src.core import observations
+
+    incident_id = incident_state.get_active_incident_id()
+    threat_loc = (observations.latest_threat_location(incident_id)
+                  or extract_threat_observation(report_text))
+    threat_seen_at = ""
+    for entry in reversed(observations.get(incident_id)):
+        if entry.get("threat_location_reported"):
+            threat_seen_at = entry.get("at", "")
+            break
 
     brief = generate_arrival_brief(
         incident_id=incident_state.get_active_incident_id(),
@@ -1178,6 +1208,7 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
         incident_zone=zone_id,
         facility_id=classification.get("facility_id", "jefferson"),
         reported_threat_location=threat_loc,
+        threat_last_seen_time=threat_seen_at,
     )
 
     incident = brief["incident"]

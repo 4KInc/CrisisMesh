@@ -204,3 +204,84 @@ class TestNoteIsNotRedundant:
         line = [ln for ln in room_board.as_text("T-1").splitlines() if "Room 104" in ln][0]
         assert line.count("23") == 1
         assert "last seen in hallway" in line
+
+
+class TestTheArrivalBriefSeesEveryChannel:
+    """The law-enforcement handoff is the document responders act on fastest
+    and with least questioning. It read `_room_checkins` (Slack-only) for
+    silent rooms and re-parsed the *original* report for the threat position —
+    so a teacher who reported her room by WhatsApp was still listed as silent,
+    and "he is headed towards the gym" never reached the brief."""
+
+    def _phone(self):
+        from src.core.knowledge_base import KnowledgeBase
+        return "+1" + KnowledgeBase.get().get_person("p005")["phone"].replace("-", "")
+
+    def test_a_room_reported_by_whatsapp_is_not_listed_silent(self):
+        from src.services.whatsapp_transport import handle_inbound_message
+        from src.services.slack_transport import _reported_rooms
+
+        _incident()
+        handle_inbound_message(self._phone(), "room 101: all 25 students are safe")
+        assert "101" in _reported_rooms(), "the brief would still call room 101 silent"
+
+    def test_the_shared_board_and_the_slack_board_are_merged(self):
+        from src.services import slack_transport
+        from src.core import room_board
+
+        _incident()
+        slack_transport._room_checkins["210"] = {
+            "room": "210", "safe": 20, "missing": 0, "status": "safe", "notes": ""}
+        room_board.record("T-1", room_board.parse("room 104: 23 safe, 2 missing"),
+                          source="whatsapp")
+        merged = slack_transport._reported_rooms()
+        assert {"210", "104"} <= set(merged)
+        slack_transport._room_checkins.clear()
+
+    def test_the_latest_witness_report_supersedes_the_original(self):
+        """The freshest thing anyone knows about where the threat is."""
+        from src.services.whatsapp_transport import handle_inbound_message
+
+        _incident()
+        handle_inbound_message(self._phone(), "he is headed towards the gym")
+        assert "gym" in observations.latest_threat_location("T-1").lower()
+
+    def test_with_no_witness_report_the_original_still_stands(self):
+        from src.agents.sitrep.tools import extract_threat_observation
+
+        _incident()
+        assert observations.latest_threat_location("T-1") == ""
+        assert extract_threat_observation("shooter in the east wing")
+
+
+class TestThreatLocationPhrasing:
+    """Measured against how a teacher types under stress, not the two forms
+    originally handled. "he is headed towards the gym" matched nothing, so the
+    freshest observation in the incident never reached the brief."""
+
+    @pytest.mark.parametrize("text,expected", [
+        ("he is headed towards the gym", "gym"),
+        ("he is moving toward the gym", "gym"),
+        ("shooter in the east wing", "east wing"),
+        ("last seen in the cafeteria", "cafeteria"),
+        ("they are running into the library", "library"),
+        ("suspect now in the gymnasium", "gymnasium"),
+        ("moved to the north stairwell", "north stairwell"),
+        ("gunman spotted near the main office", "main office"),
+    ])
+    def test_common_phrasings_extract_a_location(self, text, expected):
+        from src.agents.sitrep.tools import extract_threat_observation
+        assert extract_threat_observation(text).lower() == expected
+
+    def test_a_report_with_no_threat_movement_extracts_nothing(self):
+        from src.agents.sitrep.tools import extract_threat_observation
+        assert extract_threat_observation("smoke in the science lab") == ""
+
+    def test_it_reaches_the_incident_through_whatsapp(self):
+        from src.services.whatsapp_transport import handle_inbound_message
+        from src.core.knowledge_base import KnowledgeBase
+
+        _incident()
+        phone = "+1" + KnowledgeBase.get().get_person("p005")["phone"].replace("-", "")
+        handle_inbound_message(phone, "he is headed towards the gym")
+        assert "gym" in observations.latest_threat_location("T-1").lower()
