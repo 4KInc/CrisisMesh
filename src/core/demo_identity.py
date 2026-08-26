@@ -96,6 +96,22 @@ def slack_overrides() -> dict[str, str]:
     return mapping
 
 
+def phone_for(person_id: str, roster_value: str) -> str:
+    """The number to *reach* this person on — the demo handset when mapped.
+
+    `overrides()` answers "which person is this inbound number?", which is what
+    a check-in needs. Reaching outward is the same mapping read backwards, and
+    it was missing: the fan-out looked up the roster's 555 placeholder, checked
+    whether *that* number had an open WhatsApp window, found none, and fell
+    through to Slack — so a demo handset that had just messaged in was still
+    treated as unreachable on WhatsApp.
+    """
+    for phone, mapped_person in overrides().items():
+        if mapped_person == person_id:
+            return phone
+    return roster_value
+
+
 def slack_id_for(person_id: str, roster_value: str) -> str:
     """The id to use for this person — the override when one exists."""
     return slack_overrides().get(person_id, roster_value)

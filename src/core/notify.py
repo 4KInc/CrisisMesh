@@ -142,11 +142,11 @@ def resolve_reach(person: dict[str, Any]) -> Reach:
     from src.services import whatsapp_transport
     from src.services.sms_consent import has_consent, is_opted_out
 
-    person_id = person.get("person_id", "")
-    name = person.get("name", person_id)
-    phone = _normalize(person.get("phone", ""))
     from src.core import demo_identity
 
+    person_id = person.get("person_id", "")
+    name = person.get("name", person_id)
+    phone = _normalize(demo_identity.phone_for(person_id, person.get("phone", "")))
     slack_id = demo_identity.slack_id_for(person_id, person.get("slack_user_id", ""))
 
     blockers: list[str] = []

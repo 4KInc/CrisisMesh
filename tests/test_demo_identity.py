@@ -152,3 +152,61 @@ class TestSlackIdOverride:
         assert reach.channel == notify.CHANNEL_SLACK
         assert reach.address == "U0REAL001"
         notify.reset_slack_id_cache()
+
+
+class TestTheOverrideWorksOutboundToo:
+    """The mapping answered "which person is this inbound number?" but not
+    "which number reaches this person". So a demo handset that had just
+    messaged in — its WhatsApp window open — was still unreachable, because
+    the fan-out looked up the roster's 555 placeholder instead."""
+
+    def test_a_mapped_person_is_reached_on_the_demo_handset(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_DEMO_PHONE", "+15550001111")
+        monkeypatch.setenv("CRISISMESH_DEMO_PERSON", "p001")
+        assert demo_identity.phone_for("p001", "615-555-0101") == "+15550001111"
+
+    def test_an_unmapped_person_keeps_their_roster_number(self, monkeypatch):
+        monkeypatch.setenv("CRISISMESH_DEMO_PHONE", "+15550001111")
+        monkeypatch.setenv("CRISISMESH_DEMO_PERSON", "p001")
+        assert demo_identity.phone_for("p002", "615-555-0103") == "615-555-0103"
+
+    def test_an_open_window_on_the_demo_handset_makes_them_reachable(self, monkeypatch):
+        """The world-claim: message in, then be reachable on WhatsApp."""
+        from src.core import notify
+        from src.services import whatsapp_transport
+
+        monkeypatch.setenv("CRISISMESH_DEMO_PHONE", "+15550001111")
+        monkeypatch.setenv("CRISISMESH_DEMO_PERSON", "p001")
+        monkeypatch.setenv("CRISISMESH_WHATSAPP_MODE", "twilio")
+        whatsapp_transport.reset_session_windows()
+        whatsapp_transport.note_inbound("+15550001111")
+
+        reach = notify.resolve_reach(
+            {"person_id": "p001", "name": "Principal Johnson",
+             "phone": "615-555-0101", "slack_user_id": ""})
+        assert reach.channel == notify.CHANNEL_WHATSAPP
+        assert reach.address == "+15550001111"
+        whatsapp_transport.reset_session_windows()
+
+    def test_whatsapp_outranks_slack_when_the_window_is_open(self, monkeypatch):
+        """Priority is SMS, WhatsApp, Slack — an open window must win."""
+        from src.core import notify
+        from src.services import whatsapp_transport
+
+        monkeypatch.setenv("CRISISMESH_DEMO_PHONE", "+15550001111")
+        monkeypatch.setenv("CRISISMESH_DEMO_PERSON", "p001")
+        monkeypatch.setenv("CRISISMESH_DEMO_SLACK_MAP", "p001=U0REAL")
+        monkeypatch.setenv("CRISISMESH_WHATSAPP_MODE", "twilio")
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
+        monkeypatch.setattr(notify, "_slack_ready", lambda: True)
+        monkeypatch.setattr(notify, "slack_id_resolves", lambda sid: True)
+        notify.reset_slack_id_cache()
+        whatsapp_transport.reset_session_windows()
+        whatsapp_transport.note_inbound("+15550001111")
+
+        reach = notify.resolve_reach(
+            {"person_id": "p001", "name": "X", "phone": "615-555-0101",
+             "slack_user_id": "U_PRINCIPAL"})
+        assert reach.channel == notify.CHANNEL_WHATSAPP
+        notify.reset_slack_id_cache()
+        whatsapp_transport.reset_session_windows()
