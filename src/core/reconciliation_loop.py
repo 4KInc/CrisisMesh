@@ -55,6 +55,8 @@ class Intent:
     channel: str = ""
     address: str = ""
     reason: str = ""
+    outcome: str = ""
+    detail: str = ""
     at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def as_dict(self) -> dict[str, Any]:
@@ -177,6 +179,12 @@ def _reconcile_person(
     if not store.safe_should_act(incident_id, person_id, tick):
         return produced
 
+    if rec.is_delivery_suppressed(incident_id, person_id):
+        # The transport already refused to carry this, for a reason that is a
+        # decision rather than a failure. Re-attempting every tick would be the
+        # system arguing with someone who said STOP.
+        return produced
+
     reach = notify.resolve_reach(person)
     name = person.get("name", person_id)
 
@@ -189,20 +197,90 @@ def _reconcile_person(
         return produced
 
     if rec.should_escalate(incident_id, person_id):
-        if store.tick_person(incident_id, person_id, rec.ESCALATED, tick):
-            warden = _warden_for(person)
-            produced.append(_record(Intent(
-                incident_id, tick, person_id, name, ACTION_ESCALATE,
-                channel=reach.channel, address=reach.address,
-                reason=f"{rec.attempt_cap()} re-pings unanswered; warden {warden}")))
+        warden = _warden_for(person)
+        produced.extend(_act(
+            incident_id, tick, person, reach, rec.ESCALATED, ACTION_ESCALATE,
+            _escalation_message(incident_id, name, warden),
+            reason=f"{rec.attempt_cap()} re-pings unanswered; warden {warden}"))
         return produced
 
-    if store.tick_person(incident_id, person_id, rec.REPINGED, tick):
-        produced.append(_record(Intent(
-            incident_id, tick, person_id, name, ACTION_REPING,
-            channel=reach.channel, address=reach.address)))
-
+    produced.extend(_act(
+        incident_id, tick, person, reach, rec.REPINGED, ACTION_REPING,
+        _reping_message(incident_id, name)))
     return produced
+
+
+def _act(
+    incident_id: str,
+    tick: int,
+    person: dict[str, Any],
+    reach: Any,
+    target: str,
+    action: str,
+    message: str,
+    reason: str = "",
+) -> list[dict[str, Any]]:
+    """Send, then commit — and only commit if the provider accepted.
+
+    No ordering of two network calls can lose neither. Commit-then-send loses
+    the send silently: state says REPINGED, `already_acted` skips them next
+    tick, and a transient carrier failure drops a person from the chase
+    permanently. Send-then-commit loses the commit instead, which re-chases —
+    a duplicate page rather than a silent drop, and duplicate-over-missed is
+    the judgment this system already made.
+
+    `last_acted_tick` advances only on ACCEPTED, which is what makes that safe:
+    rejected and unknown leave the person eligible next tick, and unknown is
+    recorded as unknown rather than failed, because a delivery receipt may yet
+    say it arrived.
+    """
+    from src.core import notify
+
+    person_id = person["person_id"]
+    name = person.get("name", person_id)
+    result = notify.deliver(reach, message, kind=action)
+    outcome = result.get("outcome", "unknown")
+
+    if outcome == notify.OUTCOME_ACCEPTED:
+        if not store.tick_person(incident_id, person_id, target, tick):
+            return []
+        return [_record(Intent(
+            incident_id, tick, person_id, name, action,
+            channel=reach.channel, address=reach.address,
+            reason=reason, outcome=outcome,
+            detail=str(result.get("detail", ""))[:200]))]
+
+    if outcome == notify.OUTCOME_SUPPRESSED and notify.delivery_enabled():
+        # A decision, not a failure — opted out, or the channel is switched
+        # off. Chasing them there forever would be arguing with a STOP.
+        rec.suppress_delivery(
+            incident_id, person_id, str(result.get("detail", "suppressed"))[:200])
+        store.tick_person(incident_id, person_id, rec.UNREACHABLE, tick)
+        return []
+
+    # Rejected, unknown, or delivery switched off entirely: the transition is
+    # NOT committed, so this person is still owed a ping next tick. The intent
+    # is still recorded, because what the loop decided is worth keeping even
+    # when the wire refused it.
+    return [_record(Intent(
+        incident_id, tick, person_id, name, action,
+        channel=reach.channel, address=reach.address,
+        reason=reason, outcome=outcome,
+        detail=str(result.get("detail", ""))[:200]))]
+
+
+def _reping_message(incident_id: str, name: str) -> str:
+    from src.core import incident_digest
+
+    return (f"CrisisMesh: {name}, you are not yet accounted for. "
+            f"Reply SAFE, SOS, INJURED or EVACUATED. "
+            + incident_digest.status_line())
+
+
+def _escalation_message(incident_id: str, name: str, warden: str) -> str:
+    return (f"CrisisMesh: {name} has not answered repeated check-in requests. "
+            f"{warden} — please attempt to locate or contact them, without "
+            "entering an unsafe area. If this is life-threatening, call 911.")
 
 
 def _finish(

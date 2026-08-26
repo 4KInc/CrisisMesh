@@ -90,6 +90,28 @@ CHECKIN_KEYWORDS: dict[str, str] = {
 # did not happen is the one failure a crisis system cannot afford.
 TERMINAL_FAILURE = frozenset({"failed", "undelivered", "canceled"})
 
+# What the caller is entitled to know. `delivered: False` collapsed six return
+# paths into one flag, and the accompanying "nothing was sent" asserted more
+# than the code knew: a request that left the process and then timed out may
+# well have arrived.
+#
+#   ACCEPTED   the provider took it. The only outcome that counts as a ping.
+#   REJECTED   we know it did not go — a refusal, or a 2xx carrying a terminal
+#              status. The person is still owed a ping.
+#   UNKNOWN    the call did not complete. It may or may not have arrived, and
+#              from inside this process those are indistinguishable. Retry,
+#              because missed is worse than duplicate — but record `unknown`,
+#              not `failed`, or a later delivery receipt will contradict us.
+#   SUPPRESSED a decision, not a failure. Opted out, switched off, or not
+#              configured. Never retried: re-chasing would be the system
+#              arguing with someone who said STOP.
+OUTCOME_ACCEPTED = "accepted"
+OUTCOME_REJECTED = "rejected"
+OUTCOME_UNKNOWN = "unknown"
+OUTCOME_SUPPRESSED = "suppressed"
+
+RETRYABLE_OUTCOMES = frozenset({OUTCOME_REJECTED, OUTCOME_UNKNOWN})
+
 # Explicit off switch. Credentials being present is not consent to send —
 # a drill or a replayed incident must not page a real roster.
 OFF_MODES = frozenset({"off", "none", "false", ""})
@@ -187,6 +209,7 @@ def send_sms(to_number: str, body: str) -> dict[str, Any]:
         logger.info(f"Outbound SMS suppressed — {to_number} has opted out")
         return {
             "delivered": False,
+            "outcome": OUTCOME_SUPPRESSED,
             "suppressed": True,
             "detail": "Recipient has opted out of CrisisMesh SMS (replied STOP).",
         }
@@ -194,6 +217,7 @@ def send_sms(to_number: str, body: str) -> dict[str, Any]:
     if sms_mode() == "off":
         return {
             "delivered": False,
+            "outcome": OUTCOME_SUPPRESSED,
             "detail": "CRISISMESH_SMS_MODE is off, so no message left the platform. "
                       "The coordination above is real; the delivery is not.",
         }
@@ -205,6 +229,7 @@ def send_sms(to_number: str, body: str) -> dict[str, Any]:
     if not (auth and from_number):
         return {
             "delivered": False,
+            "outcome": OUTCOME_SUPPRESSED,
             "detail": "Outbound SMS not configured (need TWILIO_ACCOUNT_SID plus "
                       "either TWILIO_API_KEY_SID/SECRET or TWILIO_AUTH_TOKEN, "
                       "and TWILIO_PHONE_NUMBER); nothing was sent.",
@@ -221,9 +246,12 @@ def send_sms(to_number: str, body: str) -> dict[str, Any]:
         )
     except Exception as exc:
         logger.error(f"SMS send failed: {exc}")
+        # Not "nothing was sent" — we do not know that. The request may have
+        # reached the wire before the call failed.
         return {
             "delivered": False,
-            "detail": f"transport error, nothing was sent: "
+            "outcome": OUTCOME_UNKNOWN,
+            "detail": f"send outcome unknown, the call did not complete: "
                       f"{type(exc).__name__}: {exc}"[:200],
         }
 
@@ -234,6 +262,7 @@ def send_sms(to_number: str, body: str) -> dict[str, Any]:
             reason = response.text[:200]
         return {
             "delivered": False,
+            "outcome": OUTCOME_REJECTED,
             "http_status": response.status_code,
             "detail": f"Twilio rejected the message, nothing was delivered: {reason}",
         }
@@ -247,6 +276,7 @@ def send_sms(to_number: str, body: str) -> dict[str, Any]:
     if status in TERMINAL_FAILURE:
         return {
             "delivered": False,
+            "outcome": OUTCOME_REJECTED,
             "provider_id": payload.get("sid"),
             "http_status": response.status_code,
             "provider_status": status,
@@ -257,6 +287,7 @@ def send_sms(to_number: str, body: str) -> dict[str, Any]:
 
     return {
         "delivered": True,
+        "outcome": OUTCOME_ACCEPTED,
         "provider_id": payload.get("sid"),
         "http_status": response.status_code,
         "provider_status": status,

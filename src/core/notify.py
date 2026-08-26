@@ -33,6 +33,7 @@ incident commander must reach some other way.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from dataclasses import dataclass, field
 from typing import Any
@@ -75,6 +76,12 @@ LOCKDOWN_FANOUT_KINDS = frozenset({"declared", "resolved"})
 
 # A report nothing matched. Held back unless the words themselves are urgent.
 UNCLASSIFIED_TYPE = "other"
+
+# Re-exported so the loop names outcomes from one place.
+OUTCOME_ACCEPTED = "accepted"
+OUTCOME_REJECTED = "rejected"
+OUTCOME_UNKNOWN = "unknown"
+OUTCOME_SUPPRESSED = "suppressed"
 URGENT_SEVERITIES = frozenset({"high", "critical"})
 
 _last_result: dict[str, Any] = {}
@@ -226,6 +233,44 @@ def _slack_ready() -> bool:
     return bool(os.environ.get("SLACK_BOT_TOKEN") and slack_transport.WebClient)
 
 
+DELIVERY_OFF_MODES = frozenset({"off", "none", "false", ""})
+
+
+def delivery_enabled() -> bool:
+    """Whether the loop may actually transmit.
+
+    Off by default, and deliberately not implied by having credentials. Every
+    step before this one had the property that a bug's worst consequence stayed
+    inside a response body; turning this on is the moment that stops being true,
+    so it is an explicit act rather than a side effect of a deploy.
+    """
+    raw = (os.environ.get("CRISISMESH_DELIVERY") or "off").strip().lower()
+    return raw not in DELIVERY_OFF_MODES
+
+
+def deliver(reach: Reach, message: str, kind: str = "") -> dict[str, Any]:
+    """The one door to the wire.
+
+    Everything the loop sends goes through here, so the movement-policy critic
+    cannot be bypassed and the outcome cannot be recorded in two places that
+    disagree. `_send` runs `enforce()` immediately before transmission; that
+    only protects the loop if the loop comes through this function.
+    """
+    if not delivery_enabled():
+        return {
+            "delivered": False,
+            "outcome": "suppressed",
+            "detail": "CRISISMESH_DELIVERY is off — the decision is real, "
+                      "the transmission is not.",
+        }
+    result = _send(reach, message)
+    logger.info(
+        f"delivery {kind or 'message'} to {reach.person_id} via {reach.channel}: "
+        f"{result.get('outcome', 'unknown')} — {str(result.get('detail',''))[:120]}"
+    )
+    return result
+
+
 def _send(reach: Reach, message: str) -> dict[str, Any]:
     """Deliver on the resolved channel. Never raises.
 
@@ -254,9 +299,14 @@ def _send(reach: Reach, message: str) -> dict[str, Any]:
         if reach.channel == CHANNEL_SLACK:
             return _send_slack_dm(reach.address, message)
     except Exception as exc:
-        logger.error(f"Fan-out send failed for {reach.person_id}: {exc}")
-        return {"delivered": False, "detail": f"{type(exc).__name__}: {exc}"[:200]}
-    return {"delivered": False, "detail": f"unknown channel {reach.channel!r}"}
+        logger.error(f"Send did not complete for {reach.person_id}: {exc}")
+        return {
+            "delivered": False,
+            "outcome": "unknown",
+            "detail": f"send outcome unknown: {type(exc).__name__}: {exc}"[:200],
+        }
+    return {"delivered": False, "outcome": "rejected",
+            "detail": f"unknown channel {reach.channel!r}"}
 
 
 def _send_slack_dm(user_id: str, message: str) -> dict[str, Any]:
@@ -265,12 +315,14 @@ def _send_slack_dm(user_id: str, message: str) -> dict[str, Any]:
 
     token = os.environ.get("SLACK_BOT_TOKEN", "")
     if not (token and slack_transport.WebClient):
-        return {"delivered": False, "detail": "Slack not configured; nothing was sent."}
+        return {"delivered": False, "outcome": "suppressed",
+                "detail": "Slack not configured; nothing was sent."}
     client = slack_transport.WebClient(token=token)
     response = client.chat_postMessage(channel=user_id, text=message)
     ok = bool(response.get("ok"))
     return {
         "delivered": ok,
+        "outcome": "accepted" if ok else "rejected",
         "detail": "accepted by Slack" if ok else f"Slack refused: {response.get('error')}",
     }
 

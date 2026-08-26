@@ -370,6 +370,7 @@ def send_whatsapp(to_number: str, text: str) -> dict[str, Any]:
         return {
             "delivered": False,
             "channel": "off",
+            "outcome": "suppressed",
             "detail": "CRISISMESH_WHATSAPP_MODE is off, so no message left the "
                       "platform. The coordination above is real; the delivery is not.",
         }
@@ -386,6 +387,7 @@ def _send_via_meta(to_number: str, text: str) -> dict[str, Any]:
         return {
             "delivered": False,
             "channel": "meta",
+            "outcome": "suppressed",
             "detail": "WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID are not "
                       "set; nothing was sent.",
         }
@@ -407,6 +409,7 @@ def _send_via_meta(to_number: str, text: str) -> dict[str, Any]:
             ok = resp.status == 200
             return {
                 "delivered": ok,
+                "outcome": "accepted" if ok else "rejected",
                 "channel": "meta",
                 "http_status": resp.status,
                 "detail": (f"accepted by Meta for delivery to {to_number}. Handset "
@@ -419,7 +422,8 @@ def _send_via_meta(to_number: str, text: str) -> dict[str, Any]:
         return {
             "delivered": False,
             "channel": "meta",
-            "detail": f"transport error, nothing was sent: {type(e).__name__}: {e}"[:200],
+            "outcome": "unknown",
+            "detail": f"send outcome unknown, the call did not complete: {type(e).__name__}: {e}"[:200],
         }
 
 
@@ -440,6 +444,7 @@ def _send_via_twilio(to_number: str, text: str) -> dict[str, Any]:
         return {
             "delivered": False,
             "channel": "twilio",
+            "outcome": "suppressed",
             "detail": "Twilio WhatsApp not configured (need TWILIO_ACCOUNT_SID plus "
                       "either TWILIO_API_KEY_SID/SECRET or TWILIO_AUTH_TOKEN, and "
                       "TWILIO_WHATSAPP_FROM); nothing was sent.",
@@ -466,7 +471,8 @@ def _send_via_twilio(to_number: str, text: str) -> dict[str, Any]:
         return {
             "delivered": False,
             "channel": "twilio",
-            "detail": f"transport error, nothing was sent: "
+            "outcome": "unknown",
+            "detail": f"send outcome unknown, the call did not complete: "
                       f"{type(exc).__name__}: {exc}"[:200],
         }
 
@@ -478,6 +484,7 @@ def _send_via_twilio(to_number: str, text: str) -> dict[str, Any]:
         return {
             "delivered": False,
             "channel": "twilio",
+            "outcome": "rejected",
             "http_status": response.status_code,
             "detail": f"Twilio rejected the message, nothing was delivered: {reason}",
         }
@@ -487,6 +494,7 @@ def _send_via_twilio(to_number: str, text: str) -> dict[str, Any]:
     if status in TERMINAL_FAILURE:
         return {
             "delivered": False,
+            "outcome": "rejected",
             "channel": "twilio",
             "provider_id": payload.get("sid"),
             "http_status": response.status_code,
@@ -498,6 +506,7 @@ def _send_via_twilio(to_number: str, text: str) -> dict[str, Any]:
 
     return {
         "delivered": True,
+        "outcome": "accepted",
         "channel": "twilio",
         "provider_id": payload.get("sid"),
         "http_status": response.status_code,

@@ -105,6 +105,11 @@ class PersonState:
     pending_escalation: bool = False
     accounted_via: str = ""
     reopen_reason: str = ""
+    # The transport refused to carry this, for a reason that is a decision
+    # rather than a failure — they replied STOP, or the channel is switched
+    # off. Durable, because `resolve_reach` would happily keep saying they are
+    # reachable and the loop would keep arguing with the STOP every tick.
+    delivery_suppressed: bool = False
     version: int = 0
     updated_at: str = field(default_factory=_now)
 
@@ -121,6 +126,7 @@ class PersonState:
             "pending_escalation": self.pending_escalation,
             "accounted_via": self.accounted_via,
             "reopen_reason": self.reopen_reason,
+            "delivery_suppressed": self.delivery_suppressed,
             "version": self.version,
             "updated_at": self.updated_at,
         }
@@ -279,6 +285,19 @@ def record_room_report(
     state = record_checkin(incident_id, reporter_person_id, source="room_report")
     logger.info(f"Room {room_id} report attributed to {reporter_person_id}")
     return state
+
+
+def suppress_delivery(incident_id: str, person_id: str, reason: str) -> None:
+    """Record that the transport refused this person for a standing reason."""
+    with _lock:
+        state = get_state(incident_id, person_id)
+        state.delivery_suppressed = True
+        state.reachability_reason = reason
+        _note_write(state)
+
+
+def is_delivery_suppressed(incident_id: str, person_id: str) -> bool:
+    return get_state(incident_id, person_id).delivery_suppressed
 
 
 def set_reachability_reason(incident_id: str, person_id: str, reason: str) -> None:
