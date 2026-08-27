@@ -169,6 +169,13 @@ Headcount (tracked staff roster): 34 total | 1 accounted | 33 unaccounted
 Silent rooms are broken out separately, and the ones **inside the threat zone** are
 listed first — those are the doors to open first.
 
+The header reads **34 staff tracked**, not "34 staff/students": the roster is staff,
+and the ~525 students are counted by their teachers, room by room.
+
+One thing that looks wrong and is not: *Room 104 — Mrs. Davis: 23 safe* while
+**Mrs. Davis is still listed under Missing**. You filed that room report from
+Principal Johnson's handset, so Johnson is accounted for and Davis is not.
+
 The brief carries no medical notes. Mobility limitations appear as a flag with a
 location, because a responder needs to know someone cannot use the stairs — not why.
 
@@ -176,10 +183,20 @@ location, because a responder needs to know someone cannot use the stairs — no
 
 ### 8 — Stand down
 
-**Slack:** `/incident resolve`  ·  or the **Resolve** button in the console.
+**Slack:** `/incident resolve` → the RESOLVED card, and the all-clear on every phone.
+`#fr-live-demo` gets **no second message** — the card is already there.
 
-The all-clear fans out to every phone **and** posts back into `#fr-live-demo`. Ticks
-stop before the all-clear sends, so no one gets chased about an incident that is over.
+**Console Resolve button** → the same all-clear on every phone, **plus** a post into
+`#fr-live-demo` reading *"Resolved via the web console"*, because nobody in that room
+has seen anything.
+
+> Which of those two happens is decided by where the stand-down was typed, not where
+> the incident was declared. Getting that backwards announced *"Resolved via WhatsApp"*
+> for an incident stood down in Slack, and posted an ALL CLEAR directly beneath the
+> RESOLVED card that the command had just produced.
+
+Ticks stop **before** the all-clear sends, so nobody is chased about an incident that
+is already over.
 
 Only `AUTHORIZED_IC_IDS` may resolve. Unconfigured, that gate refuses everyone rather
 than allowing everyone.
