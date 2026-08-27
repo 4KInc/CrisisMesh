@@ -577,6 +577,23 @@ def _stop_reconciliation() -> None:
         logger.error(f"Could not stop reconciliation: {exc}")
 
 
+def _announce_in_room(record: dict[str, Any], reporter: str) -> None:
+    """Never let a failed announcement break a declaration."""
+    try:
+        from src.core import channel_sync
+        channel_sync.announce_declaration(record, reporter_address=reporter)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"Could not announce the declaration in Slack: {exc}")
+
+
+def _announce_resolution_in_room(previous: dict[str, Any]) -> None:
+    try:
+        from src.core import channel_sync
+        channel_sync.announce_resolution(previous)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"Could not announce the all-clear in Slack: {exc}")
+
+
 def _on_declared(event: Any) -> None:
     """Fan out in the background — a Slack ack must not wait on 34 HTTP calls."""
     from src.core import incident_state
@@ -591,6 +608,12 @@ def _on_declared(event: Any) -> None:
         kwargs={"exclude": (reporter,) if reporter else ()},
         daemon=True,
     ).start()
+    # The roster is phones; the room is Slack. A declaration that came from a
+    # handset has to arrive in both, or the people coordinating the response
+    # hear about it from a buzz in their pocket instead of the board.
+    threading.Thread(
+        target=_announce_in_room, args=(record, reporter), daemon=True,
+    ).start()
     _start_reconciliation(event.incident_id)
 
 
@@ -601,6 +624,7 @@ def _on_resolved(event: Any) -> None:
     # people about an incident that is over.
     _stop_reconciliation()
     threading.Thread(target=announce_resolution, args=(previous,), daemon=True).start()
+    threading.Thread(target=_announce_resolution_in_room, args=(previous,), daemon=True).start()
 
 
 def subscribe() -> None:
