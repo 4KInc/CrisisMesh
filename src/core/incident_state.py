@@ -39,6 +39,7 @@ _record: dict[str, Any] = {}
 _source: str = ""
 _declared_by: str = ""
 _origin_channel: str = ""
+_reporter_address: str = ""
 _started_at: float = 0.0
 
 
@@ -61,6 +62,7 @@ def as_document() -> dict[str, Any]:
             "source": _source,
             "declared_by": _declared_by,
             "origin_channel": _origin_channel,
+            "reporter_address": _reporter_address,
             "started_at": float(_started_at),
         }
 
@@ -68,6 +70,7 @@ def as_document() -> dict[str, Any]:
 def from_document(doc: dict[str, Any]) -> None:
     """Restore a persisted incident, or leave nothing active."""
     global _incident_id, _record, _source, _declared_by, _origin_channel, _started_at
+    global _reporter_address
     if not doc or not doc.get("active"):
         return
     with _lock:
@@ -76,6 +79,7 @@ def from_document(doc: dict[str, Any]) -> None:
         _source = doc.get("source", "") or ""
         _declared_by = doc.get("declared_by", "") or ""
         _origin_channel = doc.get("origin_channel", "") or ""
+        _reporter_address = doc.get("reporter_address", "") or ""
         _started_at = float(doc.get("started_at") or 0.0)
 
 
@@ -112,15 +116,18 @@ def declare(
     source: str,
     declared_by: str = "",
     origin_channel: str = "",
+    reporter_address: str = "",
 ) -> None:
     """Make this the active incident, whichever channel it arrived on."""
     global _incident_id, _record, _source, _declared_by, _origin_channel, _started_at
+    global _reporter_address
     with _lock:
         _incident_id = incident_id
         _record = {**record, "source": source}
         _source = source
         _declared_by = declared_by
         _origin_channel = origin_channel
+        _reporter_address = reporter_address
         _started_at = time.time()
     _persist()
 
@@ -131,12 +138,29 @@ def attach_origin(declared_by: str = "", origin_channel: str = "") -> None:
     Separate from `declare` because the pipeline runs before the transport has
     finished unpacking its own request. Does not restart the clock.
     """
-    global _declared_by, _origin_channel
+    global _declared_by, _origin_channel, _reporter_address
     with _lock:
         if declared_by:
             _declared_by = declared_by
         if origin_channel:
             _origin_channel = origin_channel
+    _persist()
+
+
+def attach_reporter(address: str) -> None:
+    """Record the handset an incident was reported from.
+
+    Kept beside the origin rather than in the record because it is routing
+    information, not part of the report: the fan-out uses it to avoid alerting
+    the person who just typed the alert, and the status card uses it to name a
+    declarer that has no Slack account to mention. It is never rendered as a
+    number.
+    """
+    global _reporter_address
+    if not address:
+        return
+    with _lock:
+        _reporter_address = address
     _persist()
 
 
@@ -203,6 +227,7 @@ def get_origin() -> dict[str, Any]:
             "source": _source,
             "declared_by": _declared_by,
             "origin_channel": _origin_channel,
+            "reporter_address": _reporter_address,
             "started_at": _started_at,
         }
 
@@ -216,6 +241,7 @@ def elapsed_minutes() -> int:
 def clear() -> dict[str, Any]:
     """End the incident. Returns what it was, so the caller can report on it."""
     global _incident_id, _record, _source, _declared_by, _origin_channel, _started_at
+    global _reporter_address
     with _lock:
         previous = {
             "incident_id": _incident_id,
@@ -223,6 +249,7 @@ def clear() -> dict[str, Any]:
             "source": _source,
             "declared_by": _declared_by,
             "origin_channel": _origin_channel,
+            "reporter_address": _reporter_address,
             "started_at": _started_at,
             "elapsed_minutes": int((time.time() - _started_at) / 60) if _started_at else 0,
         }
@@ -231,6 +258,7 @@ def clear() -> dict[str, Any]:
         _source = ""
         _declared_by = ""
         _origin_channel = ""
+        _reporter_address = ""
         _started_at = 0.0
     _persist()
     return previous
@@ -245,10 +273,12 @@ def reset() -> None:
     meant a simulated restart also deleted what it was meant to recover from.
     """
     global _incident_id, _record, _source, _declared_by, _origin_channel, _started_at
+    global _reporter_address
     with _lock:
         _incident_id = ""
         _record = {}
         _source = ""
         _declared_by = ""
         _origin_channel = ""
+        _reporter_address = ""
         _started_at = 0.0

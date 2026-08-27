@@ -129,6 +129,13 @@ def _account_for_the_reporter(incident_id: str, from_address: str) -> None:
 
         person_id = _person_for_address(normalize_phone(from_address))
         if person_id:
+            # Through the funnel, not straight into reconciliation. Writing one
+            # ledger and not the other is how the loop came to mark this teacher
+            # accounted while the status card still listed her as missing and
+            # reported zero check-ins — two counts of the same people saying
+            # different things on the same screen.
+            from src.agents.accountability.tools import process_checkin
+            process_checkin(incident_id, person_id, "safe")
             reconciliation.record_room_report(
                 incident_id, room_id="", reporter_person_id=person_id)
     except Exception as exc:  # noqa: BLE001 - never lose the room report itself

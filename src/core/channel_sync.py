@@ -104,7 +104,10 @@ def compose_declaration(record: dict[str, Any], reporter_address: str = "") -> s
         origin += f" by {who}"
     lines.append(origin)
     if report:
-        lines.append(f"> {report}")
+        # Blank lines around the quote: Slack renders the blockquote either way,
+        # but without them a copy-paste out of Slack runs the report into the
+        # line above and below it.
+        lines.extend(["", f"> {report}", ""])
     lines.append(
         "The roster has been alerted and reconciliation is running. "
         "`/incident status` for the current count, `/incident resolve` to stand down."

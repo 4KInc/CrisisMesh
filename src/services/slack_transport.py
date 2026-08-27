@@ -315,7 +315,8 @@ def run_incident_pipeline(
         "tactical_provenance": provenance,
     }
 
-    incident_state.declare(incident_id, result, source=source)
+    incident_state.declare(incident_id, result, source=source,
+                           reporter_address=reporter_address)
 
     # Published only once the state is consistent: the fan-out subscriber reads
     # incident_state, and firing before declare() would hand it the previous
@@ -430,6 +431,32 @@ def _handle_help(user_id: str) -> dict[str, Any]:
     }
 
 
+def _declared_by_label() -> str:
+    """Who declared this, on whichever channel they used.
+
+    The card said "Declared by: —" for an incident a named person had reported
+    from a handset two minutes earlier: the field only ever read the Slack
+    origin, and a phone declaration has no Slack user to mention.
+    """
+    if _origin_user():
+        return f"<@{_origin_user()}>"
+
+    origin = incident_state.get_origin()
+    source = (origin.get("source", "") or "").lower()
+    reporter = origin.get("reporter_address", "")
+    if not source:
+        return "—"
+
+    label = {"whatsapp": "WhatsApp", "sms": "SMS", "web": "the web console"}.get(
+        source, source)
+    if reporter:
+        from src.core import channel_sync
+        # Never the raw number: a channel has the whole team as readers.
+        name = channel_sync._reporter_name(reporter) or channel_sync.UNKNOWN_REPORTER
+        return f"{name} (via {label})"
+    return f"via {label}"
+
+
 def _handle_status(channel_id: str, user_id: str) -> dict[str, Any]:
     if not incident_state.is_active():
         return {
@@ -456,14 +483,15 @@ def _handle_status(channel_id: str, user_id: str) -> dict[str, Any]:
         f":{type_info['emoji']}: *{incident_state.get_active_incident_id()} — {type_info['label']}*\n\n"
         f"*Severity:* `{classification.get('severity', '—').upper()}`\n"
         f"*Duration:* {duration_min} minutes\n"
-        f"*Declared by:* {'<@' + _origin_user() + '>' if _origin_user() else '—'}\n"
+        f"*Declared by:* {_declared_by_label()}\n"
         f"*Check-ins:* {summary['accounted']}/{summary['total_tracked']}\n"
     )
 
     if missing_names:
-        status_text += f"\n:red_circle: *Missing ({len(missing_names)}):* " + ", ".join(missing_names[:10])
-        if len(missing_names) > 10:
-            status_text += f" and {len(missing_names) - 10} more"
+        # Every name. "and 24 more" is the problem restated as a number — these
+        # are the people someone has to go and find.
+        status_text += (f"\n:red_circle: *Missing ({len(missing_names)}):* "
+                        + ", ".join(missing_names))
 
     status_text += (
         f"\n\n:telephone_receiver: *If 911 has not been called, do so immediately.*"
@@ -898,9 +926,7 @@ def _post_checkin_confirmation(
         for person in breakdown.get("silent", []):
             missing_names.append(person.get("name", "?"))
         if missing_names:
-            msg += f"\n:red_circle: Still missing: " + ", ".join(missing_names[:5])
-            if len(missing_names) > 5:
-                msg += f" and {len(missing_names) - 5} more"
+            msg += f"\n:red_circle: Still missing: " + ", ".join(missing_names)
 
     try:
         client = WebClient(token=bot_token)
@@ -1452,7 +1478,11 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
 
     # ── Headcount ──
     lines.append("")
-    lines.append(f"*Headcount:* {headcount['total']} total | {headcount['accounted']} accounted | {headcount['unaccounted']} unaccounted")
+    # Labelled, because the room totals below count a different population.
+    # The brief carried "34 total | 0 accounted" directly above "48 safe" and
+    # nothing on the page said one was staff and the other was students.
+    lines.append(f"*Headcount (tracked staff roster):* {headcount['total']} total | "
+                 f"{headcount['accounted']} accounted | {headcount['unaccounted']} unaccounted")
     if headcount.get("injured"):
         lines.append(f":ambulance: Injured: {headcount['injured']}")
     if headcount.get("need_help"):
@@ -1483,7 +1513,8 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
             if info.get("notes") and info["notes"] != f"{info['safe']} students are safe, {info['missing']} are missing":
                 line += f" — {info['notes']}"
             lines.append(line)
-        lines.append(f"  *Totals:* {total_safe} safe · {total_missing} missing")
+        lines.append(f"  *Totals (room-reported occupants):* {total_safe} safe · "
+                     f"{total_missing} missing")
 
     if silent_rooms:
         est_unaccounted = len(silent_rooms) * 25
