@@ -156,3 +156,20 @@ class TestTheBriefDoesNotPrintTwoContradictoryCounts:
         head = [ln for ln in text.split("\n") if "Headcount" in ln]
         assert head, text[:400]
         assert "staff" in head[0].lower() or "roster" in head[0].lower()
+
+
+class TestTheBuildingLineNamesOnePopulation:
+    def test_it_does_not_call_the_roster_staff_slash_students(self):
+        """The header said "34 staff/students tracked" on a page that goes on to
+        estimate ~525 people in the silent rooms. The roster is 34 staff; the
+        students are counted by their teachers, room by room."""
+        from src.services import slack_transport
+
+        _declare()
+        posted = []
+        with patch.object(slack_transport, "_post_bot_message",
+                          lambda ch, t, **kw: posted.append(t)):
+            slack_transport._handle_arrival_brief("C1", "")
+        text = "\n".join(posted)
+        assert "staff/students tracked" not in text
+        assert "34 staff tracked" in text

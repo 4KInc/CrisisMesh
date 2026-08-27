@@ -82,6 +82,11 @@ def resolve(incident_id: str, resolved_by: str = "", channel: str = "") -> dict[
     report = build_report(resolved_by=resolved_by)
     previous = incident_state.clear()
     previous["incident_type"] = report["incident_type"]
+    # How it was stood down, which is not how it was declared. Dropping this
+    # left every downstream surface describing the resolution with the
+    # declaration's channel — an incident reported on WhatsApp and stood down
+    # from Slack was announced as "Resolved via WhatsApp."
+    previous["resolved_via"] = channel
 
     logger.info(
         f"Incident {active} resolved from {channel or 'unknown'} by "

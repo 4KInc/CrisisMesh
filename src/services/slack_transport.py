@@ -1455,7 +1455,7 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     total_floors = len(floor_summary)
     if facility:
         lines.append("")
-        lines.append(f":school: *Building:* {facility.get('name', 'Jefferson Elementary')} — {total_floors} floors, {total_rooms} rooms, {total_personnel} staff/students tracked")
+        lines.append(f":school: *Building:* {facility.get('name', 'Jefferson Elementary')} — {total_floors} floors, {total_rooms} rooms, {total_personnel} staff tracked")
 
     # ── Threat observation ──
     if threat:

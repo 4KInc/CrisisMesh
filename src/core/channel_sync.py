@@ -115,12 +115,18 @@ def compose_declaration(record: dict[str, Any], reporter_address: str = "") -> s
     return "\n".join(lines)
 
 
+def _resolving_channel(previous: dict[str, Any]) -> str:
+    """Where the stand-down came from — not where the report came from."""
+    return (previous.get("resolved_via", "") or "").lower()
+
+
 def compose_resolution(previous: dict[str, Any]) -> str:
     incident_id = previous.get("incident_id", "")
-    source = _source_label(previous.get("source", ""))
+    via = _resolving_channel(previous)
+    where = f" via {_source_label(via)}" if via else ""
     return (
         f":white_check_mark: *ALL CLEAR — {incident_id}*\n"
-        f"Resolved via {source}. The roster has been told to stand down."
+        f"Resolved{where}. The roster has been told to stand down."
     )
 
 
@@ -139,11 +145,12 @@ def _post(channel: str, text: str) -> bool:
         return False
 
 
-def _announce(record: dict[str, Any], text: str) -> dict[str, Any]:
+def _announce(record: dict[str, Any], text: str,
+              origin: str = "") -> dict[str, Any]:
     from src.core import notify
 
     channel = incident_channel()
-    if (record.get("source", "") or "").lower() == "slack":
+    if origin == "slack":
         return {"posted": False, "reason": REASON_ORIGIN_SLACK, "channel": channel}
     if not channel:
         logger.info(f"Nothing announced: {REASON_NO_CHANNEL}")
@@ -158,8 +165,13 @@ def _announce(record: dict[str, Any], text: str) -> dict[str, Any]:
 
 
 def announce_declaration(record: dict[str, Any], reporter_address: str = "") -> dict[str, Any]:
-    return _announce(record, compose_declaration(record, reporter_address))
+    return _announce(record, compose_declaration(record, reporter_address),
+                     origin=(record.get("source", "") or "").lower())
 
 
 def announce_resolution(previous: dict[str, Any]) -> dict[str, Any]:
-    return _announce(previous, compose_resolution(previous))
+    # Judged on where the stand-down was typed. An incident declared from a
+    # handset and resolved with /incident resolve would otherwise post an
+    # ALL CLEAR directly beneath the RESOLVED card the command just produced.
+    return _announce(previous, compose_resolution(previous),
+                     origin=_resolving_channel(previous))
