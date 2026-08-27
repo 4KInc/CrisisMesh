@@ -72,7 +72,17 @@ No one asks it to. Every 45s a tick runs. Leave it alone and watch WhatsApp.
 **WhatsApp (room report):** `room 104: 23 students are safe, 1 unaccounted`
 
 All three land on the same board. The room report is one message that accounts for
-23 people — the reason a teacher under a desk can use this at all.
+23 students — the reason a teacher under a desk can use this at all.
+
+Now run **`/incident status`** and check the reporter is no longer listed as missing.
+
+> The loop used to mark the reporter accounted while the status card still listed her
+> as missing and reported zero check-ins — two ledgers counting the same people
+> differently. Both are written through one funnel now.
+
+Note what the room report does **not** do: "23 of 25 safe" never says *which* 23, so
+only the reporter is accounted for. A falsely accounted person is one nobody goes
+looking for.
 
 ---
 
@@ -105,9 +115,15 @@ Same answers whether you type in Slack or WhatsApp:
 | `show the classroom board` | per-room counts |
 | `who is on call right now` | on-call staff |
 | `what's the fastest route out of east wing` | *(during a lockdown: refused, with the reason)* |
-| `/incident status` | live count |
+| `/incident status` | live count, **every missing name**, and who declared it |
 
 **Slack:** `@CrisisMesh who hasn't answered`  ·  **WhatsApp:** just type it.
+
+`/incident status` names all 34 rather than ten and an "and 24 more". Those are the
+people someone has to go and find; a count is the problem restated as a number. It
+also names the declarer — `Principal Johnson (via WhatsApp)` — because an incident
+declared from a handset has no Slack account to @-mention, and the card used to just
+print a dash.
 
 Ask for a **route** during the lockdown and it refuses — a corridor direction is a
 movement instruction, and the threat is a person, not a hazard.
@@ -138,6 +154,20 @@ Last known location: east wing — reported 4 min ago (UNCONFIRMED)
 Sourced from the witness trail, timestamped, and marked unverified. With no witness
 report yet it falls back to the opening message and times it to the declaration —
 never "unknown".
+
+**Read the two headcounts.** They are labelled, and they have to be:
+
+```
+Headcount (tracked staff roster): 34 total | 1 accounted | 33 unaccounted
+  Totals (room-reported occupants): 48 safe · 1 missing
+```
+
+> Both numbers are true — 34 is the staff roster, 48 is students counted by their
+> teachers. The brief printed them one above the other with no labels, so a responder
+> reading it fast saw the system contradict itself.
+
+Silent rooms are broken out separately, and the ones **inside the threat zone** are
+listed first — those are the doors to open first.
 
 The brief carries no medical notes. Mobility limitations appear as a flag with a
 location, because a responder needs to know someone cannot use the stairs — not why.
