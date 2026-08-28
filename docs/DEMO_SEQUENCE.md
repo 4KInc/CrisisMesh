@@ -9,7 +9,8 @@ Delivery is **on**. Every message in this script really sends.
 
 | Setting | Value |
 |---|---|
-| Tick interval | 45s |
+| Tick interval | **25s** (demo). Production would use minutes — nobody re-pings a
+teacher every 25 seconds during a real lockdown. |
 | Re-ping cap | 2, then escalate |
 | Reach | 4 verified of 34 — the honest number, see step 6 |
 
@@ -55,13 +56,23 @@ where the shooter is would be the system's own doing.
 
 ---
 
-### 2 — The autonomous loop starts itself
+### 2 — The autonomous loop starts itself — do not wait for it
 
-No one asks it to. Every 45s a tick runs. Leave it alone and watch WhatsApp.
+No one asks it to. A tick runs every 25s from the moment of declaration:
 
-**Tick 1** pings everyone unaccounted.
-**Tick 2** re-pings the silent ones — *"you are not yet accounted for (request 2)"*.
-**Tick 3** hits the cap and escalates.
+| | |
+|---|---|
+| **0:00** Tick 1 | pings everyone unaccounted |
+| **0:25** Tick 2 | re-pings — *"you are not yet accounted for (request 2)"* |
+| **0:50** Tick 3 | cap reached → **escalates to the floor warden by name** |
+
+**Keep talking and keep typing through all of it.** The loop is autonomous; standing
+still watching a phone is the one thing that makes it look like it is not. Go straight
+into step 3 — the escalation will arrive on your handset partway through, and you
+interrupt yourself to point at it.
+
+Once everyone is either accounted for or escalated, the loop goes **quiet** — both are
+terminal. It does not keep paging a warden about someone it has already handed over.
 
 ---
 
@@ -203,12 +214,25 @@ than allowing everyone.
 
 ---
 
-## If you have 90 seconds
+## The 4-minute run
 
-1. WhatsApp: `/incident active shooter in the east wing` → **Slack announces it**
-2. Wait 90s → watch the re-pings, then the escalation naming VP Martinez
-3. Slack: `@CrisisMesh who hasn't answered` → every name
-4. `/incident resolve`
+Nothing in this waits on the loop. The escalation lands during step 3 and you cut to it.
+
+| Clock | Do | Say |
+|---|---|---|
+| **0:00** | WhatsApp: `/incident active shooter reported in the east wing, gunshots heard` | "Nobody opens a laptop during a lockdown." |
+| **0:10** | Point at `#fr-live-demo` announcing it | "It came from a phone. The room heard it anyway." |
+| **0:35** | WhatsApp: `room 104: 23 students are safe, 1 unaccounted` | "One message, 23 students." |
+| **0:50** | *Escalation arrives — stop and read it out* | "Nobody asked it to do that." |
+| **1:10** | Slack: `/incident status` | "Every name. Not 'and 24 more'." |
+| **1:40** | Slack: `@CrisisMesh what's the fastest route out of east wing` | "It refuses. The threat is a person." |
+| **2:10** | Slack: `@CrisisMesh arrival brief` | "Two headcounts, both labelled." |
+| **3:00** | Console **Resolve** button | "All-clear to every phone, and back to Slack." |
+
+Leaves roughly a minute of slack in a 4–5 minute slot.
+
+**If you are running long**, cut the route refusal (1:40) — the brief is the stronger
+moment. **If you are running short**, add `@CrisisMesh who is on call right now`.
 
 ## What to say while it runs
 
