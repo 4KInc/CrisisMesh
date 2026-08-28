@@ -16,10 +16,15 @@ teacher every 25 seconds during a real lockdown. |
 
 ---
 
-## Before you start
+## Before you start — two minutes, once
 
-Deploys clear the WhatsApp 24-hour session window and the in-memory board.
-**Send `SAFE` to +1 772 297 1783 first** to open the window, then begin.
+1. **Send `SAFE` to +1 772 297 1783.** Deploys clear the WhatsApp 24-hour session
+   window and the in-memory board; without this, nothing reaches your handset.
+2. **Prime the resolve token.** Open the console, declare a throwaway incident,
+   click **Resolve incident**, and enter the token once. The browser keeps it, so
+   during the real run the dialog is just your name and a click. Doing this cold in
+   front of an audience is a password prompt on your closing beat.
+3. Have `#fr-live-demo` and the console open side by side, WhatsApp on the phone.
 
 ---
 
@@ -223,9 +228,31 @@ location, because a responder needs to know someone cannot use the stairs — no
 **Slack:** `/incident resolve` → the RESOLVED card, and the all-clear on every phone.
 `#fr-live-demo` gets **no second message** — the card is already there.
 
-**Console Resolve button** → the same all-clear on every phone, **plus** a post into
+**Console Resolve incident** → the same all-clear on every phone, **plus** a post into
 `#fr-live-demo` reading *"Resolved via the web console"*, because nobody in that room
 has seen anything.
+
+The dialog asks for a name and shows what resolving reaches before it happens:
+
+```
+Resolve incident
+  This ends ACTIVE_THREAT-2026-… for Slack, SMS and WhatsApp too, stops
+  reconciliation, and sends an all-clear to everyone reachable.
+
+  Resolving as — name or role   [ Principal Johnson ]
+  A resolution has to be attributable.
+```
+
+> This used to be four native browser dialogs in a row — prompt, confirm, prompt,
+> alert — each one painting the browser's own chrome over the board the operator is
+> trying to read, at the moment they can least spare the attention. The token prompt
+> also named an environment variable on screen. One dialog now, Enter to confirm,
+> and the outcome as a banner rather than something to dismiss before you can see
+> the board it describes.
+
+The token is never in the page — the console is public, so an embedded token would be
+no gate at all. It lives in your browser, and a rejected one is discarded rather than
+replayed.
 
 > Which of those two happens is decided by where the stand-down was typed, not where
 > the incident was declared. Getting that backwards announced *"Resolved via WhatsApp"*
@@ -254,7 +281,7 @@ Nothing in this waits on the loop. The escalation lands during step 3 and you cu
 | **1:40** | WhatsApp: `shooter last seen heading toward the gym` | "A witness reports. That is a sighting, not a question." |
 | **1:55** | WhatsApp: `where is the shooter now` | "east wing → gym. Two positions say which way it is moving." |
 | **2:10** | Slack: `@CrisisMesh arrival brief` | "Two headcounts, both labelled." |
-| **3:00** | Console **Resolve** button | "All-clear to every phone, and back to Slack." |
+| **3:00** | Console **Resolve incident** → type your name → **Resolve** | "All-clear to every phone, and back to Slack." |
 
 Leaves roughly a minute of slack in a 4–5 minute slot.
 
