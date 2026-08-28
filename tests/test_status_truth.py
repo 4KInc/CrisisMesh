@@ -35,6 +35,11 @@ def fresh(monkeypatch):
     from src.core import reconciliation
     reconciliation.reset()
     from src.agents.accountability import tools as acct
+    # The phone map is cached across calls and outlives this fixture's env,
+    # so a file that runs first decides who every later file's handsets are.
+    from src.services import whatsapp_transport, sms_transport
+    whatsapp_transport._phone_to_person.clear()
+    sms_transport._phone_to_person.clear()
     acct._checkin_store.clear()
     yield
     incident_state.reset()

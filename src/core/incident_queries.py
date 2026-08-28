@@ -46,8 +46,12 @@ _BRIEF_WORDS = ("arrival brief", "law enforcement", "handoff", "le brief")
 # is: "where is the shooter" is a question, "he is heading for the gym" is a
 # sighting, and answering the second as if it were the first loses the report.
 _THREAT_SUBJECTS = ("shooter", "gunman", "attacker", "suspect", "intruder", "threat")
-_THREAT_ASKS = ("where is", "where's", "where was", "where are",
-                "last known location", "last seen", "location of")
+# Interrogative shapes only. "last seen" on its own is how a witness *reports*
+# a position — "shooter last seen heading toward the gym" — and treating that
+# as a question answered it back to the reporter and dropped the sighting, so
+# the trail never advanced past the opening message.
+_THREAT_ASKS = ("where is", "where's", "where was", "where are", "where did",
+                "last known location", "any sighting", "do we know where")
 
 
 def classify(text: str) -> str:
@@ -254,7 +258,12 @@ def _threat_location(incident_id: str) -> str:
         trail = " -> ".join(t["location"] for t in track[-3:])
         where = (f"Last reported location: {latest['location']}. "
                  f"Reported trail: {trail}.")
-    who = latest.get("reported_by") or latest.get("source") or ""
+    # A roster name or nothing. The raw address is what the transport happens
+    # to know about the reporter, not something to read out to whoever asks.
+    who = latest.get("reported_by") or ""
+    if who.startswith("+") or who.replace(" ", "").isdigit():
+        from src.core import channel_sync
+        who = channel_sync._reporter_name(who)
     attribution = f" Reported by {who}." if who else ""
     return (
         f"{where}{attribution} UNCONFIRMED — this is a reported sighting, not a "

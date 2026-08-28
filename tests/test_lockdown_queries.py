@@ -32,6 +32,11 @@ def fresh(monkeypatch):
     init_knowledge_base(SEED)
     incident_state.reset()
     observations.reset()
+    # The phone map is cached across calls and outlives this fixture's env,
+    # so a file that runs first decides who every later file's handsets are.
+    from src.services import whatsapp_transport, sms_transport
+    whatsapp_transport._phone_to_person.clear()
+    sms_transport._phone_to_person.clear()
     reconciliation.reset()
     yield
     incident_state.reset()
@@ -165,3 +170,32 @@ class TestWhereIsTheShooter:
         _lockdown()
         assert incident_queries.classify("he is headed toward the gym") != \
             incident_queries.KIND_THREAT_LOCATION
+
+    @pytest.mark.parametrize("report", [
+        "shooter last seen heading toward the gym",
+        "gunman last seen near the cafeteria",
+        "suspect spotted in room 204",
+    ])
+    def test_a_witness_report_is_recorded_not_answered(self, report):
+        """"last seen" is how people report a position, not how they ask for
+        one. Answering these dropped the sighting on the floor."""
+        _lockdown()
+        assert incident_queries.classify(report) != incident_queries.KIND_THREAT_LOCATION
+
+    def test_the_trail_advances_through_the_transport(self):
+        """End to end: a sighting sent to WhatsApp changes the next answer."""
+        from src.services.whatsapp_transport import handle_inbound_message as wa
+
+        _lockdown()
+        wa("+16692167706", "shooter last seen heading toward the gym")
+        reply = wa("+16692167706", "where is the shooter now")["reply"]
+        assert "gym" in reply.lower(), reply
+        assert "east wing" in reply.lower(), "the trail lost where it started"
+
+    def test_the_attribution_is_never_a_phone_number(self):
+        from src.services.whatsapp_transport import handle_inbound_message as wa
+
+        _lockdown()
+        wa("+16155559999", "shooter last seen heading toward the gym")
+        reply = wa("+16692167706", "where is the shooter now")["reply"]
+        assert "6155559999" not in reply
