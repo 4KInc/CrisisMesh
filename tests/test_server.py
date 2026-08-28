@@ -419,10 +419,34 @@ class TestConsoleResolveControl:
         assert "cm_resolve_token" in html
         assert "X-CrisisMesh-Token" in html
 
-    def test_confirms_before_resolving(self):
+    def test_says_what_resolving_does_before_it_happens(self):
+        """The operator is told the blast radius first. Pinned as the sentence
+        shown, not as confirm() — the native dialog stack was replaced by one
+        in-page modal, and the property is the warning, not the mechanism."""
         html = self._html()
-        assert "confirm(" in html
+        assert 'id="resolve-modal"' in html
         assert "all-clear" in html
+        assert "Slack, SMS and WhatsApp too" in html
+
+    def test_no_native_dialogs_in_the_resolve_path(self):
+        """prompt/confirm/alert put the browser's chrome over the board the
+        operator is reading, and named an environment variable to whoever was
+        looking at the screen."""
+        html = self._html()
+        assert "prompt(" not in html
+        assert "confirm(" not in html
+        assert "CRISISMESH_RESOLVE_TOKEN" not in html
+
+    def test_a_resolution_must_be_attributable(self):
+        html = self._html()
+        assert 'id="rm-who"' in html
+        assert "attributable" in html
+
+    def test_a_rejected_token_is_discarded(self):
+        """Replaying a token the server already refused just fails again."""
+        html = self._html()
+        assert "r.status===403" in html
+        assert "removeItem('cm_resolve_token')" in html
 
     def test_clears_when_resolved_elsewhere(self):
         """Slack or SMS can resolve too; the panel must stop showing a live

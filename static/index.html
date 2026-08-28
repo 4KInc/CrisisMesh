@@ -325,7 +325,7 @@ async function declareAgentic(){
 async function declareFast(){
   const r=document.getElementById('rpt').value.trim();if(!r)return;
   const d=await(await fetch(API+'/incident',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report:r})})).json();
-  if(d.blocked){alert('BLOCKED: '+d.reason);return;}renderSit(d);
+  if(d.blocked){showResolveResult('Blocked by content safety: '+d.reason,true);return;}renderSit(d);
 }
 function renderSit(d){
   incId=d.incident_id;document.getElementById('acct-iid').value=incId;document.getElementById('tr-id').value=incId;
@@ -510,27 +510,48 @@ async function loadTrace(){
 /* RESOLVE — ends the incident for every channel, not just this screen.
    The token is never baked into this page: it is public, so an embedded token
    would be no gate at all. The operator supplies it once and the browser keeps
-   it locally. */
-function resolveToken(){
-  let t='';
-  try{ t=localStorage.getItem('cm_resolve_token')||''; }catch(e){}
-  if(!t){
-    t=prompt('Resolve token (leave blank if this deployment has no CRISISMESH_RESOLVE_TOKEN set):')||'';
-    try{ if(t) localStorage.setItem('cm_resolve_token',t); }catch(e){}
-  }
-  return t;
+   it locally. One dialog rather than a prompt/confirm/prompt/alert stack —
+   during a real stand-down those hide the console behind browser chrome, and
+   during a demo they land on the most-watched moment of the run. */
+function storedToken(){
+  try{ return localStorage.getItem('cm_resolve_token')||''; }catch(e){ return ''; }
 }
 
 function resolveIncident(){
-  if(!incId){ alert('No active incident.'); return; }
-  const who=prompt('Resolving as (name or role) — a resolution has to be attributable:');
-  if(!who) return;
-  if(!confirm('Resolve '+incId+'?\n\nThis ends the incident for Slack, SMS and WhatsApp too, and sends an all-clear to everyone reachable.')) return;
+  if(!incId){ showResolveResult('No active incident.', true); return; }
+  document.getElementById('rm-inc').textContent=incId;
+  document.getElementById('rm-who').value='';
+  const tok=storedToken();
+  document.getElementById('rm-token').value=tok;
+  // Already authorised on this machine: do not ask again, but leave it visible
+  // and editable so a rejected token can be corrected in place.
+  document.getElementById('rm-token-row').classList.toggle('opacity-60', !!tok);
+  const err=document.getElementById('rm-error');
+  err.classList.add('hidden'); err.textContent='';
+  const m=document.getElementById('resolve-modal');
+  m.classList.remove('hidden'); m.classList.add('flex');
+  setTimeout(()=>document.getElementById('rm-who').focus(),0);
+}
 
-  const btn=document.getElementById('btn-resolve');
+function closeResolve(){
+  const m=document.getElementById('resolve-modal');
+  m.classList.add('hidden'); m.classList.remove('flex');
+}
+
+function resolveError(msg){
+  const err=document.getElementById('rm-error');
+  err.textContent=msg; err.classList.remove('hidden');
+}
+
+function confirmResolve(){
+  const who=document.getElementById('rm-who').value.trim();
+  if(!who){ resolveError('Name or role is required — a resolution has to be attributable.');
+            document.getElementById('rm-who').focus(); return; }
+  const tok=document.getElementById('rm-token').value.trim();
+
+  const btn=document.getElementById('rm-confirm');
   btn.disabled=true; btn.textContent='Resolving…';
   const headers={'Content-Type':'application/json'};
-  const tok=resolveToken();
   if(tok) headers['X-CrisisMesh-Token']=tok;
 
   fetch(API+'/incident/'+encodeURIComponent(incId)+'/resolve',{
@@ -538,17 +559,47 @@ function resolveIncident(){
   }).then(async r=>{
     const d=await r.json().catch(()=>({}));
     if(r.ok){
-      alert('Incident '+d.incident_id+' resolved after '+d.duration_minutes+' min.\n'+
-            'Accounted: '+(d.accountability?.accounted??'—')+
-            ' / Unaccounted: '+(d.accountability?.unaccounted??'—'));
+      try{ if(tok) localStorage.setItem('cm_resolve_token',tok); }catch(e){}
+      closeResolve();
+      showResolveResult('Incident '+d.incident_id+' resolved after '+d.duration_minutes+
+        ' min — accounted '+(d.accountability?.accounted??'—')+
+        ', unaccounted '+(d.accountability?.unaccounted??'—')+'.');
       clearIncident();
     }else{
-      if(r.status===403){ try{ localStorage.removeItem('cm_resolve_token'); }catch(e){} }
-      alert('Not resolved: '+(d.error||('HTTP '+r.status)));
+      // A rejected token is cleared so the next attempt asks rather than
+      // silently replaying something the server already refused.
+      if(r.status===403){ try{ localStorage.removeItem('cm_resolve_token'); }catch(e){}
+                          document.getElementById('rm-token').value=''; }
+      resolveError('Not resolved: '+(d.error||('HTTP '+r.status)));
     }
-  }).catch(e=>alert('Not resolved: '+e))
-   .finally(()=>{ btn.disabled=false; btn.textContent='Resolve incident'; });
+  }).catch(e=>resolveError('Not resolved: '+e))
+   .finally(()=>{ btn.disabled=false; btn.textContent='Resolve'; });
 }
+
+/* The outcome belongs on the page, not in an alert the operator has to dismiss
+   before they can see the board it is describing. */
+function showResolveResult(msg, isError){
+  let el=document.getElementById('resolve-banner');
+  if(!el){
+    el=document.createElement('div');
+    el.id='resolve-banner';
+    el.className='fixed bottom-4 right-4 z-[110] px-4 py-3 font-mono text-[12px] border shadow-2xl max-w-[420px]';
+    document.body.appendChild(el);
+  }
+  el.className=el.className.replace(/ (bg|border|text)-\S+/g,'')+
+    (isError? ' bg-surface-container-high border-status-injured text-on-surface'
+            : ' bg-surface-container-high border-outline-variant text-on-surface');
+  el.textContent=msg;
+  el.style.display='block';
+  setTimeout(()=>{ el.style.display='none'; }, 12000);
+}
+
+document.addEventListener('keydown',function(e){
+  const m=document.getElementById('resolve-modal');
+  if(!m || m.classList.contains('hidden')) return;
+  if(e.key==='Escape') closeResolve();
+  if(e.key==='Enter'){ e.preventDefault(); confirmResolve(); }
+});
 
 function clearIncident(){
   incId=''; _pollId='';
@@ -581,4 +632,49 @@ function pollLatest(){
 }
 setInterval(pollLatest,3000);
 </script>
+
+<!-- RESOLVE DIALOG — one screen, not four native prompts. The stand-down is the
+     most-watched moment of an incident; stacking prompt/confirm/prompt/alert on
+     top of it hid the console behind the browser chrome and put the name of an
+     environment variable in front of whoever was watching. -->
+<div id="resolve-modal" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/70 backdrop-blur-sm">
+  <div class="bg-surface-container-high border border-outline-variant w-[min(520px,92vw)] shadow-2xl">
+    <div class="bg-status-injured text-white px-4 py-2 flex items-center gap-2">
+      <span class="material-symbols-outlined text-[16px]" style="font-variation-settings:'FILL' 1;">gpp_maybe</span>
+      <span class="font-mono text-label-caps font-label-caps uppercase tracking-widest">Resolve incident</span>
+    </div>
+    <div class="p-5 space-y-4">
+      <p class="text-on-surface-variant font-mono text-[12px] leading-relaxed">
+        This ends <span id="rm-inc" class="text-on-surface"></span> for
+        <span class="text-on-surface">Slack, SMS and WhatsApp too</span>, stops
+        reconciliation, and sends an all-clear to everyone reachable.
+      </p>
+      <div>
+        <label class="block text-on-surface-variant font-mono text-label-caps uppercase tracking-widest mb-1" for="rm-who">
+          Resolving as — name or role
+        </label>
+        <input id="rm-who" type="text" autocomplete="off" placeholder="Principal Johnson"
+               class="w-full bg-surface-container-lowest border border-outline-variant text-on-surface font-mono text-[13px] px-3 py-2 focus:outline-none focus:border-white/60">
+        <p class="text-on-surface-variant font-mono text-[11px] mt-1">A resolution has to be attributable.</p>
+      </div>
+      <div id="rm-token-row">
+        <label class="block text-on-surface-variant font-mono text-label-caps uppercase tracking-widest mb-1" for="rm-token">
+          Authorisation token
+        </label>
+        <input id="rm-token" type="password" autocomplete="off"
+               class="w-full bg-surface-container-lowest border border-outline-variant text-on-surface font-mono text-[13px] px-3 py-2 focus:outline-none focus:border-white/60">
+        <p class="text-on-surface-variant font-mono text-[11px] mt-1">
+          Kept in this browser only — never in the page. Leave blank if this deployment has none.
+        </p>
+      </div>
+      <p id="rm-error" class="hidden text-status-injured font-mono text-[12px]"></p>
+      <div class="flex justify-end gap-2 pt-1">
+        <button onclick="closeResolve()"
+                class="px-3 py-1.5 border border-outline-variant text-on-surface-variant hover:text-on-surface font-mono text-label-caps uppercase tracking-widest transition-colors">Cancel</button>
+        <button id="rm-confirm" onclick="confirmResolve()"
+                class="px-3 py-1.5 bg-status-injured hover:brightness-110 text-white font-mono text-label-caps uppercase tracking-widest transition-all">Resolve</button>
+      </div>
+    </div>
+  </div>
+</div>
 </body></html>
