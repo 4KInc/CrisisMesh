@@ -74,6 +74,10 @@ interrupt yourself to point at it.
 Once everyone is either accounted for or escalated, the loop goes **quiet** — both are
 terminal. It does not keep paging a warden about someone it has already handed over.
 
+> Until this week it did exactly that: the same three names on the warden's phone every
+> 25 seconds. The terminal guard was in the function the tests call, not the one the
+> loop calls.
+
 ---
 
 ### 3 — Check in from three directions
@@ -125,6 +129,7 @@ Same answers whether you type in Slack or WhatsApp:
 | `who is still unaccounted` | **every name**, not "and 25 more" |
 | `show the classroom board` | per-room counts |
 | `who is on call right now` | on-call staff |
+| `where is the shooter now` | the reported trail, marked **UNCONFIRMED** |
 | `what's the fastest route out of east wing` | *(during a lockdown: refused, with the reason)* |
 | `/incident status` | live count, **every missing name**, and who declared it |
 
@@ -137,7 +142,28 @@ declared from a handset has no Slack account to @-mention, and the card used to 
 print a dash.
 
 Ask for a **route** during the lockdown and it refuses — a corridor direction is a
-movement instruction, and the threat is a person, not a hazard.
+movement instruction, and the threat is a person, not a hazard. A fire still gets its
+route: the rule is the incident type, not the word.
+
+> It did *not* refuse until this week. The movement critic ran inside the fan-out, and
+> a query answer is a transport reply that never passed through it — so the query desk
+> published the one output the whole policy exists to prevent.
+
+**The sighting trail.** Report movement and then ask:
+
+```
+you   ▸ shooter last seen heading toward the gym
+      ◂ Noted and added to the incident log.
+you   ▸ where is the shooter now
+      ◂ Last reported location: gym. Reported trail: east wing -> gym.
+        Reported by Principal Johnson. UNCONFIRMED — this is a reported
+        sighting, not a confirmed position, and it may have moved.
+```
+
+Two positions say which way it is moving, which is the difference between arriving
+behind it and arriving in front of it. Never without UNCONFIRMED attached, and never
+attributed to a raw phone number. With no sighting at all it says nobody has reported
+one rather than reaching for the declaration's wording as if it were a position.
 
 ---
 
@@ -225,14 +251,16 @@ Nothing in this waits on the loop. The escalation lands during step 3 and you cu
 | **0:35** | WhatsApp: `room 104: 23 students are safe, 1 unaccounted` | "One message, 23 students." |
 | **0:50** | *Escalation arrives — stop and read it out* | "Nobody asked it to do that." |
 | **1:10** | Slack: `/incident status` | "Every name. Not 'and 24 more'." |
-| **1:40** | Slack: `@CrisisMesh what's the fastest route out of east wing` | "It refuses. The threat is a person." |
+| **1:40** | WhatsApp: `shooter last seen heading toward the gym` | "A witness reports. That is a sighting, not a question." |
+| **1:55** | WhatsApp: `where is the shooter now` | "east wing → gym. Two positions say which way it is moving." |
 | **2:10** | Slack: `@CrisisMesh arrival brief` | "Two headcounts, both labelled." |
 | **3:00** | Console **Resolve** button | "All-clear to every phone, and back to Slack." |
 
 Leaves roughly a minute of slack in a 4–5 minute slot.
 
-**If you are running long**, cut the route refusal (1:40) — the brief is the stronger
-moment. **If you are running short**, add `@CrisisMesh who is on call right now`.
+**If you are running long**, cut the sighting pair (1:40–1:55) — the brief is the
+stronger moment. **If you are running short**, add the route refusal:
+`what's the fastest route out of east wing` → it will not give one during a lockdown.
 
 ## What to say while it runs
 
