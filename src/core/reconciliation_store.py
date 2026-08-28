@@ -359,7 +359,11 @@ def safe_should_act(incident_id: str, person_id: str, tick: int) -> bool:
             f"({exc}) — skipping this tick, will retry next"
         )
         return False
-    if state.status == rec.ACCOUNTED:
+    # The whole terminal set, not just ACCOUNTED. The guard was added to
+    # rec.should_act and this is the function the running loop calls, so an
+    # escalated person stayed actionable and their warden was paged about them
+    # again on every tick — three names, every 25 seconds, forever.
+    if state.status in rec.TERMINAL_FOR_THE_LOOP:
         return False
     return not rec.already_acted(incident_id, person_id, tick)
 

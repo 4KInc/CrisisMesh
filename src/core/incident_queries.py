@@ -32,6 +32,7 @@ KIND_UNACCOUNTED = "unaccounted"
 KIND_ONCALL = "oncall"
 KIND_ROUTES = "routes"
 KIND_ARRIVAL_BRIEF = "arrival_brief"
+KIND_THREAT_LOCATION = "threat_location"
 KIND_NONE = ""
 
 _BOARD_WORDS = ("board", "classroom board", "status board", "which rooms", "room report")
@@ -41,6 +42,12 @@ _ONCALL_WORDS = ("on call", "on-call", "who is responding", "who's responding",
                  "floor warden", "wardens", "who is on duty", "first aid", "trained")
 _ROUTE_WORDS = ("route", "way out", "exit", "fastest way", "how do we get out", "evacuate from")
 _BRIEF_WORDS = ("arrival brief", "law enforcement", "handoff", "le brief")
+# Asking where the threat is. Kept separate from a witness reporting where it
+# is: "where is the shooter" is a question, "he is heading for the gym" is a
+# sighting, and answering the second as if it were the first loses the report.
+_THREAT_SUBJECTS = ("shooter", "gunman", "attacker", "suspect", "intruder", "threat")
+_THREAT_ASKS = ("where is", "where's", "where was", "where are",
+                "last known location", "last seen", "location of")
 
 
 def classify(text: str) -> str:
@@ -49,6 +56,9 @@ def classify(text: str) -> str:
         return KIND_ROOM_CHECKIN
 
     lowered = text.lower()
+    if (any(w in lowered for w in _THREAT_SUBJECTS)
+            and any(w in lowered for w in _THREAT_ASKS)):
+        return KIND_THREAT_LOCATION
     if any(w in lowered for w in _BRIEF_WORDS):
         return KIND_ARRIVAL_BRIEF
     if any(w in lowered for w in _UNACCOUNTED_WORDS):
@@ -89,6 +99,8 @@ def answer(text: str, source: str = "", allow_sensitive: bool = False) -> str | 
         return _on_call()
     if kind == KIND_ROUTES:
         return _routes(text)
+    if kind == KIND_THREAT_LOCATION:
+        return _threat_location(incident_id)
     if kind == KIND_ARRIVAL_BRIEF:
         return None  # Slack renders this itself
     return None
@@ -217,10 +229,63 @@ def _on_call() -> str:
     return " ".join(lines)
 
 
+def _threat_location(incident_id: str) -> str:
+    """Where the threat has been reported, and never anywhere else.
+
+    Answers from the sighting trail only. Two positions say which way it is
+    moving, which is the difference between arriving behind it and in front of
+    it — but neither is a confirmed position, and someone may move on this
+    answer, so it is never given without that word attached.
+    """
+    from src.core import observations
+
+    track = observations.threat_track(incident_id)
+    if not track:
+        return (
+            "No reported sighting of the threat. Nobody has told me where it is, "
+            "and I will not guess. If you can see it, report the location — "
+            "otherwise hold position and call 911."
+        )
+
+    latest = track[-1]
+    if len(track) == 1:
+        where = f"Last reported location: {latest['location']}."
+    else:
+        trail = " -> ".join(t["location"] for t in track[-3:])
+        where = (f"Last reported location: {latest['location']}. "
+                 f"Reported trail: {trail}.")
+    who = latest.get("reported_by") or latest.get("source") or ""
+    attribution = f" Reported by {who}." if who else ""
+    return (
+        f"{where}{attribution} UNCONFIRMED — this is a reported sighting, not a "
+        "confirmed position, and it may have moved. Do not act on it as fact. "
+        "If this is life-threatening, call 911."
+    )
+
+
 def _routes(text: str) -> str:
-    """Safe routes out of a named zone, excluding anything reported blocked."""
+    """Safe routes out of a named zone, excluding anything reported blocked.
+
+    Refused outright during a lockdown. The movement critic runs inside the
+    fan-out, and a query answer does not pass through it — so this desk handed
+    out corridor directions during an active shooter, which is the one output
+    the whole policy exists to prevent.
+    """
     from src.agents.safety_intel.tools import find_safe_routes
     from src.agents.intake.tools import extract_location
+    from src.core import movement_policy
+
+    record = incident_state.get_latest_incident()
+    incident_type = (record.get("classification", {}) or {}).get("incident_type", "")
+    directive = movement_policy.for_incident(incident_type)
+    if not directive.may_publish_assembly_point:
+        return (
+            "I will not give a route out during a lockdown. Moving into a "
+            "corridor is exactly what this incident type makes dangerous, and I "
+            "cannot see where the threat is. Shelter in place, lock and barricade "
+            "the door, stay away from windows, and stay quiet. "
+            "If this is life-threatening, call 911."
+        )
 
     location = extract_location(text)
     zone_id = location.get("zone_id", "")
