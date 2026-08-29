@@ -96,3 +96,56 @@ class TestTheDropIsAnnouncedHonestly:
         ok, detail = slack_transport.apply_csv_upload("budget_2026.csv", "a,b\n1,2")
         assert ok is False
         assert "budget_2026" in detail or "not" in detail.lower()
+
+
+class TestFilesThatAreNotOurs:
+    """The demo folder carries seven CSVs CrisisMesh has never read — runbooks,
+    network assets, on-call schedules — because it is shared with another
+    project. Dropping the folder posted a red refusal for each one. Somebody
+    sharing a spreadsheet in a channel is not an error; a seed file that failed
+    to load is."""
+
+    def test_an_unrelated_csv_is_ignored_quietly(self):
+        from src.services import slack_transport
+
+        outcome = slack_transport.classify_upload("runbooks.csv", "a,b\n1,2")
+        assert outcome["announce"] is False
+        assert outcome["applied"] is False
+
+    def test_a_seed_file_that_fails_is_announced(self):
+        """This one has to be loud — someone tried to update seed data and it
+        did not take."""
+        from src.services import slack_transport
+
+        outcome = slack_transport.classify_upload("personnel.csv", "wrong,columns\n1,2")
+        assert outcome["announce"] is True
+        assert outcome["applied"] is False
+        assert "person_id" in outcome["detail"]
+
+    def test_a_seed_file_that_loads_is_announced(self):
+        import os
+        from src.services import slack_transport
+
+        content = open(os.path.join(SEED, "personnel.csv")).read()
+        outcome = slack_transport.classify_upload("personnel.csv", content)
+        assert outcome["announce"] is True
+        assert outcome["applied"] is True
+
+    def test_the_whole_demo_folder_produces_eight_messages(self):
+        """Fifteen files in, eight confirmations out, no refusals."""
+        import os
+        from src.services import slack_transport
+
+        folder = "/Users/heartlin/Projects/firstresponder-slack/templates/demo"
+        if not os.path.isdir(folder):
+            pytest.skip("demo folder not present")
+        announced, applied = 0, 0
+        for name in sorted(os.listdir(folder)):
+            if not name.endswith(".csv"):
+                continue
+            outcome = slack_transport.classify_upload(
+                name, open(os.path.join(folder, name)).read())
+            announced += outcome["announce"]
+            applied += outcome["applied"]
+        assert applied == 8
+        assert announced == 8

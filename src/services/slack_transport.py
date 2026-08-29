@@ -1895,6 +1895,24 @@ def apply_csv_upload(filename: str, content: str) -> tuple[bool, str]:
     return True, f"{filename}: {rows} rows"
 
 
+def classify_upload(filename: str, content: str) -> dict[str, Any]:
+    """Apply a dropped CSV, and decide whether the channel should hear about it.
+
+    A file CrisisMesh does not read is not a failure — this channel is shared,
+    and posting a red refusal because somebody dropped a runbook is noise in the
+    one room that has to stay readable. A *seed* file that did not load is the
+    opposite: someone meant to change the data and it did not take, and finding
+    that out during an incident is too late.
+    """
+    if filename not in SEED_FILES:
+        logger.info(f"Ignoring {filename}: not a file CrisisMesh reads")
+        return {"applied": False, "announce": False,
+                "detail": f"{filename} is not seed data CrisisMesh reads"}
+
+    ok, detail = apply_csv_upload(filename, content)
+    return {"applied": ok, "announce": True, "detail": detail}
+
+
 def _handle_file_shared(event: dict[str, Any]) -> None:
     """Handle file uploads — if CSV, download and update seed data."""
     global _facility_data_cache
@@ -1930,8 +1948,12 @@ def _handle_file_shared(event: dict[str, Any]) -> None:
         with urllib.request.urlopen(req) as resp:
             csv_content = resp.read().decode("utf-8")
 
-        ok, detail = apply_csv_upload(filename, csv_content)
+        outcome = classify_upload(filename, csv_content)
+        ok, detail = outcome["applied"], outcome["detail"]
         _facility_data_cache = ""
+
+        if not outcome["announce"]:
+            return
 
         if ok:
             label = filename.replace(".csv", "").replace("_", " ").title()
