@@ -21,6 +21,16 @@ teacher every 25 seconds during a real lockdown. |
 1. **Send `SAFE` to +1 772 297 1783.** Deploys clear the WhatsApp 24-hour session
    window and the in-memory board; without this, nothing reaches your handset.
 2. Have `#fr-live-demo` and the console open side by side, WhatsApp on the phone.
+3. **Optional opener — seed the school from CSVs.** Drop
+   `firstresponder-slack/templates/demo/*.csv` into `#fr-live-demo` **before declaring**.
+   Fifteen files go in; eight are loaded and confirmed, seven are ignored because
+   CrisisMesh does not read them, and nothing is refused:
+
+   > :white_check_mark: `personnel.csv` loaded — 34 rows. Roster now 34 people, 22 rooms, 8 zones.
+
+   Drop `personnel.csv` alone if you want the point in one message instead of eight.
+   **Never mid-incident:** the reload is atomic, but the board and check-ins are keyed
+   to a live incident and reloading under it muddies what the numbers mean.
 
 The run closes in Slack, so **you never touch the console's resolve token**. It exists
 because the console is deployed publicly and a stranger with the URL must not be able
