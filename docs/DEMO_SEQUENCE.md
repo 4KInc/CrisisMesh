@@ -219,7 +219,7 @@ never "unknown".
     · Door 2 (Main Entrance) — from library
   ⚠️ Do not use — reported sighting or floor-plan block:
     · Door 3 (East Exit) — from east-wing-f1, east-wing-f2 — sighting: east wing
-    · Door 7 (Gym Exit) — from east-wing-f1, gym — sighting: east wing; gym
+    · Door 7 (Gym Exit) — from east-wing-f1, gym — sighting: east wing, gym
     · Door 2 (Main Entrance) — from east-wing-f2 — sighting: east wing
     · Door 8 (Field Exit) — from gym — sighting: gym
 ```
@@ -242,9 +242,9 @@ least-bad route does not get promoted to a safe one.
 **Door 2 appears in both lists, and that is the point.** Clear from the library, not
 clear from east-wing-f2. The exit is not what is safe or unsafe — the path to it is.
 
-**The brief arrives as two messages.** The split lands on a section boundary, so the
-whole assessment — heading, both lists, the caveat — sits inside part 1. Part 2 is
-command contact and responding services. Scroll to part 1 and stay there.
+**The brief arrives as two messages.** Part 1 ends on the caveat, immediately after
+the assessment; part 2 is resources, command contact and responding services. The
+whole answer is in part 1 — scroll there and stay.
 
 > Two versions ago the brief printed `Last known location: gym` and then, four lines
 > below, `✅ Safe Routes: … Door 7 (Gym Exit)` — leaving the reader to notice the
