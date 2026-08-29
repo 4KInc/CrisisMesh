@@ -284,7 +284,9 @@ def _conflict(haystack: str, threat_locations: list[str]) -> str:
 
 
 def assess_egress(
-    routes: list[dict[str, Any]], threat_locations: list[str],
+    routes: list[dict[str, Any]],
+    threat_locations: list[str],
+    blocked_names: list[str] | tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Split every way out into paths no sighting touches, and paths that one does.
 
@@ -302,18 +304,33 @@ def assess_egress(
     """
     clear: list[dict[str, Any]] = []
     conflicting: list[dict[str, Any]] = []
+    blocked = set(blocked_names or ())
 
     for route in routes or []:
+        name = route.get("name", "")
         hit = _conflict(_route_text(route), threat_locations)
+        # A sighting outranks the floor plan when both apply: both are reasons
+        # not to use the route, and a person in the corridor is the more urgent
+        # of the two to say out loud.
+        # Kept short: the heading above the list already says these are
+        # sightings and floor-plan blocks, and repeating the full sentence on
+        # every row pushed the brief past Slack's message limit — which splits
+        # it, through the middle of this section.
+        if hit:
+            reason = f"sighting: {hit}"
+        elif name in blocked:
+            reason = "floor plan: blocked for this incident zone"
+        else:
+            reason = ""
         entry = {
+            "name": name,
             "from_zone": route.get("from_zone", ""),
             "to_exit": route.get("to_exit", ""),
             "route_description": route.get("route_description", ""),
             "step_free": "wheelchair" in str(route.get("accessibility", "")).lower(),
-            "conflict": (f"passes {hit}, where the threat has been reported"
-                         if hit else ""),
+            "conflict": reason,
         }
-        (conflicting if hit else clear).append(entry)
+        (conflicting if reason else clear).append(entry)
 
     return {
         "clear": clear,
@@ -321,3 +338,25 @@ def assess_egress(
         "checked_against": list(threat_locations or []),
         "caveat": CLEAR_CAVEAT,
     }
+
+
+def group_egress_by_exit(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One line per exit, naming the areas it can be reached from.
+
+    Six routes printed one per line with their walking directions pushed the
+    brief past Slack's message limit and split it through the middle of this
+    section. Three exits is three lines, and the unit a responder acts on is the
+    door, not each corridor that leads to it.
+    """
+    grouped: dict[str, dict[str, Any]] = {}
+    for e in entries:
+        row = grouped.setdefault(e["to_exit"], {
+            "to_exit": e["to_exit"], "zones": [], "step_free": False,
+            "conflicts": [],
+        })
+        if e["from_zone"] not in row["zones"]:
+            row["zones"].append(e["from_zone"])
+        row["step_free"] = row["step_free"] or e["step_free"]
+        if e["conflict"] and e["conflict"] not in row["conflicts"]:
+            row["conflicts"].append(e["conflict"])
+    return list(grouped.values())

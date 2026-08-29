@@ -123,8 +123,110 @@ class TestTheBriefAnswersTheQuestion:
         door7 = [ln for ln in text.split("\n") if "Door 7" in ln]
         assert door7
         # It sits under the warning heading with its condemning sighting named.
-        assert all("passes" in ln for ln in door7), door7
+        assert all("sighting:" in ln for ln in door7), door7
         assert ":warning:" in text
 
     def test_it_does_not_call_anything_safe(self):
         assert "Safe Routes" not in self._brief()
+
+
+class TestTheFloorPlansOwnExclusionsCount:
+    """The brief carried a "Blocked Routes" line from the floor plan and an
+    egress assessment from the sighting trail, and they could disagree about the
+    same route: with only the gym reported, East Wing F1 Primary is blocked for
+    this incident zone and carries no sighting, so it appeared in both lists —
+    condemned above, clear below.
+
+    Two reasons not to use a route, one list."""
+
+    def test_a_statically_blocked_route_is_not_called_clear(self, routes):
+        result = movement_policy.assess_egress(
+            routes, ["gym"], blocked_names=["East Wing F1 Primary"])
+        assert not any(r.get("name") == "East Wing F1 Primary" for r in result["clear"])
+
+    def test_it_says_the_floor_plan_is_why(self, routes):
+        result = movement_policy.assess_egress(
+            routes, [], blocked_names=["East Wing F1 Primary"])
+        hit = [r for r in result["conflicting"] if r["name"] == "East Wing F1 Primary"]
+        assert hit
+        assert "floor plan" in hit[0]["conflict"].lower()
+
+    def test_a_sighting_outranks_the_floor_plan(self, routes):
+        """Both true, one gets said. A person is more urgent than a layout."""
+        result = movement_policy.assess_egress(
+            routes, ["east wing"], blocked_names=["East Wing F1 Primary"])
+        hit = [r for r in result["conflicting"] if r["name"] == "East Wing F1 Primary"]
+        assert "sighting" in hit[0]["conflict"].lower()
+
+    def test_routes_carry_their_name(self, routes):
+        """Two east-wing-f2 routes reach Door 2 — the stairwell and the elevator.
+        Rendered without names they read as the same line printed twice."""
+        result = movement_policy.assess_egress(routes, ["east wing"])
+        names = [r["name"] for r in result["conflicting"] if "Door 2" in r["to_exit"]]
+        assert len(set(names)) == len(names)
+        assert "East Wing F2 Elevator" in names
+
+
+class TestTheBriefFitsOneMessage:
+    def test_the_egress_section_groups_by_exit(self):
+        """Six clear routes rendered one per line with descriptions pushed the
+        brief past Slack's limit and split it mid-section. Three exits, three
+        lines."""
+        from unittest.mock import patch
+        from src.core import incident_state, observations
+        from src.core.knowledge_base import init_knowledge_base
+        from src.services import slack_transport
+
+        KnowledgeBase.reset()
+        init_knowledge_base(SEED)
+        incident_state.reset()
+        observations.reset()
+        incident_state.declare("T-1", {
+            "incident_id": "T-1",
+            "report": "active shooter reported in the east wing, gunshots heard",
+            "classification": {"incident_type": "active_threat", "severity": "critical"},
+            "location": {"zone_id": "east-wing-f1", "zone_name": "East Wing Floor 1"},
+        }, source="whatsapp")
+        observations.record("T-1", "shooter last seen heading toward the gym",
+                            source="whatsapp", person_name="Mrs. Rodriguez")
+        posted = []
+        with patch.object(slack_transport, "_post_bot_message",
+                          lambda ch, t, **kw: posted.append(t)):
+            slack_transport._handle_arrival_brief("C1", "")
+        text = "\n".join(posted)
+
+        section = text[text.index("EGRESS ASSESSMENT"):text.index("On-Site Resources")]
+        assert section.count("Door 1 (West Exit)") == 1, "the same exit listed repeatedly"
+        assert "step-free" in section
+        # _post_bot_message is mocked here and that is where splitting happens,
+        # so counting calls to the mock would prove nothing. Run the real
+        # splitter: the brief is allowed to need two messages, but the egress
+        # assessment must not be cut in half by the break.
+        parts = slack_transport._split_for_slack(text)
+        holding = [p for p in parts if "EGRESS ASSESSMENT" in p]
+        assert len(holding) == 1
+        # Heading, both lists and the caveat all land in the same message.
+        assert "Do not use" in holding[0], "the break fell inside the assessment"
+        assert "No reported sighting on these paths" in holding[0]
+        assert "not a clearance" in holding[0], "the caveat was split away"
+
+    def test_the_blocked_routes_line_is_gone(self):
+        from unittest.mock import patch
+        from src.core import incident_state, observations
+        from src.core.knowledge_base import init_knowledge_base
+        from src.services import slack_transport
+
+        KnowledgeBase.reset()
+        init_knowledge_base(SEED)
+        incident_state.reset()
+        observations.reset()
+        incident_state.declare("T-1", {
+            "incident_id": "T-1", "report": "active shooter in the east wing",
+            "classification": {"incident_type": "active_threat", "severity": "critical"},
+            "location": {"zone_id": "east-wing-f1", "zone_name": "East Wing Floor 1"},
+        }, source="whatsapp")
+        posted = []
+        with patch.object(slack_transport, "_post_bot_message",
+                          lambda ch, t, **kw: posted.append(t)):
+            slack_transport._handle_arrival_brief("C1", "")
+        assert "Blocked Routes" not in "\n".join(posted)

@@ -84,7 +84,7 @@ class TestTheBriefDoesNotCallThemSafeDuringALockdown:
         text = self._brief()
         gym_line = [ln for ln in text.split("\n") if "Door 7" in ln]
         assert gym_line, text
-        assert "threat" in gym_line[0].lower() or "reported" in gym_line[0].lower()
+        assert "sighting:" in gym_line[0].lower(), gym_line
 
     def test_a_fire_still_calls_them_safe_routes(self):
         from src.core import incident_state, observations

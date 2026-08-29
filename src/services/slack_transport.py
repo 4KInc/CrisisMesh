@@ -1569,8 +1569,10 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
 
     # ── Egress ──
     lines.append("")
-    if egress.get("blocked_routes"):
-        lines.append(f":no_entry: *Blocked Routes:* {', '.join(egress['blocked_routes'])}")
+    # The floor plan's own exclusions are folded into the assessment below
+    # rather than printed separately: two lists could disagree about the same
+    # route, and with only the gym reported this brief said "Blocked Routes:
+    # East Wing F1 Primary" four lines above listing it as clear.
     from src.core import movement_policy, observations
 
     directive = movement_policy.for_incident(incident["type"])
@@ -1585,24 +1587,26 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
         threat_seen = [t["location"] for t in observations.threat_track(
             incident_state.get_active_incident_id())]
         assessment = movement_policy.assess_egress(
-            kb.get_all_routes_for_facility("jefferson"), threat_seen)
+            kb.get_all_routes_for_facility("jefferson"), threat_seen,
+            blocked_names=egress.get("blocked_routes", []))
 
+        checked = ", ".join(assessment["checked_against"]) or "no sightings reported yet"
         lines.append(":door: *EGRESS ASSESSMENT* — every route cross-checked "
-                     f"against reported sightings: {', '.join(assessment['checked_against']) or 'none reported'}")
+                     f"against reported sightings: {checked}")
         if assessment["clear"]:
             lines.append("  :white_check_mark: *No reported sighting on these paths:*")
-            for r in assessment["clear"]:
-                step = " _[step-free]_" if r["step_free"] else ""
-                lines.append(f"    · {r['to_exit']} — from {r['from_zone']}{step}")
-                lines.append(f"      {r['route_description']}")
+            for r in movement_policy.group_egress_by_exit(assessment["clear"]):
+                step = "  _[step-free available]_" if r["step_free"] else ""
+                lines.append(f"    · *{r['to_exit']}* — from {', '.join(r['zones'])}{step}")
         else:
-            lines.append("  :no_entry: *Every known route touches a reported "
-                         "sighting.* Nothing here is clear — the least-bad route "
-                         "is not a safe one and will not be named as though it were.")
+            lines.append("  :no_entry: *Every known route is excluded.* Nothing "
+                         "here is clear — the least-bad route is not a safe one "
+                         "and will not be named as though it were.")
         if assessment["conflicting"]:
-            lines.append("  :warning: *Reported sighting on these paths:*")
-            for r in assessment["conflicting"]:
-                lines.append(f"    · {r['to_exit']} — from {r['from_zone']} — {r['conflict']}")
+            lines.append("  :warning: *Do not use — reported sighting or floor-plan block:*")
+            for r in movement_policy.group_egress_by_exit(assessment["conflicting"]):
+                lines.append(f"    · {r['to_exit']} — from {', '.join(r['zones'])} "
+                             f"— {'; '.join(r['conflicts'])}")
         lines.append(f"  _{assessment['caveat']}_")
     if egress.get("accessible_routes"):
         lines.append(f":wheelchair: *Accessible Routes:* {', '.join(egress['accessible_routes'])}")
@@ -1619,9 +1623,15 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     resources = brief.get("on_site_resources", [])
     if resources:
         lines.append("")
-        lines.append(f":package: *On-Site Resources:*")
+        # One line per kind. Nine near-identical rows cost the brief its place
+        # inside a single Slack message, and every location is still here.
+        by_kind: dict[str, list[str]] = {}
         for r in resources:
-            lines.append(f"  - {r}")
+            kind, _, where = str(r).partition(":")
+            by_kind.setdefault(kind.strip() or "Other", []).append(where.strip() or str(r))
+        lines.append(f":package: *On-Site Resources:*")
+        for kind, places in by_kind.items():
+            lines.append(f"  *{kind}* ({len(places)}): " + " · ".join(places))
 
     # ── Command & services ──
     lines.append("")
@@ -2070,6 +2080,19 @@ def _record_policy_violation(violation: Any) -> None:
 SLACK_TEXT_LIMIT = 3000
 
 
+def _rewind_to_blank(current: list[str], keep_fraction: float = 0.4) -> int | None:
+    """Index of the last blank line worth breaking at, or None.
+
+    Only rewinds into the back part of what has accumulated: a blank line near
+    the very top would throw away most of a message that was otherwise full.
+    """
+    floor = int(len(current) * keep_fraction)
+    for i in range(len(current) - 1, floor, -1):
+        if not current[i].strip():
+            return i
+    return None
+
+
 def _split_for_slack(text: str, limit: int = SLACK_TEXT_LIMIT) -> list[str]:
     """Break a long message on line boundaries, never mid-word.
 
@@ -2095,6 +2118,18 @@ def _split_for_slack(text: str, limit: int = SLACK_TEXT_LIMIT) -> list[str]:
                 current, size = [], 0
             parts.append(line[:limit])
             line = line[limit:]
+        # Prefer a section seam. Filling each part to the last line that fits
+        # cut the egress assessment through the middle of its own list — half
+        # the doors in one message, half in the next, with the heading that says
+        # which half is which left behind. A blank line is where the document
+        # already changes subject.
+        if size + len(line) + 1 > limit and current:
+            back = _rewind_to_blank(current)
+            if back is not None:
+                head, tail = current[:back], current[back + 1:]
+                parts.append("\n".join(head).rstrip())
+                current = tail
+                size = sum(len(x) + 1 for x in current)
         if size + len(line) + 1 > limit and current:
             parts.append("\n".join(current))
             current, size = [], 0
