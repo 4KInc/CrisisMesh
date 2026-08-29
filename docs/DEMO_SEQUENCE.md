@@ -22,13 +22,15 @@ teacher every 25 seconds during a real lockdown. |
    window and the in-memory board; without this, nothing reaches your handset.
 2. Have `#fr-live-demo` and the console open side by side, WhatsApp on the phone.
 3. **Optional opener — seed the school from CSVs.** Drop
-   `firstresponder-slack/templates/demo/*.csv` into `#fr-live-demo` **before declaring**.
-   Fifteen files go in; eight are loaded and confirmed, seven are ignored because
-   CrisisMesh does not read them, and nothing is refused:
+   **`CrisisMesh/data/seed/*.csv`** into `#fr-live-demo` **before declaring**. That is
+   the whole set CrisisMesh reads — eight files, no more and no fewer — so all eight
+   load and nothing is refused:
 
    > :white_check_mark: `personnel.csv` loaded — 34 rows. Roster now 34 people, 22 rooms, 8 zones.
 
    Drop `personnel.csv` alone if you want the point in one message instead of eight.
+   Dropping a CSV CrisisMesh does not read — a runbook, a network inventory — is
+   ignored with a log line rather than a refusal in the channel.
    **Never mid-incident:** the reload is atomic, but the board and check-ins are keyed
    to a live incident and reloading under it muddies what the numbers mean.
 
