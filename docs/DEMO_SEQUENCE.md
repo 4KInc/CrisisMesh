@@ -20,11 +20,11 @@ teacher every 25 seconds during a real lockdown. |
 
 1. **Send `SAFE` to +1 772 297 1783.** Deploys clear the WhatsApp 24-hour session
    window and the in-memory board; without this, nothing reaches your handset.
-2. **Prime the resolve token.** Open the console, declare a throwaway incident,
-   click **Resolve incident**, and enter the token once. The browser keeps it, so
-   during the real run the dialog is just your name and a click. Doing this cold in
-   front of an audience is a password prompt on your closing beat.
-3. Have `#fr-live-demo` and the console open side by side, WhatsApp on the phone.
+2. Have `#fr-live-demo` and the console open side by side, WhatsApp on the phone.
+
+The run closes in Slack, so **you never touch the console's resolve token**. It exists
+because the console is deployed publicly and a stranger with the URL must not be able
+to end a live incident — a real property, but not a beat. Keep it for the Q&A.
 
 ---
 
@@ -281,7 +281,7 @@ Nothing in this waits on the loop. The escalation lands during step 3 and you cu
 | **1:40** | WhatsApp: `shooter last seen heading toward the gym` | "A witness reports. That is a sighting, not a question." |
 | **1:55** | WhatsApp: `where is the shooter now` | "east wing → gym. Two positions say which way it is moving." |
 | **2:10** | Slack: `@CrisisMesh arrival brief` | "Two headcounts, both labelled." |
-| **3:00** | Console **Resolve incident** → type your name → **Resolve** | "All-clear to every phone, and back to Slack." |
+| **3:00** | Slack: `/incident resolve` | "One command. All-clear to every phone." |
 
 Leaves roughly a minute of slack in a 4–5 minute slot.
 
