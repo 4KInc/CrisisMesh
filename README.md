@@ -27,11 +27,15 @@ A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp
 7. **Posts** Block Kit SITREP and responder one-card back to Slack; lights up the command console
 8. **Accepts** one-tap check-ins via Slack reactions, SMS replies, or WhatsApp messages (SAFE / SOS / INJURED / EVACUATED)
 9. **Accepts room-level check-ins** — teachers report via `@CrisisMesh room 104: 23 safe, 2 missing` for per-room accountability
-10. **Generates Law Enforcement Arrival Briefs** — on-demand via `@CrisisMesh arrival brief`, providing a read-only point-in-time package for arriving responders: silent rooms (rooms with no check-in, prioritized by threat zone proximity), building overview, floor wardens, on-site resources (AEDs, first aid, fire extinguishers), hazards, blocked/safe/accessible routes, and assembly points
-11. **Surfaces prior lessons without prompting** — the Memory Bank automatically retrieves relevant lessons from past incidents across facilities (e.g. "elevator key should be pre-staged on Floor 2") with Jaccard confidence scoring and source citations
-12. **Blocks** malicious inputs via Google Model Armor API (injection, jailbreak, malicious URI, RAI) + InjectionGuard regex fallback
-13. **Audits** every action with an append-only audit log and observability trace
-14. **Hot-reloads facility data** — CSV files dropped in the Slack channel are ingested immediately, updating both the Gemini context and the deterministic KnowledgeBase pipeline in real time
+10. **Chases the silent, unprompted, on a timer** — the reconciliation loop runs every tick without anyone asking. It pings whoever has not checked in, re-pings up to a configured cap, and then stops pinging and hands that person to their floor warden **by name** on whatever channel actually reaches them. An escalated person is terminal for the loop: the warden is told once, not every tick forever. When nobody can be reached, that is reported to the IC rather than quietly dropped
+11. **Syncs across channels in both directions** — an incident declared from a handset is announced in the Slack room where the response is run, and one declared in Slack reaches every phone. During a lockdown the phone is the device in someone's hand, so that direction has to arrive
+12. **Tracks the threat as a trail, not a point** — reported sightings accumulate (`east wing → gym`), each timestamped and attributed, and every answer carries `UNCONFIRMED`. With no sighting it says nobody has reported one rather than reaching for the opening message as though it were a position
+13. **Works out which way is clear** — the floor plan and the sighting trail are joined, not printed side by side. Every route in the facility is classified into paths no reported sighting touches and paths one does, judged against every reported position and against the floor plan's own exclusions, with step-free options marked. When every path touches a sighting the clear list is empty and says so — the least-bad route is never promoted to a safe one
+14. **Generates Law Enforcement Arrival Briefs** — on-demand via `@CrisisMesh arrival brief`: a read-only point-in-time package with the threat trail, two separately-labelled headcounts (tracked staff roster vs room-reported occupants), silent rooms prioritised by threat-zone proximity, floor wardens, on-site resources, hazards, and the egress assessment above
+15. **Surfaces prior lessons without prompting** — the Memory Bank automatically retrieves relevant lessons from past incidents across facilities (e.g. "elevator key should be pre-staged on Floor 2") with Jaccard confidence scoring and source citations
+16. **Blocks** malicious inputs via Google Model Armor API (injection, jailbreak, malicious URI, RAI) + InjectionGuard regex fallback
+17. **Audits** every action with an append-only audit log and observability trace
+18. **Hot-reloads facility data** — CSV files dropped in the Slack channel are validated, applied against a staged copy, and swapped in atomically. A file that would empty the roster is refused and the previous data stays; a CSV CrisisMesh does not read is ignored with a log line rather than a refusal in the one room that has to stay readable
 
 ### Authority-Bounded Autonomy
 
@@ -45,6 +49,28 @@ Three high-consequence actions require explicit IC approval before executing:
 Everything else — including playbook activation, route computation, resource lookup, check-in escalation, and lesson retrieval — executes autonomously. This is a deliberate design: in a crisis, speed matters for information gathering; human authority matters for consequential decisions.
 
 **Safety guardrail:** CrisisMesh coordinates an organization's internal response **alongside 911 and qualified responders** — it never replaces them. Every incident acknowledgment includes a 911-escalation line. It never provides medical, tactical, or evacuation instructions beyond approved, organization-specific playbooks.
+
+### The Reconciliation Loop
+
+The part that runs while nobody is watching it.
+
+A declared incident starts a scheduler. Every tick, for each person not yet accounted for, the loop decides one thing and records it:
+
+```
+SILENT ──ping──► REPINGED ──(cap reached)──► ESCALATED ──► terminal
+   │                  │                          │
+   └──── check-in ────┴──────────────────────────┴──► ACCOUNTED ──► terminal
+```
+
+* **It picks a channel that works.** SMS, then WhatsApp, then Slack — and a Slack id is verified against the workspace before it counts. An id that resolves to nobody is unreachable, not reachable-by-assumption.
+* **It gives up on pinging before it gives up on the person.** At the cap it stops messaging them and tells their floor warden, by name, on the warden's own channel. It never sends *"X has not answered, please locate them"* to X.
+* **It says the warden's name once.** `ESCALATED` and `ACCOUNTED` are both terminal for the loop. Without that, a timer pages the same warden about the same person every tick, forever.
+* **It reports what it cannot do.** No reachable channel for the person, or none for the warden, goes to the IC as a flag. Unreachable is a fact to surface, not a reason to stop.
+* **Its decisions survive the process.** State is Firestore-backed with compare-and-set, the scheduler restarts itself after an instance is replaced, and the first tick fires immediately rather than after a full interval.
+
+Tunable per deployment: `CRISISMESH_TICK_SECONDS`, `CRISISMESH_REPING_CAP`, `CRISISMESH_AUTO_TICK`.
+
+Asking `@CrisisMesh who hasn't answered` while the scheduler is running **reports the latest completed tick rather than forcing another** — the answer to that question is a reading, not an action, and a commander's curiosity should not re-ping people ahead of schedule.
 
 ---
 
@@ -104,7 +130,7 @@ The transport follows anbu-care's honesty rule: `delivered` is True only when Tw
 
 > Requires `TWILIO_AUTH_TOKEN` env var for inbound. Add `TWILIO_ACCOUNT_SID` and `TWILIO_PHONE_NUMBER` for outbound follow-up. Without `TWILIO_AUTH_TOKEN`, the `/sms` endpoint returns HTTP 503.
 
-### 3. WhatsApp (Business API) — Deterministic Only
+### 3. WhatsApp (Business API) — Full Query Parity
 
 Message the CrisisMesh WhatsApp number with an incident description. The system classifies and responds with a confirmation including the incident ID and a 911 reminder. Reply with `SAFE`, `SOS`, `INJURED`, or `EVACUATED` to check in.
 
@@ -119,7 +145,11 @@ Two providers, selected by `CRISISMESH_WHATSAPP_MODE`:
 | `off` | — | — | nothing leaves |
 
 
-WhatsApp runs the deterministic pipeline only (no Gemini agent fleet). The same incident is visible in the command console for the Gemini-driven stream.
+WhatsApp answers the same questions Slack does — `who is still unaccounted`, `show the classroom board`, `who is on call`, `where is the shooter now`, `room 104: 23 safe, 1 missing` — because the person who needs an answer during a lockdown is holding a phone, not sitting at a console. Slack-style prefixes typed here (`/incident`, `/checkin`, `@CrisisMesh`) are stripped: there are no slash commands on WhatsApp and the person means the words after them.
+
+Two things it will not do over text. The **arrival brief** is refused — it names the locations of people with mobility limitations and needs IC approval, so it stays in Slack. And a **sighting report is never answered as though it were a question**: "shooter last seen heading toward the gym" is recorded as a witness statement, while "where is the shooter" is answered from the trail.
+
+The webhook acknowledges before it works. Twilio allows a webhook 15 seconds, and classifying a report, calling a model and writing Firestore inside that budget is a bet — losing it is not a slow reply but Twilio error 11200 and a lost message. The route verifies the signature, returns 200, and replies over the REST API like every other message the system sends.
 
 > Requires `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` env vars. Without them, the `/whatsapp` endpoint returns HTTP 503 with setup instructions.
 
@@ -227,7 +257,7 @@ flowchart LR
 | **WhatsApp** | WhatsApp Business Cloud API (Meta) | Inbound message incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 495 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 1,215 tests, no GCP required |
 
 ---
 
@@ -391,7 +421,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (495 passing, no GCP required)
+# Run tests (1,215 passing, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -429,8 +459,19 @@ adk run
 | `WHATSAPP_APP_SECRET` | secret | — | WhatsApp app secret for signature verification (optional) |
 | `WHATSAPP_ACCESS_TOKEN` | token | — | WhatsApp Cloud API access token (optional) |
 | `WHATSAPP_PHONE_NUMBER_ID` | ID | — | WhatsApp phone number ID (optional) |
-| `AUTHORIZED_IC_IDS` | comma-separated IDs | — | Restrict approval-gate access to listed Incident Commander IDs (constant-time compare); if unset, any approver accepted |
+| `AUTHORIZED_IC_IDS` | IDs joined by `^` or `,` | — | Incident Commanders, constant-time compared. **Unset refuses everyone, including the IC** — an unconfigured gate that accepted anyone would be no gate at all. Use `^` when setting it through `gcloud --update-env-vars`, which reserves the comma: set with a comma and the whole string becomes one id matching nobody, so the gate refuses silently and correctly, and very confusingly |
 | `DEMO_AUTO_APPROVE` | `1` | — | Auto-approve gated actions immediately (demo mode only; never in production) |
+| `CRISISMESH_DELIVERY` | `on` \| `off` | `off` | The wire. Off by default and deliberately not implied by having credentials — every step before this one had the property that a bug's worst consequence stayed inside a response body |
+| `CRISISMESH_AUTO_TICK` | `on` \| `off` | `off` | Runs the reconciliation loop on a schedule instead of only when asked |
+| `CRISISMESH_TICK_SECONDS` | seconds | `45` | Interval between reconciliation ticks (floor of 5) |
+| `CRISISMESH_REPING_CAP` | count | `2` | Re-pings before the loop stops messaging a person and tells their warden |
+| `CRISISMESH_RECONCILIATION_STORE` | `memory` \| `firestore` | `memory` | Where reconciliation state lives. `memory` does not survive an instance replacement |
+| `CRISISMESH_INCIDENT_STORE` | `memory` \| `firestore` | `memory` | Where the active incident lives |
+| `SLACK_INCIDENT_CHANNEL` | `C…` | — | The room told about incidents declared on other channels. Unset announces nowhere rather than guessing a channel — a lockdown alert in the wrong room is worse than none |
+| `CRISISMESH_RESOLVE_TOKEN` | secret | — | Required by the console's resolve button. The console is public, so an embedded token would be no gate; it is entered once and kept in the browser |
+| `CRISISMESH_SEED_DIR` | path | `data/seed` | Overrides where seed CSVs are read and written. Applying an upload rewrites this directory, so tests point it at a copy |
+| `CRISISMESH_PUBLIC_URL` | URL | — | Public base URL used in opt-in and webhook links |
+| `CRISISMESH_DEMO_SLACK_MAP` | `p001=U…^p002=U…` | — | Demo only — maps roster people to real Slack ids without committing them |
 | `PORT` | port number | `8080` | HTTP server port |
 
 ### API Endpoints
@@ -572,6 +613,12 @@ Operationally autonomous but authority-bounded — humans retain the consequenti
 | Tactical guidance (playbook-grounded) | Autonomous — Gemini reasons over approved playbook rules |
 | Tactical guidance (improvised) | Autonomous — fires when no approved rule covers the situation; provenance recorded as `improvised` in audit log |
 | Routing directives | Deterministic route validation (code) — directives into known blocked/threat zones are suppressed before release |
+| Egress assessment | Autonomous — every route cross-checked against every reported sighting and the floor plan's own exclusions. *Clear* means one thing and never drifts to *safe*: no reported sighting lies on this path. Not swept, not cleared, and blind to a threat nobody reported — that sentence ships with every answer |
+| Chase an unaccounted person | Autonomous — ping, re-ping to a configured cap, then stop |
+| Escalate to a named human | Autonomous — the floor warden is told once, on a channel verified to reach them. Never sent to the person being looked for |
+| Unreachable person or warden | Reported to the IC. Unreachable is a fact to surface, not a reason to stop |
+| Report reachability | Slack ids are verified against the workspace before being counted. An id that resolves to nobody counts as unreachable — the system reports the reach it has, not the reach it would like |
+| Headcount denominator | The roster, never the surviving ledger rows. No record means nobody has heard from them, so a lost record resolves toward sending someone to look |
 | Generate arrival brief | **`REQUIRES_COMMANDER_APPROVAL`** — read-only point-in-time package for arriving law enforcement/fire/EMS with silent rooms, building layout, resources, and hazards |
 | Send responder handoff brief | Autonomous — PII content scan still runs on output |
 | Propose playbook change | Autonomous — a proposal is low-consequence; applying it is separately gated |
@@ -638,7 +685,23 @@ CrisisMesh/
 │   │   ├── agent_gateway.py         # 4-layer policy enforcement gateway
 │   │   ├── content_scanner.py       # Dual-backend: InjectionGuard / Model Armor
 │   │   ├── event_bus.py             # Pub/Sub + in-memory event bus
-│   │   ├── knowledge_base.py        # CSV-loaded organizational data store
+│   │   ├── knowledge_base.py        # CSV-loaded organizational data store (atomic swap on reload)
+│   │   ├── incident_state.py        # Channel-neutral active-incident owner
+│   │   ├── incident_store.py        # Firestore persistence for incident state
+│   │   ├── incident_queries.py      # Cross-channel question desk (board, unaccounted, routes, threat)
+│   │   ├── incident_digest.py       # One-line status shared by every channel
+│   │   ├── inbound_router.py        # Routes a phone message by incident state
+│   │   ├── channel_sync.py          # Announces phone-declared incidents in the Slack room
+│   │   ├── notify.py                # Fan-out, channel resolution, verified reach
+│   │   ├── observations.py          # Append-only witness log + threat sighting trail
+│   │   ├── room_board.py            # Per-room check-in board
+│   │   ├── reconciliation.py        # Accountability state machine (SILENT→REPINGED→ESCALATED)
+│   │   ├── reconciliation_store.py  # Firestore-backed CAS for reconciliation state
+│   │   ├── reconciliation_loop.py   # The autonomous tick: chase, escalate, flag
+│   │   ├── movement_policy.py       # Movement critic + egress assessment vs sightings
+│   │   ├── checkin_policy.py        # Refuses orphan check-ins
+│   │   ├── declaration_guard.py     # Plausibility gate + command-prefix stripping
+│   │   ├── incident_resolve.py      # One stand-down path for every channel
 │   │   ├── memory_bank.py           # Cross-session lesson & outcome storage
 │   │   ├── observability.py         # Span-based tracing + audit bundle export
 │   │   ├── tactical_reasoning.py    # Playbook-grounded/improvised reasoning + safety floors
@@ -683,7 +746,7 @@ CrisisMesh/
 
 ## Test Coverage
 
-495 passing tests covering:
+1,215 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries
@@ -699,6 +762,13 @@ CrisisMesh/
 - **SMS Transport:** Twilio signature verification (HMAC-SHA1), check-in keyword mapping, incident pipeline via SMS, TwiML response formatting, content safety blocking, outbound SMS via Twilio REST API, background agentic dispatch + follow-up SITREP
 - **HTTP Server:** All endpoints (GET + POST), error handling, CORS
 - **CSV Ingestion:** All 8 data types parsed correctly, semantic validation (route→blocked zone, resource→valid floor/zone, room→valid facility), row-level reject-and-report with validation reports
+- **Reconciliation:** State-machine edges and illegal transitions, attempt cap, terminal states (an escalated person is never re-chased), reopen resets the cap, Firestore compare-and-set under contention, re-entrancy, tick budget, roster hydration, scheduler restart after instance replacement
+- **Cross-channel sync:** Phone-declared incidents announced in the Slack room, no double-post when Slack already has the card, fail-closed with no configured channel, reporter named from the roster and never as a phone number, all-clear attributed to the channel that resolved it
+- **Egress assessment:** Routes cross-checked against every reported sighting and the floor plan's own exclusions, grouping by exit, step-free identification, empty clear-list when every path is touched, *clear* never rendered as *safe*
+- **Threat trail:** Sighting accumulation with timestamps and attribution, question-vs-report disambiguation, no fabricated position when nothing has been reported, no phone numbers in attribution
+- **Status truth:** Roster as headcount denominator, missing lists naming everyone, declarer named across channels, two populations labelled separately in the brief
+- **Webhook latency:** Acknowledgement independent of pipeline duration, reply over REST, a crash still answers the sender
+- **CSV drop:** Concurrent reloads never expose an empty roster, column validation, rollback on failure, unrelated files ignored quietly
 - **Failure Injection:** Sub-agent timeout (retry + escalation), malformed agent output (None-as-success fail-open fix), agent loop rate limiting, transient Firestore failure, prompt injection blocking, invalid CSV row quarantine — 6 injection modes with 4-part fail-closed contract assertions
 - **Tactical Reasoning:** Grounded vs improvised origin determination, no-fabricated-grounding invariant, safety backstop on all evacuation types, route validation against blocked zones, origin stripping from all UI/transport surfaces, provenance records, authority-bounded autonomy (3 human-gated actions), coordinator tool integration
 - **Task Manager:** Retry, timeout, fallback, escalation, result type validation (None rejected)
@@ -753,6 +823,24 @@ export ARMOR_TEMPLATE=crisismesh-guard
 # Regex fallback (offline / local dev)
 export ARMOR_BACKEND=regex
 ```
+
+---
+
+## Known Limits
+
+The system refuses to overstate what it knows. The same rule applies here.
+
+**Reach is 4 of 34, and it says so.** Thirty roster entries have no verified channel — no phone number that has opted in, no Slack id that resolves to a workspace member. `/incident status` reports the reach it has. Filling the roster with plausible-looking ids would show 34 of 34 and would be a lie, and the loop would then chase people down channels that go nowhere while the IC was never told to reach them another way.
+
+**Some state does not survive a redeploy while the incident does.** The incident and reconciliation state are Firestore-backed. The witness log, the room board and the WhatsApp session window are in memory: replace the instance mid-incident and the room board resets under a live incident. The headcount denominator resolves this safely — a lost record counts as unaccounted, never as accounted-for — but the board itself is gone. **Do not redeploy during an incident; resolve and re-declare.**
+
+**`--max-instances=1` is load-bearing.** Several in-memory singletons are shared across requests. The deployment does not scale horizontally without moving them to Firestore first.
+
+**`/sms` still runs the pipeline inside the webhook.** The WhatsApp route acknowledges first and works after; the SMS route does not, so a slow pipeline there can still overrun Twilio's 15-second budget and lose a message to error 11200. It needs a different fix, because the carrier-mandated `STOP`/`HELP` paths have to stay synchronous. SMS is not in production use while the A2P 10DLC campaign is unapproved.
+
+**`src/services/csv_ingest.py` is unreferenced.** It holds row-level semantic validators that nothing calls; the Slack upload path does its own column and load validation instead. Left in place rather than half-wired.
+
+**Improvised tactical reasoning is autonomous.** When no approved playbook rule covers a situation, the fleet answers anyway and records the provenance as `improvised` in the audit log. That is a deliberate trade — silence during a crisis is also a failure mode — but it means not every answer is playbook-grounded, and the audit log is the only place that distinction is visible.
 
 ---
 
