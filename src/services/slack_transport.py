@@ -1789,6 +1789,112 @@ VALID_CSV_FILES = {
 _knowledge_base_counts: dict[str, int] = {}
 
 
+# Seed reloads are serialised. Slack sends one file_shared event per file and
+# each runs in its own thread, so dropping the whole seed directory at the top of
+# a run is a dozen threads calling KnowledgeBase.reset() and then re-reading the
+# directory. Between those two calls the knowledge base is empty, and the
+# accountability denominator reads it — a badly-timed drop reports a school with
+# nobody in it as a school where everybody is accounted for.
+_kb_reload_lock = threading.Lock()
+
+# Only the files the knowledge base actually reads, and the columns each one has
+# to carry. A stray CSV in the channel is not seed data, and a file that parses
+# is not the same as a file that means anything: "not,a,valid / roster" is one
+# clean row of nonsense, and counting rows accepted it.
+SEED_FILES: dict[str, frozenset[str]] = {
+    "facility.csv": frozenset({"facility_id", "name", "address"}),
+    "zones.csv": frozenset({"zone_id", "facility_id", "name", "floor"}),
+    "rooms.csv": frozenset({"room_id", "facility_id", "floor", "zone_id"}),
+    "personnel.csv": frozenset({"person_id", "name", "role", "phone"}),
+    "evacuation_routes.csv": frozenset({"facility_id", "name", "from_zone", "to_exit"}),
+    "emergency_resources.csv": frozenset({"facility_id", "resource_type",
+                                          "location_description"}),
+    "assembly_points.csv": frozenset({"point_id", "facility_id", "name"}),
+    "nearby_services.csv": frozenset({"service_type", "name", "phone"}),
+}
+
+
+def seed_dir() -> str:
+    import pathlib
+    return str(pathlib.Path(__file__).resolve().parent.parent.parent / "data" / "seed")
+
+
+def reload_knowledge_base(directory: str = "") -> None:
+    """Re-read the seed directory under the lock, and drop what it invalidates."""
+    from src.core import notify
+
+    with _kb_reload_lock:
+        # Loaded in full before it is visible: a reader must never see the
+        # half-second where the old roster is gone and the new one has not
+        # arrived.
+        fresh = KnowledgeBase()
+        fresh.load_from_directory(directory or seed_dir())
+        KnowledgeBase.install(fresh)
+    # A new roster is new Slack ids; keeping the old verdicts would report
+    # reachability for people who are no longer on it.
+    notify.reset_slack_id_cache()
+
+
+def apply_csv_upload(filename: str, content: str) -> tuple[bool, str]:
+    """Write one seed file and reload, or refuse and change nothing.
+
+    Refusing matters more than accepting: a truncated upload that replaced a
+    good roster would empty the school mid-incident, and the previous data is
+    always a better answer than no data.
+    """
+    import pathlib
+    import shutil
+    import tempfile
+
+    if filename not in SEED_FILES:
+        return False, (f"`{filename}` is not one of the files CrisisMesh reads. "
+                       f"Expected one of: {', '.join(sorted(SEED_FILES))}.")
+
+    import csv as _csv
+    import io
+
+    try:
+        header = next(_csv.reader(io.StringIO(content)), [])
+    except Exception as exc:  # noqa: BLE001
+        return False, f"`{filename}` could not be read as CSV: {exc}"
+    missing = SEED_FILES[filename] - {h.strip() for h in header}
+    if missing:
+        return False, (f"`{filename}` is missing required column(s): "
+                       f"{', '.join(sorted(missing))}. Nothing was changed.")
+
+    target = pathlib.Path(seed_dir()) / filename
+    previous = target.read_text() if target.exists() else ""
+
+    with tempfile.TemporaryDirectory() as staging:
+        # Validate against a copy, so a bad file never touches the live one.
+        stage = pathlib.Path(staging)
+        for name in SEED_FILES:
+            src = pathlib.Path(seed_dir()) / name
+            if src.exists():
+                shutil.copy(src, stage / name)
+        (stage / filename).write_text(content)
+        try:
+            probe = KnowledgeBase()
+            counts = probe.load_from_directory(str(stage))
+        except Exception as exc:  # noqa: BLE001
+            return False, f"`{filename}` was not loadable: {exc}"
+
+    if not counts.get("personnel"):
+        return False, (f"`{filename}` would leave the roster empty — refused, "
+                       "the previous data is still in place.")
+
+    target.write_text(content)
+    try:
+        reload_knowledge_base()
+    except Exception as exc:  # noqa: BLE001
+        target.write_text(previous)
+        reload_knowledge_base()
+        return False, f"`{filename}` failed to load and was rolled back: {exc}"
+
+    rows = max(0, len(content.strip().split("\n")) - 1)
+    return True, f"{filename}: {rows} rows"
+
+
 def _handle_file_shared(event: dict[str, Any]) -> None:
     """Handle file uploads — if CSV, download and update seed data."""
     global _facility_data_cache
@@ -1824,30 +1930,31 @@ def _handle_file_shared(event: dict[str, Any]) -> None:
         with urllib.request.urlopen(req) as resp:
             csv_content = resp.read().decode("utf-8")
 
-        import pathlib
-        seed_dir = pathlib.Path(__file__).resolve().parent.parent.parent / "data" / "seed"
-        target = seed_dir / filename
-        target.write_text(csv_content)
-
+        ok, detail = apply_csv_upload(filename, csv_content)
         _facility_data_cache = ""
 
-        KnowledgeBase.reset()
-        init_knowledge_base(str(seed_dir))
-
-        row_count = len(csv_content.strip().split("\n")) - 1
-        label = filename.replace(".csv", "").replace("_", " ").title()
-        _knowledge_base_counts[label] = row_count
-        logger.info(f"CSV uploaded: {filename} ({row_count} rows)")
+        if ok:
+            label = filename.replace(".csv", "").replace("_", " ").title()
+            _knowledge_base_counts[label] = max(
+                0, len(csv_content.strip().split("\n")) - 1)
+            logger.info(f"CSV uploaded: {detail}")
+        else:
+            logger.warning(f"CSV upload refused: {detail}")
 
         if channel_id:
-            summary_lines = [f"- {k}: {v}" for k, v in sorted(_knowledge_base_counts.items())]
-            summary = "\n".join(summary_lines)
-            _post_bot_message(
-                channel_id,
-                f":white_check_mark: File `{filename}` loaded successfully!\n\n"
-                f"{filename.replace('.csv', '')}: {row_count} rows loaded\n\n"
-                f"*Knowledge Base Summary:*\n{summary}",
-            )
+            kb = KnowledgeBase.get()
+            if ok:
+                _post_bot_message(
+                    channel_id,
+                    f":white_check_mark: `{filename}` loaded — {detail}. "
+                    f"Roster now {len(kb.personnel)} people, "
+                    f"{len(kb.rooms)} rooms, {len(kb.zones)} zones.",
+                )
+            else:
+                _post_bot_message(
+                    channel_id,
+                    f":no_entry: `{filename}` was not loaded. {detail}",
+                )
     except Exception as e:
         logger.error(f"File upload handling failed: {e}")
 

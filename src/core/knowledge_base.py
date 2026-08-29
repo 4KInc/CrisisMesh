@@ -37,6 +37,18 @@ class KnowledgeBase:
     def reset(cls) -> None:
         cls._instance = None
 
+    @classmethod
+    def install(cls, kb: KnowledgeBase) -> None:
+        """Swap in a fully-loaded knowledge base in one assignment.
+
+        reset()-then-load leaves the singleton empty for however long the read
+        takes, and get() rebuilds an empty one for anybody who asks in that
+        window. Readers do not hold the reload lock — during a mid-incident seed
+        drop that window is a school with no people in it, which the
+        accountability denominator would report as everybody accounted for.
+        """
+        cls._instance = kb
+
     def load_from_directory(self, seed_dir: str) -> dict[str, int]:
         """Load all CSV files from a seed directory."""
         file_map = {
