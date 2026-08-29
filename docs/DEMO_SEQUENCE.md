@@ -209,18 +209,39 @@ Sourced from the witness trail, timestamped, and marked unverified. With no witn
 report yet it falls back to the opening message and times it to the declaration —
 never "unknown".
 
-**Point at the egress block first — it is the strongest thing on the page.**
+**Point at the egress assessment first — it is the strongest thing on the page.**
 
 ```
-🚩 Egress routes — NOT cleared, threat position unconfirmed:
-  ⚠️ East Wing F1 Alternate -> Door 7 (Gym Exit)
-     — passes east wing, where the threat has been reported
+🚪 EGRESS ASSESSMENT — cross-checked against reported sightings: east wing, gym
+  ✅ No reported sighting on these paths:
+    · Door 1 (West Exit) — from west-wing-f1
+    · Door 5 (Cafeteria Exit) — from west-wing-f1
+    · Door 2 (Main Entrance) — from library
+    · Door 1 (West Exit) — from west-wing-f2  [step-free]
+  ⚠️ Reported sighting on these paths:
+    · Door 7 (Gym Exit) — from east-wing-f1 — passes east wing
+    · Door 8 (Field Exit) — from gym — passes gym
 ```
 
-> The brief used to print `Last known location: gym` and then, four lines below,
-> `✅ Safe Routes: … Door 7 (Gym Exit)`. Both facts were correct. Printed together with
-> one of them labelled *safe*, they point a responder at the place the threat was last
-> reported — and left the reader to notice the collision themselves.
+Thirteen routes, two reported positions. The system holds both, so the system does
+the join — not a responder reading a floor plan in a corridor.
+
+Three things to point at, in this order:
+
+* **It picked doors.** Door 1, Door 5, Door 2 — not "here is a list, good luck".
+* **The step-free one is marked**, because the brief names two people who cannot
+  use stairs, and a clear route they cannot physically take is not an answer for them.
+* **Nothing says "safe".** *Clear* means one thing and never drifts: no reported
+  sighting lies on this path. Not swept, not cleared, and blind to a threat nobody
+  reported. That sentence is attached to every answer it gives.
+
+If every route were compromised, the clear list would be **empty and say so** — the
+least-bad route does not get promoted to a safe one.
+
+> Two versions ago the brief printed `Last known location: gym` and then, four lines
+> below, `✅ Safe Routes: … Door 7 (Gym Exit)` — leaving the reader to notice the
+> collision. The version after that flagged the bad door and stopped, which answered
+> a different question than the one being asked.
 
 Route data is static building layout. It knows where the doors are and has no idea
 where the threat is. Every route is checked against **every** reported sighting, not
@@ -326,7 +347,8 @@ Nothing in this waits on the loop. The escalation lands during step 3 and you cu
 | **1:10** | Slack: `/incident status` | "Every name. Not 'and 24 more'." |
 | **1:40** | WhatsApp: `shooter last seen heading toward the gym` | "A witness reports. That is a sighting, not a question." |
 | **1:55** | WhatsApp: `where is the shooter now` | "east wing → gym. Two positions say which way it is moving." |
-| **2:10** | Slack: `@CrisisMesh arrival brief` | "It won't route a responder through the gym and call it safe." |
+| **2:05** | WhatsApp: `what's the fastest route out of east wing` | "Every way out of here is compromised — and it names the ones that aren't." |
+| **2:20** | Slack: `@CrisisMesh arrival brief` | "It worked out which door is clear. Nobody did that by hand." |
 | **3:00** | Slack: `/incident resolve` | "One command. All-clear to every phone." |
 
 Leaves roughly a minute of slack in a 4–5 minute slot.
