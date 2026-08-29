@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 from dataclasses import dataclass
 from typing import Any
 
@@ -219,3 +220,45 @@ def enforce(
         "— contradiction stripped before send"
     )
     return cleaned, violation
+
+# ── Egress against reported sightings ──────────────────────────────────────
+#
+# Route data is static building layout. It knows where the doors are and has no
+# idea where the threat is. The arrival brief printed "Last known location: gym"
+# and then, four lines below it, "Safe Routes: East Wing F1 Alternate -> Door 7
+# (Gym Exit)". Both facts were correct; nothing was comparing them.
+
+_STOPWORDS = frozenset({"the", "a", "an", "near", "in", "at", "by", "of", "to"})
+
+
+def _significant_words(phrase: str) -> list[str]:
+    return [w for w in re.findall(r"[a-z0-9]+", (phrase or "").lower())
+            if w not in _STOPWORDS and len(w) > 2]
+
+
+def flag_routes_against_threat(
+    routes: list[str], threat_locations: list[str],
+) -> list[dict[str, Any]]:
+    """Mark any route that runs through somewhere the threat has been reported.
+
+    Every reported position, not just the most recent: a threat seen in the east
+    wing and then the gym has been in both, and the east wing is not clear
+    because it has moved on. Matches whole words — "gym" must not fire on an
+    unrelated word that happens to contain it.
+    """
+    flagged: list[dict[str, Any]] = []
+    for route in routes or []:
+        hit = ""
+        haystack = (route or "").lower()
+        for location in threat_locations or []:
+            words = _significant_words(location)
+            if words and all(re.search(rf"\b{re.escape(w)}\b", haystack) for w in words):
+                hit = location
+                break
+        flagged.append({
+            "route": route,
+            "conflicts": bool(hit),
+            "reason": (f"passes {hit}, where the threat has been reported"
+                       if hit else ""),
+        })
+    return flagged

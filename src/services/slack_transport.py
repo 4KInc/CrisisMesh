@@ -1382,6 +1382,19 @@ def _format_tick(result: dict[str, Any], live: bool = False) -> str:
     return "\n".join(tightened).rstrip()
 
 
+def _sighting_attribution(threat: dict[str, Any]) -> str:
+    """Who reported the latest position. The older sightings in the trail below
+    are each attributed; without this the newest one — the one a responder acts
+    on — was the only unattributed line on the page."""
+    from src.core import observations
+
+    track = observations.threat_track(incident_state.get_active_incident_id())
+    if not track:
+        return ""
+    who = track[-1].get("reported_by") or track[-1].get("source") or ""
+    return f", via {who}" if who else ""
+
+
 def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     """Generate and post a Law Enforcement Arrival Brief for the active incident."""
     if not incident_state.is_active():
@@ -1463,7 +1476,8 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
         lines.append(f":rotating_light: *THREAT OBSERVATION:* `{threat['status']}`")
         lines.append(
             f"  Last known location: *{threat['last_reported_location']}*"
-            f" — reported {_ago(threat.get('last_reported_time', ''))}")
+            f" — reported {_ago(threat.get('last_reported_time', ''))}"
+            f"{_sighting_attribution(threat)}")
 
         # Two sightings tell a responder which way it is moving, which is the
         # difference between arriving behind it and arriving in front of it.
@@ -1558,7 +1572,25 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     if egress.get("blocked_routes"):
         lines.append(f":no_entry: *Blocked Routes:* {', '.join(egress['blocked_routes'])}")
     if egress.get("safe_routes"):
-        lines.append(f":white_check_mark: *Safe Routes:* {', '.join(egress['safe_routes'])}")
+        # "Safe" is a claim about the present, and the route table is a claim
+        # about the floor plan. While a person is loose in the building the
+        # second cannot support the first: the brief printed "Last known
+        # location: gym" and then "Safe Routes: ... Door 7 (Gym Exit)".
+        from src.core import movement_policy, observations
+
+        threat_seen = [t["location"] for t in observations.threat_track(
+            incident_state.get_active_incident_id())]
+        directive = movement_policy.for_incident(incident["type"])
+        if directive.may_publish_assembly_point:
+            lines.append(f":white_check_mark: *Safe Routes:* {', '.join(egress['safe_routes'])}")
+        else:
+            lines.append(":triangular_flag_on_post: *Egress routes — NOT cleared, "
+                         "threat position unconfirmed:*")
+            for entry in movement_policy.flag_routes_against_threat(
+                    egress["safe_routes"], threat_seen):
+                mark = ":warning: " if entry["conflicts"] else "  "
+                note = f" — {entry['reason']}" if entry["conflicts"] else ""
+                lines.append(f"  {mark}{entry['route']}{note}")
     if egress.get("accessible_routes"):
         lines.append(f":wheelchair: *Accessible Routes:* {', '.join(egress['accessible_routes'])}")
 
