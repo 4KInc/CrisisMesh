@@ -89,19 +89,42 @@ class TestAnEscalatedPersonIsFinished:
         assert store.safe_should_act("T-1", "p002", tick=9) is True
 
 
-class TestNoRouteDirectionsDuringALockdown:
-    def test_a_route_question_is_refused(self):
-        _lockdown()
-        reply = incident_queries.answer("what's the fastest route out of east wing")
-        assert reply
-        assert "door 7" not in reply.lower()
-        assert "gym corridor" not in reply.lower()
+class TestRouteAnswersDuringALockdown:
+    """A flat refusal was the wrong answer to a real question. The system holds
+    the floor plan and every reported sighting; refusing to join them leaves the
+    person asking to do it from memory, in a corridor. It reports which paths a
+    sighting touches, and does not tell anyone to move."""
 
-    def test_the_refusal_says_why(self):
+    def test_it_never_offers_a_path_through_a_reported_position(self):
+        _lockdown()
+        observations.record("T-1", "shooter last seen heading toward the gym",
+                            source="whatsapp", person_name="Mrs. Rodriguez")
+        reply = incident_queries.answer("what's the fastest route out of east wing")
+        offered = reply.lower().split("clear of reported sightings elsewhere")
+        assert "gym" not in offered[-1], reply
+
+    def test_it_says_the_asked_zone_is_compromised(self):
         _lockdown()
         reply = incident_queries.answer("what's the fastest route out of east wing")
-        assert "lockdown" in reply.lower() or "shelter" in reply.lower()
+        assert "every route out of" in reply.lower()
+        assert "shelter in place" in reply.lower()
+
+    def test_it_reports_where_the_threat_was_seen(self):
+        _lockdown()
+        reply = incident_queries.answer("what's the fastest route out of east wing")
+        assert "east wing" in reply.lower()
+
+    def test_it_is_not_an_instruction_to_move(self):
+        _lockdown()
+        reply = incident_queries.answer("what's the fastest route out of east wing")
+        assert "not an instruction to move" in reply.lower()
+        assert "not a clearance" in reply.lower()
         assert "911" in reply
+
+    def test_it_offers_a_clear_route_from_an_unaffected_area(self):
+        _lockdown()
+        reply = incident_queries.answer("what's the fastest route out of the west wing")
+        assert "door 1" in reply.lower() or "door 5" in reply.lower()
 
     def test_a_fire_still_gets_its_route(self):
         """The rule is the incident type, not the word "route"."""

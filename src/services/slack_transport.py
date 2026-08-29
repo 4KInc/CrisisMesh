@@ -1571,26 +1571,39 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     lines.append("")
     if egress.get("blocked_routes"):
         lines.append(f":no_entry: *Blocked Routes:* {', '.join(egress['blocked_routes'])}")
-    if egress.get("safe_routes"):
-        # "Safe" is a claim about the present, and the route table is a claim
-        # about the floor plan. While a person is loose in the building the
-        # second cannot support the first: the brief printed "Last known
-        # location: gym" and then "Safe Routes: ... Door 7 (Gym Exit)".
-        from src.core import movement_policy, observations
+    from src.core import movement_policy, observations
 
+    directive = movement_policy.for_incident(incident["type"])
+    if directive.may_publish_assembly_point:
+        if egress.get("safe_routes"):
+            lines.append(f":white_check_mark: *Safe Routes:* {', '.join(egress['safe_routes'])}")
+    else:
+        # The floor plan and the sighting trail are both in this process. Naming
+        # the bad door and leaving the reader to work out the good one, across
+        # thirteen routes and every reported position, is a calculation nobody
+        # should be doing during a shooting.
         threat_seen = [t["location"] for t in observations.threat_track(
             incident_state.get_active_incident_id())]
-        directive = movement_policy.for_incident(incident["type"])
-        if directive.may_publish_assembly_point:
-            lines.append(f":white_check_mark: *Safe Routes:* {', '.join(egress['safe_routes'])}")
+        assessment = movement_policy.assess_egress(
+            kb.get_all_routes_for_facility("jefferson"), threat_seen)
+
+        lines.append(":door: *EGRESS ASSESSMENT* — every route cross-checked "
+                     f"against reported sightings: {', '.join(assessment['checked_against']) or 'none reported'}")
+        if assessment["clear"]:
+            lines.append("  :white_check_mark: *No reported sighting on these paths:*")
+            for r in assessment["clear"]:
+                step = " _[step-free]_" if r["step_free"] else ""
+                lines.append(f"    · {r['to_exit']} — from {r['from_zone']}{step}")
+                lines.append(f"      {r['route_description']}")
         else:
-            lines.append(":triangular_flag_on_post: *Egress routes — NOT cleared, "
-                         "threat position unconfirmed:*")
-            for entry in movement_policy.flag_routes_against_threat(
-                    egress["safe_routes"], threat_seen):
-                mark = ":warning: " if entry["conflicts"] else "  "
-                note = f" — {entry['reason']}" if entry["conflicts"] else ""
-                lines.append(f"  {mark}{entry['route']}{note}")
+            lines.append("  :no_entry: *Every known route touches a reported "
+                         "sighting.* Nothing here is clear — the least-bad route "
+                         "is not a safe one and will not be named as though it were.")
+        if assessment["conflicting"]:
+            lines.append("  :warning: *Reported sighting on these paths:*")
+            for r in assessment["conflicting"]:
+                lines.append(f"    · {r['to_exit']} — from {r['from_zone']} — {r['conflict']}")
+        lines.append(f"  _{assessment['caveat']}_")
     if egress.get("accessible_routes"):
         lines.append(f":wheelchair: *Accessible Routes:* {', '.join(egress['accessible_routes'])}")
 
@@ -1815,7 +1828,14 @@ SEED_FILES: dict[str, frozenset[str]] = {
 
 
 def seed_dir() -> str:
+    """Where seed CSVs live. Overridable so a test never writes into the repo's
+    own data — applying an upload rewrites this directory, and a suite that
+    points at data/seed leaves the next run reading whatever the last test
+    dropped."""
     import pathlib
+    override = os.environ.get("CRISISMESH_SEED_DIR", "").strip()
+    if override:
+        return override
     return str(pathlib.Path(__file__).resolve().parent.parent.parent / "data" / "seed")
 
 

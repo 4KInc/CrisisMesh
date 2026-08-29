@@ -19,9 +19,17 @@ SEED = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 
 
 @pytest.fixture(autouse=True)
-def fresh():
+def fresh(tmp_path, monkeypatch):
+    # Applying an upload rewrites the seed directory. Pointed at a copy, because
+    # a suite that writes into data/seed leaves the next run — and the next
+    # deploy — reading whatever the last test happened to drop.
+    import shutil
+    for name in os.listdir(SEED):
+        if name.endswith(".csv"):
+            shutil.copy(os.path.join(SEED, name), tmp_path / name)
+    monkeypatch.setenv("CRISISMESH_SEED_DIR", str(tmp_path))
     KnowledgeBase.reset()
-    init_knowledge_base(SEED)
+    init_knowledge_base(str(tmp_path))
     yield
     KnowledgeBase.reset()
     init_knowledge_base(SEED)
@@ -41,7 +49,7 @@ class TestConcurrentDropsDoNotEmptyTheRoster:
 
         def reloader():
             for _ in range(12):
-                slack_transport.reload_knowledge_base(SEED)
+                slack_transport.reload_knowledge_base()
 
         r = threading.Thread(target=reader, daemon=True)
         r.start()
@@ -65,7 +73,7 @@ class TestConcurrentDropsDoNotEmptyTheRoster:
         from src.services import slack_transport
 
         notify._slack_id_cache["U_STALE"] = True
-        slack_transport.reload_knowledge_base(SEED)
+        slack_transport.reload_knowledge_base()
         assert "U_STALE" not in notify._slack_id_cache
 
 

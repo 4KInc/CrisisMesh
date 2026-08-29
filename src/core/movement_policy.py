@@ -262,3 +262,62 @@ def flag_routes_against_threat(
                        if hit else ""),
         })
     return flagged
+
+CLEAR_CAVEAT = (
+    "Clear means no reported sighting lies on this path. It is not a clearance: "
+    "law enforcement has not swept it, and it cannot account for a threat nobody "
+    "has reported."
+)
+
+
+def _route_text(route: dict[str, Any]) -> str:
+    return " ".join(str(route.get(k, "")) for k in
+                    ("from_zone", "name", "to_exit", "route_description")).lower()
+
+
+def _conflict(haystack: str, threat_locations: list[str]) -> str:
+    for location in threat_locations or []:
+        words = _significant_words(location)
+        if words and all(re.search(rf"\b{re.escape(w)}\b", haystack) for w in words):
+            return location
+    return ""
+
+
+def assess_egress(
+    routes: list[dict[str, Any]], threat_locations: list[str],
+) -> dict[str, Any]:
+    """Split every way out into paths no sighting touches, and paths that one does.
+
+    The floor plan and the sighting trail live in the same process, and until
+    this existed nothing joined them: the brief could say "Door 7 passes the
+    gym" and still leave a reader to work out, across thirteen routes and two
+    reported positions, which door does not. That is not a calculation to hand
+    to somebody during a shooting.
+
+    Every route is judged against every reported position, not just the latest —
+    a threat seen in the east wing and then the gym has been in both. Nothing is
+    promoted when the answer is unwelcome: if every path touches a sighting the
+    clear list is empty and says so, because the least-bad route is not a safe
+    one.
+    """
+    clear: list[dict[str, Any]] = []
+    conflicting: list[dict[str, Any]] = []
+
+    for route in routes or []:
+        hit = _conflict(_route_text(route), threat_locations)
+        entry = {
+            "from_zone": route.get("from_zone", ""),
+            "to_exit": route.get("to_exit", ""),
+            "route_description": route.get("route_description", ""),
+            "step_free": "wheelchair" in str(route.get("accessibility", "")).lower(),
+            "conflict": (f"passes {hit}, where the threat has been reported"
+                         if hit else ""),
+        }
+        (conflicting if hit else clear).append(entry)
+
+    return {
+        "clear": clear,
+        "conflicting": conflicting,
+        "checked_against": list(threat_locations or []),
+        "caveat": CLEAR_CAVEAT,
+    }

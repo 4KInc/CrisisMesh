@@ -272,6 +272,66 @@ def _threat_location(incident_id: str) -> str:
     )
 
 
+def _lockdown_egress(text: str) -> str:
+    """What is known about the ways out while a person is loose in the building.
+
+    A flat refusal was the wrong answer to a real question. The system holds the
+    floor plan and every reported sighting; refusing to join them leaves the
+    person asking to do it themselves, from memory, in a corridor. It also does
+    not match how anyone is actually trained: leave if you have a path away from
+    the threat, hide if you do not.
+
+    So it reports and does not direct. Which paths have a reported sighting on
+    them is a fact. Whether to move is the decision of the person who can see
+    the room, and nothing here tells them to.
+    """
+    from src.agents.intake.tools import extract_location
+    from src.core import movement_policy, observations
+    from src.core.knowledge_base import KnowledgeBase
+
+    incident_id = incident_state.get_active_incident_id()
+    threat_seen = [t["location"] for t in observations.threat_track(incident_id)]
+    routes = KnowledgeBase.get().get_all_routes_for_facility("jefferson")
+    assessment = movement_policy.assess_egress(routes, threat_seen)
+
+    asked_zone = extract_location(text).get("zone_id", "")
+    from_here = [r for r in assessment["clear"] if r["from_zone"] == asked_zone]
+    blocked_here = [r for r in assessment["conflicting"] if r["from_zone"] == asked_zone]
+
+    parts: list[str] = []
+    if threat_seen:
+        parts.append(f"Threat reported at: {', '.join(threat_seen)}.")
+
+    if asked_zone and not from_here and blocked_here:
+        parts.append(
+            f"Every route out of {asked_zone} has a reported sighting on it. "
+            "Do not use them. Shelter in place — lock and barricade the door, "
+            "away from windows, stay quiet."
+        )
+    elif from_here:
+        parts.append("No reported sighting on these paths out of your area:")
+        for r in from_here[:3]:
+            parts.append(f"• {r['to_exit']} — {r['route_description']}")
+
+    elsewhere = [r for r in assessment["clear"] if r["from_zone"] != asked_zone]
+    if elsewhere and not from_here:
+        parts.append("Clear of reported sightings elsewhere in the building: "
+                     + ", ".join(sorted({r["to_exit"] for r in elsewhere}))
+                     + ".")
+    if not assessment["clear"]:
+        parts.append(
+            "Every known route has a reported sighting on it. Nothing is clear. "
+            "Shelter in place."
+        )
+
+    parts.append(
+        "This reports what has been reported — it is not a clearance and not an "
+        "instruction to move. Nobody has swept these routes and a threat nobody "
+        "reported will not appear here. Call 911."
+    )
+    return " ".join(parts)
+
+
 def _routes(text: str) -> str:
     """Safe routes out of a named zone, excluding anything reported blocked.
 
@@ -288,13 +348,7 @@ def _routes(text: str) -> str:
     incident_type = (record.get("classification", {}) or {}).get("incident_type", "")
     directive = movement_policy.for_incident(incident_type)
     if not directive.may_publish_assembly_point:
-        return (
-            "I will not give a route out during a lockdown. Moving into a "
-            "corridor is exactly what this incident type makes dangerous, and I "
-            "cannot see where the threat is. Shelter in place, lock and barricade "
-            "the door, stay away from windows, and stay quiet. "
-            "If this is life-threatening, call 911."
-        )
+        return _lockdown_egress(text)
 
     location = extract_location(text)
     zone_id = location.get("zone_id", "")
