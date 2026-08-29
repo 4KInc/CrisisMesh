@@ -197,7 +197,26 @@ Sourced from the witness trail, timestamped, and marked unverified. With no witn
 report yet it falls back to the opening message and times it to the declaration —
 never "unknown".
 
-**Read the two headcounts.** They are labelled, and they have to be:
+**Point at the egress block first — it is the strongest thing on the page.**
+
+```
+🚩 Egress routes — NOT cleared, threat position unconfirmed:
+  ⚠️ East Wing F1 Alternate -> Door 7 (Gym Exit)
+     — passes east wing, where the threat has been reported
+```
+
+> The brief used to print `Last known location: gym` and then, four lines below,
+> `✅ Safe Routes: … Door 7 (Gym Exit)`. Both facts were correct. Printed together with
+> one of them labelled *safe*, they point a responder at the place the threat was last
+> reported — and left the reader to notice the collision themselves.
+
+Route data is static building layout. It knows where the doors are and has no idea
+where the threat is. Every route is checked against **every** reported sighting, not
+just the latest: a threat seen in the east wing and then the gym has been in both, and
+the east wing is not clear because it moved on. A fire still gets `Safe Routes` — a
+hazard does not follow anyone down a corridor.
+
+**Then the two headcounts.** They are labelled, and they have to be:
 
 ```
 Headcount (tracked staff roster): 34 total | 1 accounted | 33 unaccounted
@@ -280,7 +299,7 @@ Nothing in this waits on the loop. The escalation lands during step 3 and you cu
 | **1:10** | Slack: `/incident status` | "Every name. Not 'and 24 more'." |
 | **1:40** | WhatsApp: `shooter last seen heading toward the gym` | "A witness reports. That is a sighting, not a question." |
 | **1:55** | WhatsApp: `where is the shooter now` | "east wing → gym. Two positions say which way it is moving." |
-| **2:10** | Slack: `@CrisisMesh arrival brief` | "Two headcounts, both labelled." |
+| **2:10** | Slack: `@CrisisMesh arrival brief` | "It won't route a responder through the gym and call it safe." |
 | **3:00** | Slack: `/incident resolve` | "One command. All-clear to every phone." |
 
 Leaves roughly a minute of slack in a 4–5 minute slot.
