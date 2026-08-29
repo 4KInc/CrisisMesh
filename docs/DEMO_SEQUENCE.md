@@ -286,6 +286,21 @@ than allowing everyone.
 
 ---
 
+## If a message gets no reply
+
+Don't retype it — check whether Twilio even delivered it:
+
+```
+curl -s -u "$TWILIO_API_KEY_SID:$TWILIO_API_KEY_SECRET" \
+  "https://api.twilio.com/2010-04-01/Accounts/$TWILIO_ACCOUNT_SID/Messages.json?PageSize=10" \
+| python3 -c "import json,sys;[print(m['direction'],m['status'],m.get('error_code'),m['body'][:40]) for m in json.load(sys.stdin)['messages']]"
+```
+
+`error_code 11200` means Twilio's POST to the webhook never completed — the message
+reached Twilio and died there. That used to happen when the pipeline ran inside the
+webhook and overran Twilio's 15-second budget; the route acknowledges first now, so it
+should not recur. Anything else, the message is in the service and the fault is ours.
+
 ## The 4-minute run
 
 Nothing in this waits on the loop. The escalation lands during step 3 and you cut to it.
