@@ -72,13 +72,17 @@ class TestAccountability:
         assert result["name"] == "Principal Johnson"
 
     def test_compute_summary(self):
+        """Requesting a check-in from three people does not account for the
+        other thirty-one. The denominator is the roster, so the summary reads
+        2 of 34 rather than 2 of 3 — asking a subset is a decision about who to
+        contact first, not a claim about who is safe."""
         send_checkin_request("INC-003", person_ids="p001,p002,p003")
         process_checkin("INC-003", "p001", "safe")
         process_checkin("INC-003", "p002", "evacuated")
         result = compute_accountability_summary("INC-003")
-        assert result["total_tracked"] == 3
+        assert result["total_tracked"] == 34
         assert result["accounted"] == 2
-        assert result["unaccounted"] == 1
+        assert result["unaccounted"] == 32
 
     def test_escalate_missing(self):
         send_checkin_request("INC-004", person_ids="p008,p021")

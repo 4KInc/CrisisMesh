@@ -178,6 +178,28 @@ def compute_accountability_summary(incident_id: str) -> dict[str, Any]:
             "location": info.get("location", ""),
         })
 
+    # The roster is the denominator, not the ledger. This store is in memory and
+    # the incident is in Firestore, so a redeploy mid-incident leaves rows behind
+    # while the incident continues — and counting what is left reported "1 total
+    # | 1 accounted | 0 unaccounted" thirteen minutes into an active shooter.
+    # Losing someone's record is not the same as hearing that they are safe.
+    try:
+        roster = KnowledgeBase.get().personnel or []
+    except Exception as exc:  # noqa: BLE001 - never fewer people than we know of
+        logger.error(f"Roster unreadable for {incident_id} ({exc}); "
+                     "counting the ledger alone")
+        roster = []
+
+    for person in roster:
+        pid = person.get("person_id", "")
+        if pid and pid not in checkins:
+            breakdown.setdefault(PersonStatus.UNKNOWN, []).append({
+                "person_id": pid,
+                "name": person.get("name", pid),
+                "location": "",
+                "no_record": True,
+            })
+
     counts = {status: len(people) for status, people in breakdown.items()}
     total = sum(counts.values())
     accounted = total - counts.get(PersonStatus.UNKNOWN, 0) - counts.get(PersonStatus.SILENT, 0)
