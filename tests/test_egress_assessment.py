@@ -230,3 +230,28 @@ class TestTheBriefFitsOneMessage:
                           lambda ch, t, **kw: posted.append(t)):
             slack_transport._handle_arrival_brief("C1", "")
         assert "Blocked Routes" not in "\n".join(posted)
+
+
+class TestOneReasonPerLine:
+    """A door reachable from two areas the threat has been reported in printed
+    "sighting: east wing; sighting: gym" — the label repeated because grouping
+    joined two whole sentences instead of merging what they had in common."""
+
+    def test_two_sightings_share_one_label(self, routes):
+        result = movement_policy.assess_egress(routes, ["east wing", "gym"])
+        rows = movement_policy.group_egress_by_exit(result["conflicting"])
+        door7 = [r for r in rows if "Door 7" in r["to_exit"]][0]
+        rendered = "; ".join(door7["conflicts"])
+        assert rendered.count("sighting:") == 1, rendered
+        assert "east wing" in rendered and "gym" in rendered
+
+    def test_a_sighting_and_a_floor_plan_block_stay_separate(self, routes):
+        """Different reasons are different sentences — merging those would say
+        the floor plan reported a sighting."""
+        result = movement_policy.assess_egress(
+            routes, ["gym"], blocked_names=["East Wing F1 Primary"])
+        rows = movement_policy.group_egress_by_exit(result["conflicting"])
+        mixed = [r for r in rows if len(r["conflicts"]) > 1]
+        for row in mixed:
+            assert any("sighting" in c for c in row["conflicts"])
+            assert any("floor plan" in c for c in row["conflicts"])

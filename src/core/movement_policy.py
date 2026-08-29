@@ -317,11 +317,12 @@ def assess_egress(
         # every row pushed the brief past Slack's message limit — which splits
         # it, through the middle of this section.
         if hit:
-            reason = f"sighting: {hit}"
+            kind, detail = "sighting", hit
         elif name in blocked:
-            reason = "floor plan: blocked for this incident zone"
+            kind, detail = "floor plan", "blocked for this incident zone"
         else:
-            reason = ""
+            kind, detail = "", ""
+        reason = f"{kind}: {detail}" if kind else ""
         entry = {
             "name": name,
             "from_zone": route.get("from_zone", ""),
@@ -329,6 +330,8 @@ def assess_egress(
             "route_description": route.get("route_description", ""),
             "step_free": "wheelchair" in str(route.get("accessibility", "")).lower(),
             "conflict": reason,
+            "conflict_kind": kind,
+            "conflict_detail": detail,
         }
         (conflicting if reason else clear).append(entry)
 
@@ -352,11 +355,23 @@ def group_egress_by_exit(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for e in entries:
         row = grouped.setdefault(e["to_exit"], {
             "to_exit": e["to_exit"], "zones": [], "step_free": False,
-            "conflicts": [],
+            "_reasons": {},
         })
         if e["from_zone"] not in row["zones"]:
             row["zones"].append(e["from_zone"])
         row["step_free"] = row["step_free"] or e["step_free"]
-        if e["conflict"] and e["conflict"] not in row["conflicts"]:
-            row["conflicts"].append(e["conflict"])
-    return list(grouped.values())
+        kind = e.get("conflict_kind", "")
+        if kind:
+            # Merged by kind, so two sightings share one label. Different kinds
+            # stay apart: folding them would have the floor plan reporting a
+            # sighting.
+            details = row["_reasons"].setdefault(kind, [])
+            if e["conflict_detail"] not in details:
+                details.append(e["conflict_detail"])
+
+    rows = []
+    for row in grouped.values():
+        row["conflicts"] = [f"{kind}: {', '.join(details)}"
+                            for kind, details in row.pop("_reasons").items()]
+        rows.append(row)
+    return rows
