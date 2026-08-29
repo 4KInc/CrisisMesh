@@ -214,13 +214,14 @@ never "unknown".
 ```
 🚪 EGRESS ASSESSMENT — cross-checked against reported sightings: east wing, gym
   ✅ No reported sighting on these paths:
-    · Door 1 (West Exit) — from west-wing-f1
-    · Door 5 (Cafeteria Exit) — from west-wing-f1
+    · Door 1 (West Exit) — from west-wing-f1, west-wing-f2  [step-free available]
+    · Door 5 (Cafeteria Exit) — from west-wing-f1, cafeteria
     · Door 2 (Main Entrance) — from library
-    · Door 1 (West Exit) — from west-wing-f2  [step-free]
-  ⚠️ Reported sighting on these paths:
-    · Door 7 (Gym Exit) — from east-wing-f1 — passes east wing
-    · Door 8 (Field Exit) — from gym — passes gym
+  ⚠️ Do not use — reported sighting or floor-plan block:
+    · Door 3 (East Exit) — from east-wing-f1, east-wing-f2 — sighting: east wing
+    · Door 7 (Gym Exit) — from east-wing-f1, gym — sighting: east wing; gym
+    · Door 2 (Main Entrance) — from east-wing-f2 — sighting: east wing
+    · Door 8 (Field Exit) — from gym — sighting: gym
 ```
 
 Thirteen routes, two reported positions. The system holds both, so the system does
@@ -237,6 +238,13 @@ Three things to point at, in this order:
 
 If every route were compromised, the clear list would be **empty and say so** — the
 least-bad route does not get promoted to a safe one.
+
+**Door 2 appears in both lists, and that is the point.** Clear from the library, not
+clear from east-wing-f2. The exit is not what is safe or unsafe — the path to it is.
+
+**The brief arrives as two messages.** The split lands on a section boundary, so the
+whole assessment — heading, both lists, the caveat — sits inside part 1. Part 2 is
+command contact and responding services. Scroll to part 1 and stay there.
 
 > Two versions ago the brief printed `Last known location: gym` and then, four lines
 > below, `✅ Safe Routes: … Door 7 (Gym Exit)` — leaving the reader to notice the
