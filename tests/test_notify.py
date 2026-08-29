@@ -418,7 +418,9 @@ class TestSlackIdMustResolve:
         calls = {"n": 0}
 
         class _Counting:
-            def __init__(self, token):
+            def __init__(self, token, **kwargs):
+                # **kwargs so a real construction argument (the lookup timeout)
+                # does not turn into a silent verification failure here.
                 pass
 
             def users_info(self, user):

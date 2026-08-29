@@ -69,6 +69,9 @@ REASON_SLACK_UNVERIFIABLE = "Slack: could not verify id (lookup unavailable)"
 # inside a synchronous /tick.
 _slack_id_cache: dict[str, bool] = {}
 
+# Per-lookup ceiling when verifying a Slack id.
+SLACK_LOOKUP_TIMEOUT_SECONDS = 5
+
 # During a lockdown every extra message is another buzz in a room where someone
 # is hiding. Only these two fan out: the alert that starts it and the all-clear
 # that ends it. Anything else waits.
@@ -210,7 +213,12 @@ def slack_id_resolves(slack_id: str) -> bool:
 
         token = os.environ.get("SLACK_BOT_TOKEN", "")
         if token and slack_transport.WebClient:
-            response = slack_transport.WebClient(token=token).users_info(user=slack_id)
+            # Bounded. Thirty unverified ids at the client's 30-second default
+            # is fifteen minutes of tick, and a tick that never finishes chases
+            # nobody.
+            response = slack_transport.WebClient(
+                token=token, timeout=SLACK_LOOKUP_TIMEOUT_SECONDS
+            ).users_info(user=slack_id)
             verified = bool(response.get("ok"))
     except Exception as exc:  # noqa: BLE001 - unverifiable means unreachable
         logger.info(f"Slack id {slack_id} could not be verified ({exc}) — treating as unreachable")

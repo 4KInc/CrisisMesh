@@ -531,3 +531,32 @@ def send_reply_async(to_number: str, text: str) -> None:
         args=(to_number, text),
         daemon=True,
     ).start()
+
+def process_inbound_async(from_number: str, body: str) -> None:
+    """Run the pipeline off the webhook thread and reply over the REST API.
+
+    Twilio allows a webhook 15 seconds. Classifying a report, calling a model
+    and writing Firestore inside that budget is a bet, and losing it is not a
+    slow reply — Twilio records error 11200 and the message is gone. That is
+    what happened to a witness reporting a shooter's position: Twilio had the
+    message, the service had no request for it at all.
+
+    Nothing about the reply needed the webhook response. Every other message
+    this system sends already goes out through the REST API; only the inbound
+    acknowledgement was riding on the work finishing first.
+    """
+    def _run() -> None:
+        try:
+            result = handle_inbound_message(from_number, body)
+            reply = (result or {}).get("reply", "")
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"Inbound processing failed for {from_number}: {exc}")
+            # Silence would leave someone who just reported a shooter's position
+            # believing nobody heard them.
+            reply = ("CrisisMesh could not process that message. If this is an "
+                     "emergency, call 911.")
+        if reply:
+            send_reply_async(from_number, reply)
+
+    threading.Thread(target=_run, daemon=True).start()
+

@@ -850,12 +850,19 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
 
             # Twilio prefixes both addresses on the WhatsApp channel.
             from_number = form.get("From", "").removeprefix("whatsapp:")
-            result = handle_inbound_message(from_number, form.get("Body", ""))
+
+            # Acknowledge first, work after. Twilio gives a webhook 15 seconds;
+            # the pipeline behind this can spend that on one model call, and a
+            # webhook that overruns is not a late reply — it is error 11200 and
+            # a lost message. The reply goes back over the REST API, which is
+            # how every other message here is already sent.
+            from src.services.whatsapp_transport import process_inbound_async
+            process_inbound_async(from_number, form.get("Body", ""))
 
             self.send_response(200)
             self.send_header("Content-Type", "text/xml")
             self.end_headers()
-            self.wfile.write(twiml_response(result["reply"]).encode())
+            self.wfile.write(twiml_response("").encode())
 
         elif path == "/whatsapp":
             if whatsapp_mode() != "meta":
