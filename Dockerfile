@@ -2,8 +2,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir google-adk google-cloud-pubsub google-cloud-firestore google-cloud-modelarmor pydantic python-dotenv requests slack-bolt
+# Installed from pyproject.toml, not from a second hand-maintained list. The
+# two had drifted: google-cloud-aiplatform was a declared dependency and was
+# never in the image, so the managed Memory Bank fell back to local in
+# production while every local test passed.
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN pip install --no-cache-dir .
 
 COPY . .
 

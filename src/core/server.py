@@ -450,6 +450,10 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
                 "model": "gemini-3.5-flash",
                 "event_bus_backend": bus.backend,
                 "scanner_backend": ContentScanner.get().backend,
+                # Named so the managed-vs-local question is answerable from
+                # outside the process, and so a fallback is visible rather than
+                # silent — the facade degrades quietly by design.
+                "memory_backend": MemoryBank.get().backend,
                 "knowledge_base": {
                     "personnel": len(kb.personnel),
                     "zones": len(kb.zones),

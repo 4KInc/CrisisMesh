@@ -271,3 +271,23 @@ class TestTheVectorNumberIsNotDressedUp:
         MemoryBank.get().store_lesson("I-1", "fire", "jefferson", "T", "B", tags=["fire"])
         result = find_similar_incidents("fire", "jefferson")
         assert "jaccard" in result["confidence_note"].lower()
+
+
+class TestHealthNamesTheBackend:
+    """The facade falls back quietly by design, which is right for a crisis and
+    wrong for an operator: without this, a service that silently dropped to the
+    local store looks identical to one running managed."""
+
+    def test_health_reports_the_active_memory_backend(self):
+        from tests.test_server import MockHandler
+
+        payload = MockHandler("GET", "/health").get_response()
+        assert payload["memory_backend"] in {"local", "vertex"}
+
+    def test_it_says_local_when_managed_is_unavailable(self, monkeypatch):
+        from tests.test_server import MockHandler
+
+        monkeypatch.setenv("MEMORY_BACKEND", "vertex")
+        monkeypatch.delenv("VERTEX_MEMORY_ENGINE", raising=False)
+        MemoryBank.reset()
+        assert MockHandler("GET", "/health").get_response()["memory_backend"] == "local"
