@@ -12,9 +12,10 @@ Live: [crisismesh-1031148889398.us-central1.run.app](https://crisismesh-10311488
 ### Documentation
 
 > The demo run sheets and the hackathon submission drafts are deliberately not
-> in the repository. They are working material for one entry, they carry a
-> personal phone number and workspace ids, and nobody cloning this wants a beat
-> sheet. What is here is what explains the system.
+> in the repository, including everything under `docs/stage3/`. They are working
+> material for one entry, they carry a personal phone number and workspace ids,
+> and nobody cloning this wants a beat sheet. What is here is what explains the
+> system.
 
 | Doc | What it is |
 |---|---|
@@ -22,8 +23,6 @@ Live: [crisismesh-1031148889398.us-central1.run.app](https://crisismesh-10311488
 | [docs/architecture.md](docs/architecture.md) | System and agentic-loop diagrams with edge provenance |
 | [docs/BRAND.md](docs/BRAND.md) | The palette, lifted from the console's own tokens, and the icon prompt |
 | [docs/diagram/CrisisMesh-Architecture.pdf](docs/diagram/CrisisMesh-Architecture.pdf) | The rendered architecture diagram (regenerate: `architecture.html` through headless Chrome) |
-| [docs/stage3/BUILD_LOG.md](docs/stage3/BUILD_LOG.md) | The longer build log the dev.to post is adapted from |
-| [docs/stage3/SOCIAL_POST.md](docs/stage3/SOCIAL_POST.md) | Two social drafts, both tagged and attributed |
 | [docs/GEMINI_IN_THE_LOOP.md](docs/GEMINI_IN_THE_LOOP.md) | Where Gemini makes decisions, and where deterministic code does |
 
 ---

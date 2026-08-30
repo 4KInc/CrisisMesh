@@ -29,7 +29,11 @@ docs/audit/
 # system. Anyone cloning the repo wants the code and the pillar docs, not a
 # beat sheet with a phone number in it.
 docs/DEVPOST_SUBMISSION.md
-docs/stage3/DEVTO_POST.md
 docs/A2P_10DLC_RESUBMISSION.md
 docs/DEMO_SCRIPT_4MIN.md
 docs/DEMO_SEQUENCE.md
+
+# Everything under stage3 is bonus-round material: the dev.to draft, the build
+# log it was adapted from, and the social drafts. Ignoring the directory rather
+# than the three files means a fourth draft written later is covered too.
+docs/stage3/
