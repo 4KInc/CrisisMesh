@@ -203,3 +203,66 @@ class TestBothLayersRun:
 
     def test_benign_text_passes_both(self):
         assert self._scanner_returning_clean().scan_message(BENIGN)["blocked"] is False
+
+
+class TestAnEmergencyReportIsNeverRefused:
+    """Model Armor's RAI "dangerous" classifier fires on descriptions of danger.
+    With it enabled the deployed service refused "Smoke near the science lab
+    floor 2" — the exact input this system exists to receive — while allowing
+    "active shooter reported in the east wing" through. The classifier is not
+    wrong; it is aimed at a different problem.
+
+    Disabled on the template, and ignored here as well, so that a template edit
+    cannot quietly stop the product accepting emergency reports."""
+
+    REPORTS = [
+        "Smoke near the science lab, floor 2 — kids still inside",
+        "active shooter reported in the east wing, gunshots heard",
+        "room 104: 23 students are safe, 1 unaccounted",
+        "shooter last seen heading toward the gym",
+        "Gas smell in the cafeteria, evacuating now",
+    ]
+
+    def _scanner_flagging_dangerous(self):
+        scanner = ModelArmorScanner.__new__(ModelArmorScanner)
+        scanner.project, scanner.location = "p", "us-central1"
+        scanner.template_id, scanner.template_name = "t", "t"
+
+        class _Dangerous:
+            class _R:
+                class sanitization_result:
+                    filter_match_state = _state("MATCH_FOUND")
+                    filter_results = {"rai": _group(rai="MATCH_FOUND")}
+
+            def sanitize_user_prompt(self, *a, **k):
+                return self._R()
+
+        scanner.client = _Dangerous()
+        return scanner
+
+    def test_dangerous_is_not_in_the_blocking_set(self):
+        assert "rai.dangerous" in ModelArmorScanner._NON_BLOCKING
+
+    @pytest.mark.parametrize("report", REPORTS)
+    def test_real_reports_pass_the_offline_scanner(self, report):
+        assert InjectionGuard().scan_message(report)["blocked"] is False
+
+    @pytest.mark.parametrize("report", REPORTS)
+    def test_real_reports_pass_the_managed_scanner(self, report):
+        from src.core.content_scanner import ContentScanner
+
+        scanner = ModelArmorScanner.__new__(ModelArmorScanner)
+        scanner.project, scanner.location = "p", "us-central1"
+        scanner.template_id, scanner.template_name = "t", "t"
+
+        class _Clean:
+            class _R:
+                class sanitization_result:
+                    filter_match_state = _state("MATCH_FOUND")
+                    filter_results = {"rai": _group(rai="NO_MATCH_FOUND")}
+
+            def sanitize_user_prompt(self, *a, **k):
+                return self._R()
+
+        scanner.client = _Clean()
+        assert scanner.scan_message(report)["blocked"] is False

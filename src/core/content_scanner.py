@@ -179,6 +179,17 @@ class ModelArmorScanner:
     # Filter results whose state is neither of these are not verdicts.
     _MATCHED = "MATCH_FOUND"
 
+    # Model Armor's RAI "dangerous" classifier fires on descriptions of danger,
+    # which is the entire input class of an emergency-reporting system. With it
+    # enabled, "Smoke near the science lab floor 2" was refused while "active
+    # shooter reported in the east wing" was allowed through — the filter is not
+    # wrong, it is aimed at a different problem than this one.
+    #
+    # It is disabled on the template as well. Ignored here too so that editing
+    # the template cannot silently stop the product accepting emergency reports,
+    # which is the one input it must never refuse.
+    _NON_BLOCKING = frozenset({"rai.dangerous"})
+
     def _parse_response(self, response: Any, original_text: str) -> dict[str, Any]:
         """Read the per-filter verdicts, not the aggregate.
 
@@ -199,8 +210,13 @@ class ModelArmorScanner:
                     if not attr.endswith("_result") or attr.startswith("_"):
                         continue
                     state = getattr(getattr(group_result, attr), "match_state", None)
-                    if getattr(state, "name", "") == self._MATCHED:
-                        matched.append(f"{group}.{attr.replace('_filter_result', '')}")
+                    if getattr(state, "name", "") != self._MATCHED:
+                        continue
+                    label = f"{group}.{attr.replace('_filter_result', '')}"
+                    if label in self._NON_BLOCKING:
+                        logger.info(f"Model Armor {label} matched; not a block here")
+                        continue
+                    matched.append(label)
 
             blocked = bool(matched)
             return {
