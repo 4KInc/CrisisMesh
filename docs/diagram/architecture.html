@@ -31,7 +31,7 @@
 <h2>Full system</h2>
 <div class="mermaid">
 flowchart TB
-  IN_T["<b>1 · INBOUND</b><br/>Slack · WhatsApp · SMS · Web console<br/><i>the report arrives from whatever device is in hand</i>"]
+  IN_T["<b>1 · INBOUND</b><br/>Slack · WhatsApp · Web console<br/><i>the report arrives from whatever device is in hand</i><br/><i>SMS built, pending A2P 10DLC approval</i>"]
   HTTP["<b>2 · Cloud Run</b> — HTTP server · max-instances 4"]
   MA["<b>3 · Model Armor</b> · MANAGED<br/>prompt injection + jailbreak, LOW_AND_ABOVE"]
   BLOCK["blocked · quarantined<br/><i>degrades to regex on failure,<br/>never returns clean</i>"]
@@ -128,6 +128,7 @@ flowchart LR
 <tr><td>Arrival brief over WhatsApp</td><td>Refused — it names where people with mobility limits are</td></tr>
 <tr><td>Model Armor unreachable</td><td>Degrades to regex and labels the verdict; never returns "clean"</td></tr>
 <tr><td>Reach unknown</td><td>Reports 4 of 34, not 34 of 34</td></tr>
+<tr><td>SMS not carrier-approved</td><td>Documented as upcoming, not counted as a live channel — zero SMS sent or received</td></tr>
 </table>
 
 <p class="foot">Live: crisismesh-1031148889398.us-central1.run.app · Repo:

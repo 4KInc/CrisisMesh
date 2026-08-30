@@ -108,13 +108,13 @@ And the numbers say which scale they're on. Managed semantic recall returns a ve
 
 ## Where it's weak
 
-Slack reaction check-ins are still process-local — they under-report, never over-report. The audit bundle reflects the instance serving the request. `/sms` still runs its pipeline inside the webhook, so a slow pipeline can lose a message to Twilio's 15-second budget the way WhatsApp used to.
+Slack reaction check-ins are still process-local — they under-report, never over-report. The audit bundle reflects the instance serving the request. And SMS isn't a live channel at all: the route, signature verification and keyword mapping are written and tested, but the A2P 10DLC campaign is unapproved, so zero SMS have been sent or received. It's in the README as upcoming rather than counted as a transport.
 
 All three are in the README under Known Limits with their failure mode named. A README that claims more than the runtime does is the same failure the runtime spends its effort avoiding.
 
 ## Stack
 
-Google ADK · Gemini 3.5 Flash and 2.5 Flash Lite on Vertex AI · Cloud Run · Firestore · Pub/Sub · Model Armor · Vertex AI Agent Engine Memory Bank · Slack Events API · Twilio WhatsApp/SMS. 1,299 tests, none of which need GCP credentials.
+Google ADK · Gemini 3.5 Flash and 2.5 Flash Lite on Vertex AI · Cloud Run · Firestore · Pub/Sub · Model Armor · Vertex AI Agent Engine Memory Bank · Slack Events API · Twilio WhatsApp. 1,299 tests, none of which need GCP credentials.
 
 **Repo:** https://github.com/4KInc/CrisisMesh
 **Live:** https://crisismesh-1031148889398.us-central1.run.app

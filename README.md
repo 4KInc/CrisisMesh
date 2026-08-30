@@ -14,18 +14,18 @@ During a fire, active-threat, or severe-weather event, a K-12 school district co
 
 ## What It Does
 
-A human sends a message — a Slack `/incident` command, an SMS text, a WhatsApp message, or a console declaration — describing what they see. CrisisMesh's deterministic pipeline fires immediately with a Block Kit SITREP. The Gemini agent fleet is available on-demand for deeper analysis via `@CrisisMesh` follow-up queries or the `/incident/agentic` endpoint. The console lights up in real time.
+A human sends a message — a Slack `/incident` command, a WhatsApp message, or a console declaration — describing what they see. CrisisMesh's deterministic pipeline fires immediately with a Block Kit SITREP. The Gemini agent fleet is available on-demand for deeper analysis via `@CrisisMesh` follow-up queries or the `/incident/agentic` endpoint. The console lights up in real time.
 
 **This is a human sending a message they would already send.** CrisisMesh does not detect or sense incidents. It coordinates the organizational response after a human reports one.
 
-1. **Receives** an incident report via Slack, SMS, WhatsApp, or the command console
+1. **Receives** an incident report via Slack, WhatsApp, or the command console *(SMS is built and tested but not carrier-approved — see Known Limits)*
 2. **Classifies** the report (type, severity, location) and activates the matching playbook — no human triage needed
 3. **Delegates autonomously** to specialist agents for accountability, safety intel, SITREPs, and learning
 4. **Tracks** who is safe, injured, evacuated, or unaccounted — and **unprompted, escalates** missing personnel with mobility needs to the top of the priority list
 5. **Routes autonomously** — identifies blocked zones and computes safe evacuation routes without being asked, including accessible routes for personnel with mobility needs
 6. **Locates resources proactively** — finds AEDs, fire extinguishers, and assembly points near the incident zone without IC prompting
 7. **Posts** Block Kit SITREP and responder one-card back to Slack; lights up the command console
-8. **Accepts** one-tap check-ins via Slack reactions, SMS replies, or WhatsApp messages (SAFE / SOS / INJURED / EVACUATED)
+8. **Accepts** one-tap check-ins via Slack reactions or WhatsApp messages (SAFE / SOS / INJURED / EVACUATED)
 9. **Accepts room-level check-ins** — teachers report via `@CrisisMesh room 104: 23 safe, 2 missing` for per-room accountability
 10. **Chases the silent, unprompted, on a timer** — the reconciliation loop runs every tick without anyone asking. It pings whoever has not checked in, re-pings up to a configured cap, and then stops pinging and hands that person to their floor warden **by name** on whatever channel actually reaches them. An escalated person is terminal for the loop: the warden is told once, not every tick forever. When nobody can be reached, that is reported to the IC rather than quietly dropped
 11. **Syncs across channels in both directions** — an incident declared from a handset is announced in the Slack room where the response is run, and one declared in Slack reaches every phone. During a lockdown the phone is the device in someone's hand, so that direction has to arrive
@@ -62,7 +62,7 @@ SILENT ──ping──► REPINGED ──(cap reached)──► ESCALATED ─�
    └──── check-in ────┴──────────────────────────┴──► ACCOUNTED ──► terminal
 ```
 
-* **It picks a channel that works.** SMS, then WhatsApp, then Slack — and a Slack id is verified against the workspace before it counts. An id that resolves to nobody is unreachable, not reachable-by-assumption.
+* **It picks a channel that works.** SMS, then WhatsApp, then Slack, in that order — and a Slack id is verified against the workspace before it counts. SMS is first in the order and last in practice: with no approved A2P campaign nobody has a confirmed opt-in, so it resolves past it every time. An id that resolves to nobody is unreachable, not reachable-by-assumption.
 * **It gives up on pinging before it gives up on the person.** At the cap it stops messaging them and tells their floor warden, by name, on the warden's own channel. It never sends *"X has not answered, please locate them"* to X.
 * **It says the warden's name once.** `ESCALATED` and `ACCOUNTED` are both terminal for the loop. Without that, a timer pages the same warden about the same person every tick, forever.
 * **It reports what it cannot do.** No reachable channel for the person, or none for the warden, goes to the IC as a flag. Unreachable is a fact to surface, not a reason to stop.
@@ -82,7 +82,7 @@ CrisisMesh has four trigger paths. Each is human-initiated — a person sends a 
 |---------|:---:|:---:|
 | Slack `/incident` command | Yes (fast ack) | On-demand (`@CrisisMesh` follow-up or `/incident/agentic`) |
 | Slack @mention / DM | Yes (fast ack) | On-demand (follow-up queries, arrival brief) |
-| SMS (Twilio) | Yes (TwiML ack) | Yes (background, follow-up SMS) |
+| SMS (Twilio) — *not carrier-approved* | Yes (TwiML ack) | Yes (background, follow-up SMS) |
 | WhatsApp (Meta) | Yes | No — confirmation only |
 | Command Console | Yes ("Quick Declare") | Yes ("Declare Incident") |
 
@@ -118,7 +118,14 @@ CrisisMesh has four trigger paths. Each is human-initiated — a person sends a 
 
 **Reaction check-ins:** Each emoji reaction posts a public confirmation with the running check-in count and missing personnel list. When all personnel are accounted for, CrisisMesh announces it.
 
-### 2. SMS (Twilio Webhook)
+### 2. SMS (Twilio Webhook) — built, not yet carrier-approved
+
+> **Status: upcoming.** The route, signature verification, keyword mapping and
+> TwiML replies are implemented and covered by tests, and the Twilio number's
+> webhook points at `/sms`. But the A2P 10DLC campaign is unapproved, so US
+> carriers will not deliver this traffic — **no SMS has been sent or received in
+> production, inbound or outbound.** Treat everything below as a description of
+> code that works, not a channel that is live.
 
 Text the CrisisMesh number with an incident description. The system classifies and responds with an immediate TwiML confirmation including the incident ID and a 911 reminder. The Gemini agent fleet runs in the background; when it finishes, a follow-up SMS delivers the fleet SITREP. Reply with `SAFE`, `SOS`, `INJURED`, or `EVACUATED` to check in.
 
@@ -181,7 +188,7 @@ flowchart LR
     subgraph Transport["Transport"]
         direction TB
         Slack["Slack<br/>Events API · Block Kit"]
-        SMS["SMS · Twilio"]
+        SMS["SMS · Twilio<br/>(upcoming — A2P pending)"]
         WhatsApp["WhatsApp · Business API"]
         Console["Web Console<br/>Tailwind · SSE"]
     end
@@ -253,11 +260,11 @@ flowchart LR
 | **Content Scanning** | Google Model Armor API + InjectionGuard (regex fallback) | Prompt injection, PII leakage, malicious URI, RAI filtering |
 | **Compute** | Cloud Run | HTTP server, SSE streaming, static SPA |
 | **Slack** | Raw HTTP / Slack Events API | Slash commands, reaction check-ins, Block Kit SITREPs |
-| **SMS** | Twilio webhooks | Inbound SMS incident reports and check-in replies |
+| **SMS** | Twilio webhooks | Inbound reports and check-in replies — *code complete, A2P 10DLC pending* |
 | **WhatsApp** | WhatsApp Business Cloud API (Meta) | Inbound message incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 1,299 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 1,302 tests, no GCP required |
 
 ---
 
@@ -421,7 +428,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (1,299 passing, no GCP required)
+# Run tests (1,302 passing, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -748,7 +755,7 @@ CrisisMesh/
 
 ## Test Coverage
 
-1,299 passing tests covering:
+1,302 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries
@@ -761,7 +768,7 @@ CrisisMesh/
 - **Memory Bank:** Lesson storage, retrieval, Jaccard tag-overlap confidence scoring, source citations with outcome data, cross-session recall, historical outcome stats
 - **Event Bus:** Publish/subscribe, event filtering, history
 - **Slack Transport:** Signature verification (HMAC-SHA256), slash command dispatch, @mention/DM agentic dispatch, reaction-based check-ins, URL verification challenge, pipeline integration, Block Kit formatting
-- **SMS Transport:** Twilio signature verification (HMAC-SHA1), check-in keyword mapping, incident pipeline via SMS, TwiML response formatting, content safety blocking, outbound SMS via Twilio REST API, background agentic dispatch + follow-up SITREP
+- **SMS Transport** *(code paths only — no production SMS traffic exists)*: Twilio signature verification (HMAC-SHA1), check-in keyword mapping, incident pipeline via SMS, TwiML response formatting, content safety blocking, outbound SMS via Twilio REST API, background agentic dispatch + follow-up SITREP
 - **HTTP Server:** All endpoints (GET + POST), error handling, CORS
 - **CSV Ingestion:** All 8 data types parsed correctly, semantic validation (route→blocked zone, resource→valid floor/zone, room→valid facility), row-level reject-and-report with validation reports
 - **Reconciliation:** State-machine edges and illegal transitions, attempt cap, terminal states (an escalated person is never re-chased), reopen resets the cap, Firestore compare-and-set under contention, re-entrancy, tick budget, roster hydration, scheduler restart after instance replacement
@@ -866,7 +873,21 @@ reflects the instance that serves the request; it is an after-action artefact,
 not a live-incident surface. Both are listed here rather than fixed because the
 failure mode of each is a partial record, not a false one.
 
-**`/sms` still runs the pipeline inside the webhook.** The WhatsApp route acknowledges first and works after; the SMS route does not, so a slow pipeline there can still overrun Twilio's 15-second budget and lose a message to error 11200. It needs a different fix, because the carrier-mandated `STOP`/`HELP` paths have to stay synchronous. SMS is not in production use while the A2P 10DLC campaign is unapproved.
+**SMS is not a live channel.** The route, signature verification, keyword
+mapping and TwiML replies are implemented and tested, and the Twilio number's
+webhook points at `/sms` — but the A2P 10DLC campaign is unapproved, so US
+carriers will not carry the traffic. **Zero SMS messages have been sent or
+received**, which is checkable in the Twilio console. Anywhere this README
+describes SMS, it is describing code, not a channel in use.
+
+Two consequences worth stating. `resolve_reach` tries SMS first, so the
+preference order is real but never exercised: with no confirmed opt-in it
+resolves past SMS every time, and WhatsApp does all the phone work. And `/sms`
+still runs the pipeline inside the webhook, where WhatsApp acknowledges first
+and works after — a slow pipeline there could overrun Twilio's 15-second budget
+the way WhatsApp's did. That is unfixed because it needs a different shape (the
+carrier-mandated `STOP`/`HELP` paths have to stay synchronous) and because no
+traffic can reach it yet.
 
 **`src/services/csv_ingest.py` is unreferenced.** It holds row-level semantic validators that nothing calls; the Slack upload path does its own column and load validation instead. Left in place rather than half-wired.
 
@@ -899,7 +920,7 @@ FirstResponder is disclosed as prior work per hackathon rules.
 - **Content Scanner** — Google Model Armor API (active); InjectionGuard regex fallback
 - **Cloud Storage** — CSV data, approved playbooks, reports
 - **Slack** (Events API, raw HTTP) — `/incident` and `/checkin` slash commands, reaction-based one-tap check-ins, Block Kit SITREP messages
-- **Twilio** (optional) — Inbound SMS incident reports and check-in replies via TwiML webhooks
+- **Twilio** — WhatsApp inbound/outbound (live); SMS inbound/outbound implemented but pending A2P 10DLC approval
 - **WhatsApp Business API** (optional) — Inbound message incident reports and check-in replies via Meta Cloud API
 - **Python 3.11** / Pydantic v2 / pytest / Tailwind CSS
 

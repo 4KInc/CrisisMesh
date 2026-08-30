@@ -120,3 +120,30 @@ class TestManagedClaimsMatchTheDeployment:
         assert row, "ARMOR_BACKEND is undocumented"
         assert f"`{code_default}`" in row[0], (
             f"README documents a different default than the code's {code_default!r}")
+
+
+class TestSmsIsNotClaimedAsALiveChannel:
+    """The SMS transport is written and tested, its route exists, and the
+    Twilio number's webhook points at it — and zero SMS have ever been sent or
+    received, because the A2P 10DLC campaign is unapproved and US carriers will
+    not carry the traffic.
+
+    Code that works is not a channel that works. Listing SMS beside Slack and
+    WhatsApp reads as three live transports, which is one more than there are.
+    """
+
+    def test_the_readme_marks_sms_as_not_live(self):
+        assert "not carrier-approved" in README or "A2P 10DLC campaign is unapproved" in README
+
+    def test_known_limits_says_no_sms_traffic_exists(self):
+        limits = README.split("## Known Limits", 1)[1].split("## Prior Work", 1)[0]
+        assert "SMS is not a live channel" in limits
+        assert "Zero SMS messages" in limits
+
+    def test_the_intake_list_does_not_offer_sms_unqualified(self):
+        """"Receives a report via Slack, SMS, WhatsApp or the console" is the
+        sentence a judge reads first."""
+        line = [l for l in README.splitlines() if l.startswith("1. **Receives**")]
+        assert line, "the intake bullet moved"
+        if "SMS" in line[0]:
+            assert ("not carrier-approved" in line[0] or "upcoming" in line[0].lower()), line[0]

@@ -26,7 +26,7 @@ flowchart LR
     subgraph Transport["Transport"]
         direction TB
         Slack["Slack<br/>Events API · Block Kit"]
-        SMS["SMS · Twilio"]
+        SMS["SMS · Twilio<br/>(upcoming · A2P pending)"]
         WhatsApp["WhatsApp · Business API"]
         Console["Web Console<br/>Tailwind · SSE"]
     end
@@ -89,7 +89,7 @@ flowchart LR
 
 | Edge | Meaning | Source |
 |------|---------|--------|
-| Transport → HTTP | Incident report enters via Slack, SMS, WhatsApp, or console | `server.py:do_POST` |
+| Transport → HTTP | Incident report enters via Slack, WhatsApp or console; the SMS route exists but carries no traffic | `server.py:do_POST` |
 | HTTP → Scanner | Raw report scanned at ingress before ADK Runner | `content_scanner.py:ContentScanner.scan_message` |
 | Scanner → Coordinator | Clean report enters the ADK Runner | `server.py:_run_agentic` |
 | Scanner -.-> HTTP | Blocked report returns 403 | `server.py:do_POST` (blocked branch) |

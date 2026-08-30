@@ -92,8 +92,9 @@ silent fallback cannot masquerade as success:
 - **Vertex AI Agent Engine Memory Bank** — cross-incident lessons, retrieved by
   semantic similarity
 
-Transports: Slack Events API + Block Kit, Twilio WhatsApp, Twilio SMS, and a
-web console.
+Transports: Slack Events API + Block Kit, Twilio WhatsApp, and a web console.
+An SMS transport is implemented and tested but is not a live channel — the A2P
+10DLC campaign is unapproved, so no SMS has been sent or received.
 
 The discipline that mattered: tests assert claims about the world rather than
 return values. *The loop hands this person to somebody who is not them.* *No
@@ -169,8 +170,8 @@ claims are now pinned by a test that fails when a number drifts.
 Migrate the last process-local state — Slack reaction check-ins and the
 observability trace store — so the audit bundle is instance-independent. Give
 `/sms` the acknowledge-first treatment WhatsApp already has, keeping the
-carrier-mandated STOP/HELP paths synchronous. Finish A2P 10DLC so SMS is
-production-usable. And multi-facility: the registry and Memory Bank are already
+carrier-mandated STOP/HELP paths synchronous. Finish A2P 10DLC so the SMS transport — written and
+tested, but carrying no traffic today — becomes a channel rather than code. And multi-facility: the registry and Memory Bank are already
 shared across sites; the per-facility knowledge bases are the remaining work.
 ```
 
