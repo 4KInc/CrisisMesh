@@ -17,11 +17,25 @@ Fields marked **DECIDE** need something only you can supply.
 CrisisMesh
 ```
 
-**Elevator pitch** (200 char limit — this is 193)
+**Elevator pitch** (200 char limit — this is 191)
 
 ```
-Autonomous accountability for school emergencies. Declare from any channel; it chases whoever hasn't answered, then hands them to a named human. It reports 4 of 34 reachable, because 4 is true.
+Free crisis coordination on your org's own data — your rooms, staff, routes. Runs fire, active-threat, cyber and medical response, chases whoever hasn't answered, hands them to a named human.
 ```
+
+> Two other framings, if you want a different emphasis. Both fit the limit.
+>
+> **Leads with the autonomy** (193) — the strongest single differentiator, but
+> it does not say the data is yours or that it is free:
+> `Autonomous accountability for school emergencies. Declare from any channel; it chases whoever hasn't answered, then hands them to a named human. It reports 4 of 34 reachable, because 4 is true.`
+>
+> **Leads with the upload** (200) — closest to the framing you drafted:
+> `Upload your building, staff and routes. It runs the response to fire, active threat, cyber or medical — chasing whoever hasn't answered, then handing them to a named human. Free, and it never guesses.`
+>
+> A note on wording: "for Slack" was in your draft and is now inaccurate —
+> WhatsApp is the channel the demo declares from and Slack is where the room
+> coordinates. "On your org's own data" carries the same meaning as "upload your
+> data" in fewer characters, which is what buys room for the incident types.
 
 ---
 
