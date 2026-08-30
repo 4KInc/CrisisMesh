@@ -17,7 +17,8 @@ Live: [crisismesh-1031148889398.us-central1.run.app](https://crisismesh-10311488
 | [docs/DEMO_SEQUENCE.md](docs/DEMO_SEQUENCE.md) | The cross-channel walkthrough, with the reasoning behind each beat |
 | [docs/PILLARS.md](docs/PILLARS.md) | Fortified Fleet pillars: which are managed, which are custom, and what verifies each |
 | [docs/architecture.md](docs/architecture.md) | System and agentic-loop diagrams with edge provenance |
-| [docs/diagram/CrisisMesh-Architecture.pdf](docs/diagram/CrisisMesh-Architecture.pdf) | The rendered architecture diagram (regenerate: `architecture.html` → headless Chrome) |
+| [docs/BRAND.md](docs/BRAND.md) | The palette, lifted from the console's own tokens, and the icon prompt |
+| [docs/diagram/CrisisMesh-Architecture.pdf](docs/diagram/CrisisMesh-Architecture.pdf) | The rendered architecture diagram (regenerate: `architecture.html` through headless Chrome) |
 | [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md) | Paste-ready answers for every Devpost field |
 | **[docs/stage3/DEVTO_POST.md](docs/stage3/DEVTO_POST.md)** | **The dev.to article** — title, tags and body, ready to paste into `dev.to/new` |
 | [docs/stage3/BUILD_LOG.md](docs/stage3/BUILD_LOG.md) | The longer build log the dev.to post is adapted from |

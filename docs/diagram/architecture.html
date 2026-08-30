@@ -13,10 +13,11 @@
   .sub { font-size: 12px; color:#555; margin: 0 0 14px; }
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing:.09em;
        color:#444; margin: 16px 0 6px; border-bottom:1px solid #ddd; padding-bottom:3px; }
-  .mermaid { background:#fff; }
+  .mermaid { background:#fff; break-inside: avoid; }
+  .mermaid svg { max-width: 100%; height: auto; max-height: 158mm; display: block; }
   .legend { display:flex; gap:22px; font-size:11px; color:#444; margin-top:8px; flex-wrap:wrap; }
   .legend b { color:#111; }
-  .key { display:inline-block; width:22px; height:0; border-top:2px solid #ff6b35;
+  .key { display:inline-block; width:22px; height:0; border-top:2px solid #EF4444;
          vertical-align:middle; margin-right:5px; }
   .key.dash { border-top:2px dashed #777; }
   table { border-collapse:collapse; font-size:10.5px; width:100%; margin-top:6px; }
@@ -78,14 +79,14 @@ flowchart TB
   CO --> OUT
   IC -.->|approve / deny| OUT
 
-  linkStyle 2 stroke:#ff6b35,stroke-width:2.5px
-  linkStyle 6 stroke:#ff6b35,stroke-width:2.5px
-  linkStyle 11 stroke:#0b7285,stroke-width:3px
+  linkStyle 2 stroke:#EF4444,stroke-width:2.5px
+  linkStyle 6 stroke:#EF4444,stroke-width:2.5px
+  linkStyle 11 stroke:#0E7490,stroke-width:3px
 </div>
 
 <div class="legend">
   <span><span class="key"></span><b>Refusal path</b> — blocked, held, or withheld</span>
-  <span><span class="key" style="border-color:#0b7285"></span><b>Autonomous loop</b> — runs unwatched</span>
+  <span><span class="key" style="border-color:#0E7490"></span><b>Autonomous loop</b> — runs unwatched</span>
   <span><span class="key dash"></span>Human decision required</span>
 </div>
 
@@ -100,9 +101,9 @@ flowchart LR
   E -.->|terminal for the loop| Q["quiet"]
   A -.->|terminal for the loop| Q
   E -->|"no reachable warden"| F["FLAG TO IC<br/>unreachable is reported,<br/>not dropped"]
-  linkStyle 5 stroke:#0b7285,stroke-width:2px
-  linkStyle 6 stroke:#0b7285,stroke-width:2px
-  linkStyle 7 stroke:#ff6b35,stroke-width:2px
+  linkStyle 5 stroke:#0E7490,stroke-width:2px
+  linkStyle 6 stroke:#0E7490,stroke-width:2px
+  linkStyle 7 stroke:#EF4444,stroke-width:2px
 </div>
 
 <h2>Managed vs custom, and what each is verified by</h2>
@@ -135,8 +136,14 @@ flowchart LR
 </table>
 
 <p class="foot">Live: crisismesh-1031148889398.us-central1.run.app · Repo:
-github.com/4KInc/CrisisMesh · 1,299 tests, no GCP credentials required.</p>
+github.com/4KInc/CrisisMesh · 1,309 tests, no GCP credentials required.</p>
 
-<script>mermaid.initialize({startOnLoad:true, theme:"neutral",
+<script>mermaid.initialize({startOnLoad:true, theme:"base",
+  themeVariables:{
+    // Lifted from static/index.html so the diagram and the console agree.
+    primaryColor:"#F7F5F1", primaryTextColor:"#111827", primaryBorderColor:"#6B7280",
+    lineColor:"#6B7280", secondaryColor:"#EEF2F4", tertiaryColor:"#F7F5F1",
+    fontSize:"13px"
+  },
   flowchart:{curve:"basis", useMaxWidth:true}});</script>
 </body></html>
