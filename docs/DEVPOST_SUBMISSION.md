@@ -120,7 +120,7 @@ carriers will not carry the traffic and zero SMS have been sent or received.
 The discipline that mattered: tests assert claims about the world rather than
 return values. *The loop hands this person to somebody who is not them.* *No
 route through a reported sighting is offered.* *A check-in recorded on one
-instance is counted on another.* There are 1,305 of them, none needing GCP
+instance is counted on another.* There are 1,309 of them, none needing GCP
 credentials.
 
 ## Challenges we ran into
@@ -291,12 +291,27 @@ which requires the incorporated organisation name and a corporate email
 
 ## Testing instructions (optional field, seen by judges, not public)
 
+**255 characters maximum, single line.** Everything that does not fit lives in
+the README, which is what the *Reproducible Testing instructions* field points
+at anyway. This is 253:
+
+```
+No GCP creds: pip install -e ".[dev]" && pytest tests/ -q = 1,309 offline tests. GET /health on the hosted URL shows the live managed backends (vertex/pubsub/model_armor). scripts/verify_memory_bank.py and verify_durable_stores.py hit the real services.
+```
+
+> Chosen for what a judge cannot get anywhere else on the form: that the suite
+> needs no credentials, that the managed claims are checkable from outside the
+> process, and that two scripts verify them against the real services rather
+> than mocks. The hosted URL is omitted because it has its own field.
+
+### The longer version, for the README rather than this box
+
 ```
 No GCP credentials needed for the test suite:
 
   git clone https://github.com/4KInc/CrisisMesh && cd CrisisMesh
   pip install -e ".[dev]"
-  pytest tests/ -q          # 1,305 tests, all offline
+  pytest tests/ -q          # 1,309 tests, all offline
 
 The deployed service exposes its backends so the managed claims are checkable:
 
