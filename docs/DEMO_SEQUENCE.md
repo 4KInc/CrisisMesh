@@ -311,7 +311,7 @@ The dialog asks for a name and shows what resolving reaches before it happens:
 
 ```
 Resolve incident
-  This ends ACTIVE_THREAT-2026-… for Slack, SMS and WhatsApp too, stops
+  This ends ACTIVE_THREAT-2026-… for Slack and WhatsApp too, stops
   reconciliation, and sends an all-clear to everyone reachable.
 
   Resolving as — name or role   [ Principal Johnson ]

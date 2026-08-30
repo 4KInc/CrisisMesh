@@ -426,7 +426,10 @@ class TestConsoleResolveControl:
         html = self._html()
         assert 'id="resolve-modal"' in html
         assert "all-clear" in html
-        assert "Slack, SMS and WhatsApp too" in html
+        # Slack and WhatsApp only. SMS is written and tested but carries no
+        # traffic, and a dialog naming it tells an operator the stand-down
+        # reaches somewhere it does not.
+        assert "Slack and WhatsApp too" in html
 
     def test_no_native_dialogs_in_the_resolve_path(self):
         """prompt/confirm/alert put the browser's chrome over the board the
