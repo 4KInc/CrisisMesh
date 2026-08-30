@@ -42,7 +42,7 @@ CrisisMesh chases whoever hasn't answered during a school emergency, then hands 
 
 Four bugs lived in that sentence. Every one passed its tests. Write-up:
 
-https://dev.to/YOUR_POST
+https://dev.to/blockintel/four-bugs-in-one-paragraph-what-i-learned-building-an-autonomous-loop-that-chases-people-who-dont-4hdl
 ```
 
 ### Option 3: shortest (244/280, leaves room for an image or a quote-tweet)
@@ -54,7 +54,7 @@ CrisisMesh: a loop that chases whoever hasn't checked in, then hands them to the
 
 4 of 34 reachable. 34/34 would demo better and be a lie.
 
-https://dev.to/YOUR_POST
+https://dev.to/blockintel/four-bugs-in-one-paragraph-what-i-learned-building-an-autonomous-loop-that-chases-people-who-dont-4hdl
 ```
 
 Option 2 is the one to post if the dev.to article is already up: it sends people
@@ -67,12 +67,16 @@ somewhere that explains the claim rather than asking them to take it on trust.
 No practical length limit, so this one can carry the reasoning. Same required
 lines at the top.
 
+> Written for a company page rather than a personal account, since that is where
+> these are going. If you post from a personal profile instead, change "we" to
+> "I" throughout.
+
 ```
 Created for the #AllThingsAgenticHackathon #AllThingsAgentic.
 
-I built CrisisMesh for the All Things Agentic Hackathon: a seven-agent Google ADK fleet on Gemini 3.5 Flash that coordinates a school's emergency response after a human reports one. It does not detect anything and does not replace 911.
+We built CrisisMesh for the All Things Agentic Hackathon: a seven-agent Google ADK fleet on Gemini 3.5 Flash that coordinates a school's emergency response after a human reports one. It does not detect anything and does not replace 911.
 
-The feature I would defend is the one nobody watches. A declared incident starts a scheduler. Every tick it pings whoever has not checked in, re-pings them, and at a cap it stops pinging and hands that person to their floor warden by name, on the warden's channel rather than theirs.
+The feature we would defend is the one nobody watches. A declared incident starts a scheduler. Every tick it pings whoever has not checked in, re-pings them, and at a cap it stops pinging and hands that person to their floor warden by name, on the warden's channel rather than theirs.
 
 Four bugs lived in that paragraph and every one of them passed its tests:
 
@@ -87,7 +91,7 @@ It now reports 4 of 34 reachable. That is worse than 34 and it is true, and the 
 
 1,309 tests, none of which need cloud credentials. Cloud Run, Firestore, Pub/Sub, Model Armor and Vertex AI Agent Engine Memory Bank.
 
-Write-up: https://dev.to/YOUR_POST
+Write-up: https://dev.to/blockintel/four-bugs-in-one-paragraph-what-i-learned-building-an-autonomous-loop-that-chases-people-who-dont-4hdl
 Code: https://github.com/4KInc/CrisisMesh
 ```
 
@@ -95,8 +99,8 @@ Code: https://github.com/4KInc/CrisisMesh
 
 ## Before you post
 
-* Replace `YOUR_POST` with the real dev.to URL, or switch to Option 1, which
-  links the repo instead. A post with a placeholder in it is worse than no post.
+* The dev.to URL is already filled in below. Post from the account whose link
+  you will paste into Devpost.
 * The account must be public, or Devpost cannot see the link.
 * Best image: the Slack DM showing two escalations arriving unprompted. It is
   the only frame where the loop is visibly acting on its own.
