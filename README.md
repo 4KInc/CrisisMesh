@@ -257,7 +257,7 @@ flowchart LR
 | **WhatsApp** | WhatsApp Business Cloud API (Meta) | Inbound message incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 1,215 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 1,282 tests, no GCP required |
 
 ---
 
@@ -421,7 +421,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (1,215 passing, no GCP required)
+# Run tests (1,282 passing, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -442,7 +442,7 @@ adk run
 | `GOOGLE_CLOUD_REGION` | region | `us-central1` | Region for Vertex AI and Model Armor |
 | `GOOGLE_GENAI_USE_VERTEXAI` | `TRUE` | — | Required for ADK to use Vertex AI |
 | `EVENT_BUS_BACKEND` | `memory`, `pubsub` | `memory` | Selects event transport |
-| `ARMOR_BACKEND` | `regex`, `model_armor` | `model_armor` | Selects content scanner backend (`regex` for offline/local dev) |
+| `ARMOR_BACKEND` | `regex`, `model_armor` | `regex` | Content scanner backend. The deployed service sets `model_armor`; `regex` is the offline default so the suite needs no GCP. A managed backend that cannot answer degrades to the regex scanner and labels the verdict — it never returns "clean" because it failed to look |
 | `ARMOR_TEMPLATE` | template ID | `crisismesh-guard` | Model Armor template name |
 | `SLACK_BOT_TOKEN` | `xoxb-...` | — | Slack Bot OAuth token (for posting messages) |
 | `SLACK_SIGNING_SECRET` | secret | — | Slack request signature verification |
@@ -748,7 +748,7 @@ CrisisMesh/
 
 ## Test Coverage
 
-1,215 passing tests covering:
+1,282 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries
@@ -756,7 +756,7 @@ CrisisMesh/
 - **SITREP:** IC briefs, responder one-cards, law enforcement arrival briefs (silent rooms, building overview, floor wardens, hazards, on-site resources), threat observation extraction
 - **Compliance:** PII redaction (general vs commander context), policy checks
 - **Gateway:** Agent Identity least-privilege enforcement, rate limiting, approval gates (PendingAction state machine with IC authorization), content scanning
-- **Model Armor:** 9 injection patterns + 5 PII leakage patterns blocked
+- **Model Armor:** 9 injection patterns + 5 PII leakage patterns blocked; regional endpoint asserted; no error path may return `blocked: False`; per-filter verdicts read rather than the unreliable top-level aggregate; the layer that decided each verdict is named
 - **Observability:** Trace creation, span hierarchies, audit bundle export
 - **Memory Bank:** Lesson storage, retrieval, Jaccard tag-overlap confidence scoring, source citations with outcome data, cross-session recall, historical outcome stats
 - **Event Bus:** Publish/subscribe, event filtering, history
@@ -788,18 +788,22 @@ pytest tests/ --cov=src --cov-report=term-missing
 
 ## Demo Fire Drill
 
-The `scripts/demo_fire_drill.py` script runs a complete 7-beat demo that proves every rubric item end-to-end — no Gemini API access required:
+The `scripts/demo_fire_drill.py` script runs a 7-beat demo of the fleet and the
+governance layer — no Gemini API access and no GCP credentials required. For the
+**live** cross-channel run (WhatsApp declaration, Slack sync, the autonomous
+reconciliation loop, the law-enforcement brief), see
+[docs/DEMO_SEQUENCE.md](docs/DEMO_SEQUENCE.md) — that is a different demo with
+different beats, and it used to be described by the table under this heading.
 
-| Beat | Time | What It Proves |
-|------|------|---------------|
-| 1 | 0:00–0:20 | **Slack trigger:** `/incident Smoke near science lab floor 2` — CrisisMesh acks, fleet ignites |
-| 2 | 0:20–0:50 | **Block Kit SITREP** posted to Slack — type, severity, routes, assembly, 911 line |
-| 3 | 0:50–1:20 | **Console lights up** — real-time binding auto-discovers the Slack-triggered incident, Agent Stream starts |
-| 4 | 1:20–1:50 | **One-tap check-in** — Slack reactions (:white_check_mark: :thumbsup: :ok_hand: :runner: :door: :warning: :ambulance: :hospital:) update Accountability in real time |
-| 5 | 1:50–2:20 | **Model Armor** injection block, Agent Identity deny, PII redaction (Governance screen) |
-| 6 | 2:20–2:50 | **Agent Fleet stream** — 7 agents delegate: intake → safety → accountability → learning → SITREP |
-| 7 | 2:50–3:20 | **Observability** — span tree, gateway audit, event ledger, Memory Bank recall |
-| 8 | 3:20–4:00 | **SMS/WhatsApp check-in** (if configured) — text SAFE/SOS → accountability updates |
+| Beat | What It Proves |
+|------|---------------|
+| 1 | **Agent Registry & deployment proof** — 7 agents with scopes, denied tools, data class |
+| 2 | **Incident declaration** — classification, severity floor, playbook selection |
+| 3 | **Coordinator delegates** — safety intel + accountability, unprompted |
+| 4 | **Model Armor** — a prompt injection blocked by the managed filter |
+| 5 | **Live SITREP + responder one-card** |
+| 6 | **Drill resolved** — after-action report, lesson stored to the Memory Bank |
+| 7 | **Observability** — span tree, audit bundle export, Memory Bank recall |
 
 ```bash
 python scripts/demo_fire_drill.py
@@ -865,6 +869,13 @@ failure mode of each is a partial record, not a false one.
 **`/sms` still runs the pipeline inside the webhook.** The WhatsApp route acknowledges first and works after; the SMS route does not, so a slow pipeline there can still overrun Twilio's 15-second budget and lose a message to error 11200. It needs a different fix, because the carrier-mandated `STOP`/`HELP` paths have to stay synchronous. SMS is not in production use while the A2P 10DLC campaign is unapproved.
 
 **`src/services/csv_ingest.py` is unreferenced.** It holds row-level semantic validators that nothing calls; the Slack upload path does its own column and load validation instead. Left in place rather than half-wired.
+
+**Model Armor does not catch everything the regex layer does.** The deployed
+template has prompt-injection filtering enabled at `LOW_AND_ABOVE` and still
+returns clean for some phrasings the 9-pattern `InjectionGuard` catches. Both
+layers run and either one blocking is a block, so the coverage is the union —
+but that means "Model Armor blocked it" is only true when the result says
+`decided_by: model_armor`, which it does.
 
 **Improvised tactical reasoning is autonomous.** When no approved playbook rule covers a situation, the fleet answers anyway and records the provenance as `improvised` in the audit log. That is a deliberate trade — silence during a crisis is also a failure mode — but it means not every answer is playbook-grounded, and the audit log is the only place that distinction is visible.
 

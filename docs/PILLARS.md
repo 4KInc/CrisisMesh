@@ -9,7 +9,7 @@ Per-pillar disclosure: what is a real Google managed product vs a custom impleme
 | **Memory Bank** | `MemoryBank` facade with two backends, selected by `MEMORY_BACKEND` | Vertex AI Agent Engine Memory Bank (`reasoningEngines/*/memories`) | **Managed** | An Agent Engine instance backs the store: `crisismesh-memory-bank`, `projects/1031148889398/locations/us-central1/reasoningEngines/7390518588945203200`. A lesson is one `Memory` — `fact` carries the sentence, `description` the structured record so the citation survives the round trip, `scope` partitions CrisisMesh's memories. Retrieval is `RetrieveMemories` similarity search rather than tag matching, so recall crosses processes because the store is outside all of them. The local Jaccard store remains as the offline/test backend (`MEMORY_BACKEND=local`, the default) and as the fallback when the managed path is unavailable — an empty result would read as "no prior lessons", which a backend that is down has not established. The two backends do not compute the same number, so every result carries `confidence_basis`: `vector_similarity` or `jaccard_tag_overlap`. |
 | **Agent Identity** | Custom least-privilege enforcement in `AgentGateway` using `AgentRegistryEntry.approved_tools` / `denied_tools` | Google Agent Identity (Gemini Enterprise Agent Platform) | **Custom** | Agent Identity is part of the governance suite not provisionable in this project. The custom implementation enforces the same principle: each agent has a scoped tool allowlist, denied tool calls are logged as `policy.violation` events, and a deny log is available for audit. |
 | **Agent Gateway** | Custom `AgentGateway` in `src/core/agent_gateway.py` with 4 policy layers | Google Agent Gateway (Gemini Enterprise Agent Platform) | **Custom** | Same IAM constraint as Registry/Identity. Custom gateway enforces: (1) agent identity, (2) rate limiting, (3) approval gates for high-impact actions, (4) content scanning. All decisions logged to event bus. |
-| **Content Scanning** | `ContentScanner` facade with two backends, selected by `ARMOR_BACKEND` env var | Google Cloud Model Armor (`modelarmor.googleapis.com`) | **Managed** | Model Armor API is enabled with template `crisismesh-guard` in `us-central1`. The deployed Cloud Run service uses `ARMOR_BACKEND=model_armor` as default. Template filters: prompt injection & jailbreak (`LOW_AND_ABOVE`), malicious URI, RAI (hate speech, harassment, dangerous, sexually explicit at `MEDIUM_AND_ABOVE`). The `InjectionGuard` regex scanner (9 injection + 5 PII patterns) serves as offline/local-dev fallback (`ARMOR_BACKEND=regex`). |
+| **Content Scanning** | `ContentScanner` facade, backend by `ARMOR_BACKEND` | Google Cloud Model Armor (`modelarmor.googleapis.com`) | **Managed** | Template `crisismesh-guard` in `us-central1`: prompt injection and jailbreak (`LOW_AND_ABOVE`), malicious URI, RAI at `MEDIUM_AND_ABOVE`. The deployed service runs `ARMOR_BACKEND=model_armor` and a live injection is blocked end to end — `POST /incident` with "Ignore all previous instructions…" returns `blocked: true, reason: Model Armor matched: pi_and_jailbreak.pi_and_jailbreak`. The `InjectionGuard` regex scanner (9 injection + 5 PII patterns) is the offline backend, a second opinion when the managed filter returns clean, and the degraded path when it cannot answer. Every verdict names the layer that decided it. |
 | **Event Bus** | `EventBus` with two backends, selected by `EVENT_BUS_BACKEND` env var | Google Cloud Pub/Sub | **Managed** | Real Pub/Sub is the deployed default (`EVENT_BUS_BACKEND=pubsub`). 4 topics + subscriptions created: `crisismesh-incidents`, `crisismesh-checkins`, `crisismesh-tasks`, `crisismesh-events`. Event round-trip proven: publish → pull → acknowledge. In-memory bus remains as local cache and offline/test fallback (`EVENT_BUS_BACKEND=memory`). |
 | **Observability** | Custom `Tracer` / `Span` / `Trace` in `src/core/observability.py` | Google Cloud Observability / OpenTelemetry | **Custom** | ADK 2.7.1 natively emits OpenTelemetry spans for every model call and tool invocation. The custom tracer provides application-level incident traces (span trees, audit bundles) without requiring an OTel Collector setup. In production, the ADK OTel spans and the custom traces would both feed into Cloud Trace. |
 
@@ -169,3 +169,27 @@ requires a composite index, so ordering is done in process to keep the setup
 reproducible without provisioning one; and the test double had no `create()`,
 so the lease primitive was silently falling into its own except-path and
 reporting success to every caller.
+
+## Content Scanning — three defects found by wiring it live
+
+The pillar was marked Managed and the deployed service was running
+`ARMOR_BACKEND=regex`, so none of the following had ever executed in production.
+
+**The client was built against the global endpoint.** Templates are regional, so
+every scan returned "template not found" — which fell into the error path below,
+meaning a wrong endpoint silently turned scanning off instead of failing.
+
+**Both error paths returned `blocked: False`,** under a comment claiming they
+failed closed for ambiguous cases. A prompt injection arriving while the API was
+unreachable was handed to the fleet as clean input. An unavailable managed
+scanner now degrades to the regex backend and labels the verdict, so an outage
+costs sensitivity rather than switching scanning off — blocking everything
+instead would silence the channel people report emergencies on.
+
+**The block signal was read from the wrong field, in a way that never fired.**
+The code tested `"MATCH_FOUND" in str(filter_match_state)`. `str()` of that enum
+is its integer value — `"2"` — so the test was false for every input, and Model
+Armor had never blocked anything here. Reading `.name` instead would have been
+worse: the top-level state reports `MATCH_FOUND` for plainly benign text. The
+verdict comes from the per-filter results, where the injection above matches
+`pi_and_jailbreak.pi_and_jailbreak` and the benign report matches nothing.
