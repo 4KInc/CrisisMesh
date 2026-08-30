@@ -2,8 +2,18 @@
 
 **Live:** https://crisismesh-1031148889398.us-central1.run.app
 **Slack room:** `#fr-live-demo` · **WhatsApp:** +1 772 297 1783
-**Your handset** `+1 669 216 7706` = **p001 Principal Johnson** — Incident Commander and floor
-warden for the people who go silent, so the escalations land back on your phone.
+**Your handset** `+1 669 216 7706` = **p001 Principal Johnson** — Incident Commander and
+floor-1 warden.
+
+**The escalations do not come to you.** The two people who go silent are on floor 2, so
+their warden is **Mrs. Nguyen (p018)** — mapped to the **Demo User** Slack account. Have
+that DM on screen. It is the only frame where the loop is visibly acting on its own, and
+it happens somewhere you are not looking unless you put it there.
+
+> Earlier versions mapped everyone to floor 1, so every escalation resolved back to p001:
+> the loop paging whoever was already running the demo. That demonstrates nothing.
+> `scripts/seed_demo_identities.py` chooses the mapping so the handoff lands on somebody
+> else.
 
 Delivery is **on**. Every message in this script really sends.
 
@@ -81,19 +91,18 @@ No one asks it to. A tick runs every 25s from the moment of declaration:
 |---|---|
 | **0:00** Tick 1 | pings everyone unaccounted |
 | **0:25** Tick 2 | re-pings — *"you are not yet accounted for (request 2)"* |
-| **0:50** Tick 3 | cap reached → **escalates to the floor warden by name** |
+| **0:50** Tick 3 | cap reached → **hands Mr. Patel and Ms. Clark to Mrs. Nguyen by name** |
 
 **Keep talking and keep typing through all of it.** The loop is autonomous; standing
 still watching a phone is the one thing that makes it look like it is not. Go straight
-into step 3 — the escalation will arrive on your handset partway through, and you
-interrupt yourself to point at it.
+into step 3 — the handoffs land in the Demo User DM partway through, and you interrupt
+yourself to cut to them.
 
 Once everyone is either accounted for or escalated, the loop goes **quiet** — both are
 terminal. It does not keep paging a warden about someone it has already handed over.
 
-> Until this week it did exactly that: the same three names on the warden's phone every
-> 25 seconds. The terminal guard was in the function the tests call, not the one the
-> loop calls.
+> It did exactly that once: the same names on the warden's phone every 25 seconds. The
+> terminal guard was in the function the tests call, not the one the loop calls.
 
 ---
 
@@ -123,10 +132,16 @@ looking for.
 After the cap, the loop stops pinging and hands the person to their floor warden **by
 name**, on the warden's own channel:
 
+Watch the **Demo User** DM, not yours:
+
 ```
-CrisisMesh: VP Martinez has not answered 2 accountability requests.
-You are the floor warden. Please locate them.
+CrisisMesh: Mr. Patel has not answered repeated check-in requests.
+Mrs. Nguyen — please attempt to locate or contact them, without entering
+an unsafe area. If this is life-threatening, call 911.
 ```
+
+A second one arrives for **Ms. Clark**. Two handoffs, one warden, named — then silence,
+because both are terminal for the loop.
 
 > Two bugs lived here. The first sent *"X has not answered, please locate them"* **to X**.
 > The second left the escalated person marked as needing action, so on a timer the same
@@ -351,7 +366,7 @@ Nothing in this waits on the loop. The escalation lands during step 3 and you cu
 | **0:00** | WhatsApp: `/incident active shooter reported in the east wing, gunshots heard` | "Nobody opens a laptop during a lockdown." |
 | **0:10** | Point at `#fr-live-demo` announcing it | "It came from a phone. The room heard it anyway." |
 | **0:35** | WhatsApp: `room 104: 23 students are safe, 1 unaccounted` | "One message, 23 students." |
-| **0:50** | *Escalation arrives — stop and read it out* | "Nobody asked it to do that." |
+| **0:50** | *Cut to the Demo User DM — two handoffs arrive* | "Nobody asked it to do that." |
 | **1:10** | Slack: `/incident status` | "Every name. Not 'and 24 more'." |
 | **1:40** | WhatsApp: `shooter last seen heading toward the gym` | "A witness reports. That is a sighting, not a question." |
 | **1:55** | WhatsApp: `where is the shooter now` | "east wing → gym. Two positions say which way it is moving." |
@@ -370,4 +385,5 @@ stronger moment. **If you are running short**, add the route refusal:
 > "Nobody declares an incident from a laptop during a lockdown. It came from a phone,
 > and the room heard it. The loop is chasing people nobody asked it to chase, and when
 > it runs out of ways to reach someone it hands that person to a named human instead of
-> quietly giving up. It says four of thirty-four are reachable, because four is true."
+> quietly giving up. It handed two people to Mrs. Nguyen by name, on her channel, not
+> theirs. And it says four of thirty-four are reachable, because four is true."
