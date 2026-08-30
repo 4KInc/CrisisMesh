@@ -21,8 +21,39 @@ hackathon
 
 ## Cover image
 
-Optional. The strongest one is the Slack DM showing two escalations arriving
-unprompted. It is the only frame where the loop is visibly acting on its own.
+**Strongest option, and it costs nothing to generate:** a screenshot of the
+Slack DM showing two escalations arriving unprompted. It is the only frame where
+the loop is visibly acting on its own, and it is real, which a generated image
+cannot be.
+
+If you use the generator instead, keep it abstract. The subject matter is school
+emergencies, and an illustrated corridor or a distressed figure would be both
+tasteless and misleading about what the post is (it is about seams in code, not
+about an incident). Also avoid asking for words: image models render text badly,
+and a cover reading "4 of 34" in mangled letters is worse than no cover.
+
+**Prompt A, the loop (recommended).** Renders the post's actual subject, and the
+four-of-thirty-four ratio without spelling it out:
+
+```
+Wide minimal technical illustration on a dark slate background. A ring of thirty-four small circular nodes; four glow warm amber, the other thirty are dim grey outlines. One thin teal line arcs from a dim node to a lit one. Flat vector style, generous negative space, muted palette, no text, no people, no buildings.
+```
+
+**Prompt B, the seam.** Matches the post's thesis that every bug was in a
+connection rather than a component:
+
+```
+Wide minimal vector illustration on a dark background. Two nearly identical rounded rectangles side by side, one outlined in soft green and one in soft orange, with a thin line that reaches from the first and stops just short of the second. Abstract, editorial, heavy negative space, no readable text, no people.
+```
+
+**Prompt C, signal and silence.** Quieter, works well as a thumbnail:
+
+```
+Wide abstract data visualization on warm off-white. A grid of thirty-four small squares: four filled solid teal, thirty drawn as thin grey outlines. A single curved line connects one outlined square to a filled one. Flat editorial style, lots of white space, no text, no people.
+```
+
+dev.to covers render around 1000x420, so a wide composition with the subject
+slightly left of centre survives the crop best.
 
 ---
 
