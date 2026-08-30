@@ -81,10 +81,10 @@ class TestNothingIsCommitted:
         assert not re.search(r"\+1\d{10}", SCRIPT), "a real phone number is committed"
 
     def test_the_repo_carries_no_real_slack_ids(self):
-        for path in [ROOT / "data" / "seed" / "personnel.csv",
-                     ROOT / "README.md", ROOT / "docs" / "DEMO_SEQUENCE.md"]:
-            if path.exists():
-                assert not re.search(r"\bU0[A-Z0-9]{8,}\b", path.read_text()), path
+        # Tracked files only. The demo run sheets are local-only by design, and
+        # this test exists to keep workspace ids out of the *repository*.
+        for path in [ROOT / "data" / "seed" / "personnel.csv", ROOT / "README.md"]:
+            assert not re.search(r"\bU0[A-Z0-9]{8,}\b", path.read_text()), path
 
     def test_the_script_uses_the_caret_delimiter(self):
         """gcloud reserves the comma in --update-env-vars: set with one and the

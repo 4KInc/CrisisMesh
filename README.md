@@ -11,20 +11,20 @@ Live: [crisismesh-1031148889398.us-central1.run.app](https://crisismesh-10311488
 
 ### Documentation
 
+> The demo run sheets and the hackathon submission drafts are deliberately not
+> in the repository. They are working material for one entry, they carry a
+> personal phone number and workspace ids, and nobody cloning this wants a beat
+> sheet. What is here is what explains the system.
+
 | Doc | What it is |
 |---|---|
-| [docs/DEMO_SCRIPT_4MIN.md](docs/DEMO_SCRIPT_4MIN.md) | The recording script — beats, the Google Cloud proof to capture at each one, and a mid-take failure table |
-| [docs/DEMO_SEQUENCE.md](docs/DEMO_SEQUENCE.md) | The cross-channel walkthrough, with the reasoning behind each beat |
 | [docs/PILLARS.md](docs/PILLARS.md) | Fortified Fleet pillars: which are managed, which are custom, and what verifies each |
 | [docs/architecture.md](docs/architecture.md) | System and agentic-loop diagrams with edge provenance |
 | [docs/BRAND.md](docs/BRAND.md) | The palette, lifted from the console's own tokens, and the icon prompt |
 | [docs/diagram/CrisisMesh-Architecture.pdf](docs/diagram/CrisisMesh-Architecture.pdf) | The rendered architecture diagram (regenerate: `architecture.html` through headless Chrome) |
-| [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md) | Paste-ready answers for every Devpost field |
-| **[docs/stage3/DEVTO_POST.md](docs/stage3/DEVTO_POST.md)** | **The dev.to article** — title, tags and body, ready to paste into `dev.to/new` |
 | [docs/stage3/BUILD_LOG.md](docs/stage3/BUILD_LOG.md) | The longer build log the dev.to post is adapted from |
 | [docs/stage3/SOCIAL_POST.md](docs/stage3/SOCIAL_POST.md) | Two social drafts, both tagged and attributed |
 | [docs/GEMINI_IN_THE_LOOP.md](docs/GEMINI_IN_THE_LOOP.md) | Where Gemini makes decisions, and where deterministic code does |
-| [docs/A2P_10DLC_RESUBMISSION.md](docs/A2P_10DLC_RESUBMISSION.md) | SMS carrier registration — why SMS is not a live channel yet |
 
 ---
 
@@ -149,7 +149,7 @@ CrisisMesh has four trigger paths. Each is human-initiated — a person sends a 
 
 Text the CrisisMesh number with an incident description. The system classifies and responds with an immediate TwiML confirmation including the incident ID and a 911 reminder. The Gemini agent fleet runs in the background; when it finishes, a follow-up SMS delivers the fleet SITREP. Reply with `SAFE`, `SOS`, `INJURED`, or `EVACUATED` to check in.
 
-SMS is an A2P 10DLC program, so the carrier-reserved keywords take precedence over everything else: `STOP` unsubscribes, `START` resubscribes, and `HELP` returns program info — which is why the "I need assistance" check-in is `SOS`, not `HELP`. Numbers enroll at [`/sms-optin`](docs/A2P_10DLC_RESUBMISSION.md) with a double opt-in confirmation; consent records live in `src/services/sms_consent.py`. See [docs/A2P_10DLC_RESUBMISSION.md](docs/A2P_10DLC_RESUBMISSION.md).
+SMS is an A2P 10DLC program, so the carrier-reserved keywords take precedence over everything else: `STOP` unsubscribes, `START` resubscribes, and `HELP` returns program info — which is why the "I need assistance" check-in is `SOS`, not `HELP`. Numbers enroll at `/sms-optin` with a double opt-in confirmation; consent records live in `src/services/sms_consent.py`.
 
 The immediate TwiML ack uses the deterministic pipeline (fast). The background agentic fleet + follow-up SMS require outbound credentials (`TWILIO_ACCOUNT_SID` + `TWILIO_PHONE_NUMBER`, plus an API key or the auth token). Without outbound creds — or with `CRISISMESH_SMS_MODE=off` — the agentic thread does not spawn and SMS is deterministic-only. Uses the Twilio REST API directly via `requests` — no Twilio SDK needed.
 
@@ -284,7 +284,7 @@ flowchart LR
 | **WhatsApp** | WhatsApp Business Cloud API (Meta) | Inbound message incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 1,309 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 1,308 tests, no GCP required |
 
 ---
 
@@ -448,7 +448,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (1,309 passing, no GCP required)
+# Run tests (1,308 passing, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -782,7 +782,7 @@ on a laptop with no project attached.
 ```bash
 git clone https://github.com/4KInc/CrisisMesh.git && cd CrisisMesh
 pip install -e ".[dev]"
-pytest tests/ -q          # 1,309 tests, all offline
+pytest tests/ -q          # 1,308 tests, all offline
 ```
 
 ### Checking the managed claims from outside the process
@@ -842,7 +842,7 @@ credentials, and would make the suite depend on a network.
 
 ## Test Coverage
 
-1,309 passing tests covering:
+1,308 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries
@@ -886,8 +886,8 @@ The `scripts/demo_fire_drill.py` script runs a 7-beat demo of the fleet and the
 governance layer — no Gemini API access and no GCP credentials required. For the
 **live** cross-channel run (WhatsApp declaration, Slack sync, the autonomous
 reconciliation loop, the law-enforcement brief), see
-[docs/DEMO_SEQUENCE.md](docs/DEMO_SEQUENCE.md) — that is a different demo with
-different beats, and it used to be described by the table under this heading.
+a separate cross-channel run sheet, which is a different demo with different
+beats and used to be described by the table under this heading.
 
 | Beat | What It Proves |
 |------|---------------|

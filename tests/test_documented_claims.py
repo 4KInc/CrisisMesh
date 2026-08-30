@@ -163,10 +163,6 @@ class TestTheDocumentationIndexIsReal:
         for rel in indexed:
             assert (ROOT / rel).exists(), f"README links {rel}, which does not exist"
 
-    def test_the_devto_article_is_indexed(self):
-        """Asked for by name often enough to be worth pinning."""
-        assert "docs/stage3/DEVTO_POST.md" in self._indexed_paths()
-
     def test_the_rendered_diagram_is_indexed_and_present(self):
         assert "docs/diagram/CrisisMesh-Architecture.pdf" in self._indexed_paths()
 
@@ -190,8 +186,16 @@ class TestReproducibleTestingIsActuallyInTheReadme:
             assert (ROOT / script).exists(), f"{script} is documented but missing"
 
     def test_the_devpost_testing_field_fits_its_limit(self):
-        """Devpost caps that box at 255 characters and silently rejects more."""
-        submission = (ROOT / "docs" / "DEVPOST_SUBMISSION.md").read_text()
-        line = [l for l in submission.splitlines() if l.startswith("No GCP creds: pip install")]
+        """Devpost caps that box at 255 characters and silently rejects more.
+
+        The submission draft is deliberately untracked, so this checks it when
+        it is present and skips on a clean clone rather than failing for
+        somebody who only wanted the code.
+        """
+        submission = ROOT / "docs" / "DEVPOST_SUBMISSION.md"
+        if not submission.exists():
+            pytest.skip("submission draft is local-only")
+        line = [l for l in submission.read_text().splitlines()
+                if l.startswith("No GCP creds: pip install")]
         assert line, "the paste-ready testing line moved"
         assert len(line[0]) <= 255, f"{len(line[0])} chars, limit is 255"

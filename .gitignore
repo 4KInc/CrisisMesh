@@ -23,3 +23,13 @@ data/consent/
 
 # Internal audit docs
 docs/audit/
+
+# Submission and demo working material: kept locally, not published.
+# These are drafts and run-sheets for one hackathon entry, not part of the
+# system. Anyone cloning the repo wants the code and the pillar docs, not a
+# beat sheet with a phone number in it.
+docs/DEVPOST_SUBMISSION.md
+docs/stage3/DEVTO_POST.md
+docs/A2P_10DLC_RESUBMISSION.md
+docs/DEMO_SCRIPT_4MIN.md
+docs/DEMO_SEQUENCE.md
