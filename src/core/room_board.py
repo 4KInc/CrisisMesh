@@ -24,6 +24,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+COLLECTION = "crisismesh_room_board"
+
 _boards: dict[str, dict[str, dict[str, Any]]] = {}
 _lock = threading.Lock()
 
@@ -92,9 +94,16 @@ def _residual_note(notes: str) -> str:
 
 def record(incident_id: str, entry: dict[str, Any], source: str = "") -> dict[str, Any]:
     """Store one room's report against an incident."""
-    stored = {**entry, "source": source}
-    with _lock:
-        _boards.setdefault(incident_id, {})[entry["room"]] = stored
+    stored = {**entry, "source": source, "incident_id": incident_id}
+    # One document per room. Last writer wins, which is what a re-count means —
+    # no compare-and-set, because a newer count is not a contended write.
+    from src.core import durable_store
+
+    if durable_store.backend_name() == durable_store.MEMORY:
+        with _lock:
+            _boards.setdefault(incident_id, {})[entry["room"]] = stored
+    else:
+        durable_store.put(COLLECTION, f"{incident_id}:{entry['room']}", stored)
     logger.info(
         f"Room board {incident_id}: room {entry['room']} — "
         f"{entry['safe']} safe, {entry['missing']} missing (via {source or 'unknown'})"
@@ -103,13 +112,29 @@ def record(incident_id: str, entry: dict[str, Any], source: str = "") -> dict[st
 
 
 def get(incident_id: str) -> dict[str, dict[str, Any]]:
-    with _lock:
-        return {k: dict(v) for k, v in _boards.get(incident_id, {}).items()}
+    """The board, keyed by room.
+
+    Raises rather than returning {} when the store cannot answer: an empty board
+    reads as a school where no room has reported, and the brief prints that as
+    silent rooms.
+    """
+    from src.core import durable_store
+
+    if durable_store.backend_name() == durable_store.MEMORY:
+        with _lock:
+            return {k: dict(v) for k, v in _boards.get(incident_id, {}).items()}
+    return {row["room"]: dict(row)
+            for row in durable_store.query(COLLECTION, "incident_id", incident_id)}
 
 
 def clear(incident_id: str) -> None:
-    with _lock:
-        _boards.pop(incident_id, None)
+    from src.core import durable_store
+
+    if durable_store.backend_name() == durable_store.MEMORY:
+        with _lock:
+            _boards.pop(incident_id, None)
+        return
+    durable_store.delete_where(COLLECTION, "incident_id", incident_id)
 
 
 def reset() -> None:

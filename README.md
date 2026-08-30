@@ -834,9 +834,33 @@ The system refuses to overstate what it knows. The same rule applies here.
 
 **Reach is 4 of 34, and it says so.** Thirty roster entries have no verified channel — no phone number that has opted in, no Slack id that resolves to a workspace member. `/incident status` reports the reach it has. Filling the roster with plausible-looking ids would show 34 of 34 and would be a lie, and the loop would then chase people down channels that go nowhere while the IC was never told to reach them another way.
 
-**Some state does not survive a redeploy while the incident does.** The incident and reconciliation state are Firestore-backed. The witness log, the room board and the WhatsApp session window are in memory: replace the instance mid-incident and the room board resets under a live incident. The headcount denominator resolves this safely — a lost record counts as unaccounted, never as accounted-for — but the board itself is gone. **Do not redeploy during an incident; resolve and re-declare.**
+**Per-incident state is durable and the deployment scales horizontally.** The
+incident, the reconciliation state machine, the witness log, the room board, the
+check-in ledger and the WhatsApp session window are all Firestore-backed
+(`CRISISMESH_DURABLE_STORE=firestore`). `--max-instances` is 4. A reconciliation
+scheduler runs in every container, so each tick is claimed by a
+create-if-absent lease before it runs — without that, four instances each run
+their own tick N and one silent teacher is pinged four times.
 
-**`--max-instances=1` is load-bearing.** Several in-memory singletons are shared across requests. The deployment does not scale horizontally without moving them to Firestore first.
+Verified against real Firestore, not a mock: `python scripts/verify_durable_stores.py`
+writes the trail, board and ledger, clears every process-local copy the way a
+replaced container would, and reads them back.
+
+**A read failure stays a read failure.** These stores raise rather than
+returning empty, because an unreadable sighting log rendered as `[]` would let
+the egress assessment call a corridor clear on the strength of having failed to
+look. When it cannot read, the brief says `EGRESS ASSESSMENT WITHHELD`, the room
+section says `ROOM BOARD UNAVAILABLE`, and the status card says the ledger could
+not be read rather than that nobody answered.
+
+**Still process-local, and why it is survivable:** Slack reaction check-ins
+(`_room_checkins`) are merged with the durable room board on read, so a
+reaction registered on one instance is invisible to another until that person
+also reports by text — under-reporting, never over-reporting. The observability
+trace store and `export_audit_bundle` are in-memory, so an audit bundle
+reflects the instance that serves the request; it is an after-action artefact,
+not a live-incident surface. Both are listed here rather than fixed because the
+failure mode of each is a partial record, not a false one.
 
 **`/sms` still runs the pipeline inside the webhook.** The WhatsApp route acknowledges first and works after; the SMS route does not, so a slow pipeline there can still overrun Twilio's 15-second budget and lose a message to error 11200. It needs a different fix, because the carrier-mandated `STOP`/`HELP` paths have to stay synchronous. SMS is not in production use while the A2P 10DLC campaign is unapproved.
 

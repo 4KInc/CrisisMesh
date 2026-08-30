@@ -487,6 +487,11 @@ def _handle_status(channel_id: str, user_id: str) -> dict[str, Any]:
         f"*Check-ins:* {summary['accounted']}/{summary['total_tracked']}\n"
     )
 
+    if not summary.get("ledger_readable", True):
+        status_text += ("\n:no_entry: *The check-in ledger could not be read.* "
+                        "Everyone below is listed as unaccounted because no "
+                        "record could be retrieved, not because nobody answered.")
+
     if missing_names:
         # Every name. "and 24 more" is the problem restated as a number — these
         # are the people someone has to go and find.
@@ -1130,11 +1135,27 @@ def _reported_rooms() -> dict[str, Any]:
     her room by text was still listed as silent in the law-enforcement brief —
     the document responders act on fastest.
     """
-    from src.core import room_board
+    from src.core import durable_store, room_board
 
     merged = dict(_room_checkins)
     merged.update(room_board.get(incident_state.get_active_incident_id()))
     return merged
+
+
+def _reported_rooms_or_none() -> dict[str, Any] | None:
+    """The board, or None when the store could not answer.
+
+    An unreadable board rendered as {} prints every room as silent — the brief
+    then tells responders that 22 rooms have not reported when in fact we could
+    not look. None makes the caller say which of those two it is.
+    """
+    from src.core import durable_store
+
+    try:
+        return _reported_rooms()
+    except durable_store.StoreUnavailable as exc:
+        logger.error(f"Room board unreadable: {exc}")
+        return None
 
 
 def _handle_board_query(channel_id: str, thread_ts: str) -> None:
@@ -1412,9 +1433,13 @@ def _sighting_attribution(threat: dict[str, Any]) -> str:
     """Who reported the latest position. The older sightings in the trail below
     are each attributed; without this the newest one — the one a responder acts
     on — was the only unattributed line on the page."""
-    from src.core import observations
+    from src.core import durable_store, observations
 
-    track = observations.threat_track(incident_state.get_active_incident_id())
+    try:
+        track = observations.threat_track(incident_state.get_active_incident_id())
+    except durable_store.StoreUnavailable:
+        # Naming a reporter we cannot read would be inventing one.
+        return ""
     if not track:
         return ""
     who = track[-1].get("reported_by") or track[-1].get("source") or ""
@@ -1438,19 +1463,37 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     # anyone knows, and the brief was still quoting the opening report.
     from src.core import observations
 
+    from src.core import durable_store
+
     incident_id = incident_state.get_active_incident_id()
-    threat_loc = (observations.latest_threat_location(incident_id)
-                  or extract_threat_observation(report_text))
+    # Read once, here, and pass it down. Guarding each call site separately
+    # meant a section added later would read the store directly and take the
+    # whole brief down with it — or worse, get [] and print a confident answer.
+    sightings_readable = True
+    try:
+        entries = observations.get(incident_id)
+        track = observations.threat_track(incident_id)
+        threat_loc = (observations.latest_threat_location(incident_id)
+                      or extract_threat_observation(report_text))
+    except durable_store.StoreUnavailable as exc:
+        # Fall back to the opening report only, and remember that the trail is
+        # missing rather than empty — the difference decides whether anything
+        # downstream may call a route clear.
+        logger.error(f"Sighting store unreadable for {incident_id}: {exc}")
+        sightings_readable = False
+        entries = []
+        track = []
+        threat_loc = extract_threat_observation(report_text)
+
     threat_seen_at = ""
-    for entry in reversed(observations.get(incident_id)):
+    for entry in reversed(entries):
         if entry.get("threat_location_reported"):
             threat_seen_at = entry.get("at", "")
             break
-    if not threat_seen_at and threat_loc:
+    if not threat_seen_at and threat_loc and sightings_readable:
         # No witness report yet, so the position is the one in the opening
         # message and its time is the declaration. Rendering that as "reported
         # unknown" hid the freshest fact the brief had.
-        track = observations.threat_track(incident_id)
         threat_seen_at = track[0]["at"] if track else ""
 
     brief = generate_arrival_brief(
@@ -1507,7 +1550,6 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
 
         # Two sightings tell a responder which way it is moving, which is the
         # difference between arriving behind it and arriving in front of it.
-        track = observations.threat_track(incident_state.get_active_incident_id())
         if len(track) > 1:
             trail = " → ".join(t["location"] for t in track)
             lines.append(f"  Reported movement: {trail}")
@@ -1523,6 +1565,9 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     # nothing on the page said one was staff and the other was students.
     lines.append(f"*Headcount (tracked staff roster):* {headcount['total']} total | "
                  f"{headcount['accounted']} accounted | {headcount['unaccounted']} unaccounted")
+    if not accountability.get("ledger_readable", True):
+        lines.append("  :no_entry: _The check-in ledger could not be read. These "
+                     "are unassessed, not unanswered._")
     if headcount.get("injured"):
         lines.append(f":ambulance: Injured: {headcount['injured']}")
     if headcount.get("need_help"):
@@ -1533,9 +1578,21 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
     # of the room logic in the file and the one that matters most: a teacher
     # who reported her room by WhatsApp was still listed as silent in the
     # document handed to police.
-    board = _reported_rooms()
+    board = _reported_rooms_or_none()
+    if board is None:
+        lines.append("")
+        lines.append(":no_entry: *ROOM BOARD UNAVAILABLE* — the board could not "
+                     "be read, so no room can be listed as silent. Rooms are "
+                     "unassessed, not unreported.")
+        board = {}
+        board_readable = False
+    else:
+        board_readable = True
     all_rooms = {r["room_id"]: r for r in kb.rooms}
-    silent_rooms = sorted(set(all_rooms.keys()) - set(board.keys()))
+    # Silence is a claim about rooms that did not report, not about a board we
+    # could not open.
+    silent_rooms = (sorted(set(all_rooms.keys()) - set(board.keys()))
+                    if board_readable else [])
 
     if board:
         total_safe = sum(r["safe"] for r in board.values())
@@ -1610,11 +1667,29 @@ def _handle_arrival_brief(channel_id: str, thread_ts: str) -> None:
         # the bad door and leaving the reader to work out the good one, across
         # thirteen routes and every reported position, is a calculation nobody
         # should be doing during a shooting.
-        threat_seen = [t["location"] for t in observations.threat_track(
-            incident_state.get_active_incident_id())]
-        assessment = movement_policy.assess_egress(
-            kb.get_all_routes_for_facility("jefferson"), threat_seen,
-            blocked_names=egress.get("blocked_routes", []))
+        try:
+            if not sightings_readable:
+                raise durable_store.StoreUnavailable(
+                    "the sighting store could not be read earlier in this brief")
+            threat_seen = [t["location"] for t in track]
+        except durable_store.StoreUnavailable as exc:
+            # Every line below this would have been built on an empty sighting
+            # list. "No reported sighting on this path" would then mean only
+            # that we could not read the sightings, and it is the sentence a
+            # responder acts on.
+            logger.error(f"Egress assessment withheld — sightings unreadable: {exc}")
+            lines.append(":no_entry: *EGRESS ASSESSMENT WITHHELD* — the sighting "
+                         "store could not be read, so no route can be described "
+                         "as carrying no reported sighting. Treat every route as "
+                         "unassessed and confirm on the ground.")
+            lines.append(f"  _Reason: {str(exc)[:160]}_")
+            assessment = None
+        else:
+            assessment = movement_policy.assess_egress(
+                kb.get_all_routes_for_facility("jefferson"), threat_seen,
+                blocked_names=egress.get("blocked_routes", []))
+
+    if not directive.may_publish_assembly_point and assessment:
 
         checked = ", ".join(assessment["checked_against"]) or "no sightings reported yet"
         lines.append(":door: *EGRESS ASSESSMENT* — every route cross-checked "

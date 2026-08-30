@@ -137,3 +137,35 @@ each result carries `retrieval_distance` (raw, from the API) alongside
 `retrieval_confidence`, and `find_similar_incidents` returns a `confidence_note`
 saying so. A reader comparing 0.166 against a Jaccard 0.75 would otherwise
 conclude the managed store was less sure, when the two are not on one scale.
+
+## Horizontal Scale
+
+`--max-instances=1` was load-bearing until the per-incident stores moved off
+process memory. What changed:
+
+| Store | Was | Now | Write shape |
+|---|---|---|---|
+| Incident state | Firestore | Firestore | single document |
+| Reconciliation state machine | Firestore (CAS) | Firestore (CAS) | compare-and-set, version checked |
+| Witness log / threat trail | in-process dict | Firestore | append-only, one doc per sighting |
+| Room board | in-process dict | Firestore | one doc per room, last writer wins |
+| Check-in ledger | in-process dict | Firestore | one doc per person, last writer wins |
+| WhatsApp session window | in-process dict | Firestore | one doc per handset |
+| Tick guard | in-process dict | Firestore lease | create-if-absent |
+
+None of the new stores uses compare-and-set. Observations are append-only, a
+room report replaces that room's entry, and a session window is one timestamp —
+there is no state machine to serialise, and adding CAS would be machinery for
+the look of it. The reconciliation state machine keeps its CAS because it has
+ordering constraints the others do not.
+
+The tick lease is the piece that makes more than one instance safe: a scheduler
+runs in every container, and without a lease outside the process each one runs
+its own tick N.
+
+Verified against real Firestore with `scripts/verify_durable_stores.py`. Two
+things the live run corrected that a mock had not: `where(...) order_by(...)`
+requires a composite index, so ordering is done in process to keep the setup
+reproducible without provisioning one; and the test double had no `create()`,
+so the lease primitive was silently falling into its own except-path and
+reporting success to every caller.

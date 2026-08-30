@@ -17,7 +17,47 @@ from src.models.person import PersonStatus
 # In-memory check-in store: {incident_id: {person_id: {status, name, location, time}}}
 logger = logging.getLogger(__name__)
 
+COLLECTION = "crisismesh_checkins"
+
 _checkin_store: dict[str, dict[str, dict[str, Any]]] = {}
+
+
+def _durable() -> bool:
+    from src.core import durable_store
+
+    return durable_store.backend_name() != durable_store.MEMORY
+
+
+def _write_checkin(incident_id: str, person_id: str, record: dict[str, Any]) -> None:
+    """One document per person per incident. Last writer wins — a later status
+    from the same person is a correction, not a contended write."""
+    from src.core import durable_store
+
+    if not _durable():
+        _checkin_store.setdefault(incident_id, {})[person_id] = record
+        return
+    durable_store.put(COLLECTION, f"{incident_id}:{person_id}",
+                      {**record, "incident_id": incident_id, "person_id": person_id})
+
+
+def _read_checkins(incident_id: str) -> tuple[dict[str, dict[str, Any]], bool]:
+    """The ledger and whether it could be read.
+
+    Never returns an empty ledger to mean an unreadable one. With the roster as
+    the denominator an unreadable ledger already resolves toward "unaccounted",
+    which is the safe direction — but the surfaces still have to say they could
+    not look rather than that nobody checked in.
+    """
+    from src.core import durable_store
+
+    if not _durable():
+        return dict(_checkin_store.get(incident_id, {})), True
+    try:
+        rows = durable_store.query(COLLECTION, "incident_id", incident_id)
+    except durable_store.StoreUnavailable as exc:
+        logger.error(f"Check-in ledger unreadable for {incident_id}: {exc}")
+        return {}, False
+    return {r["person_id"]: r for r in rows}, True
 
 
 def read_roster(
@@ -135,16 +175,13 @@ def process_checkin(
     person = kb.get_person(person_id)
     name = person["name"] if person else person_id
 
-    if incident_id not in _checkin_store:
-        _checkin_store[incident_id] = {}
-
-    _checkin_store[incident_id][person_id] = {
+    _write_checkin(incident_id, person_id, {
         "status": person_status,
         "name": name,
         "location": location,
         "notes": notes,
         "time": datetime.now(timezone.utc).isoformat(),
-    }
+    })
 
     _mirror_to_reconciliation(incident_id, person_id, person_status)
 
@@ -167,7 +204,7 @@ def compute_accountability_summary(incident_id: str) -> dict[str, Any]:
     Returns:
         Summary with counts per status category and lists of people per status.
     """
-    checkins = _checkin_store.get(incident_id, {})
+    checkins, ledger_readable = _read_checkins(incident_id)
 
     breakdown: dict[str, list[dict]] = {s: [] for s in PersonStatus}
     for pid, info in checkins.items():
@@ -211,6 +248,10 @@ def compute_accountability_summary(incident_id: str) -> dict[str, Any]:
         "unaccounted": total - accounted,
         "counts": counts,
         "breakdown": breakdown,
+        # An unreadable ledger already resolves toward "unaccounted" because the
+        # roster is the denominator — but a reader has to be able to tell "nobody
+        # has checked in" from "we could not look".
+        "ledger_readable": ledger_readable,
     }
 
 
@@ -249,20 +290,18 @@ def send_checkin_request(
         people = kb.get_personnel_by_facility(facility_id)
         ids = [p["person_id"] for p in people]
 
-    if incident_id not in _checkin_store:
-        _checkin_store[incident_id] = {}
-
+    existing, _ = _read_checkins(incident_id)
     requested = []
     for pid in ids:
-        if pid not in _checkin_store[incident_id]:
+        if pid not in existing:
             person = kb.get_person(pid)
-            _checkin_store[incident_id][pid] = {
+            _write_checkin(incident_id, pid, {
                 "status": PersonStatus.UNKNOWN,
                 "name": person["name"] if person else pid,
                 "location": "",
                 "notes": "",
                 "time": datetime.now(timezone.utc).isoformat(),
-            }
+            })
         requested.append(pid)
 
     return {
@@ -289,7 +328,7 @@ def escalate_missing_checkins(
         List of unaccounted people with names and last known locations.
     """
     kb = KnowledgeBase.get()
-    checkins = _checkin_store.get(incident_id, {})
+    checkins, _ = _read_checkins(incident_id)
 
     missing = []
     missing_with_mobility = []

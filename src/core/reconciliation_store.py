@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 MEMORY = "memory"
 FIRESTORE = "firestore"
+TICK_LEASES = "crisismesh_tick_leases"
 _KNOWN_BACKENDS = (MEMORY, FIRESTORE)
 
 _backend: str | None = None
@@ -340,7 +341,19 @@ def begin_tick_guard(incident_id: str, tick: int) -> bool:
     per-person `last_acted_tick` still contains the blast radius.
     """
     try:
-        return rec.begin_tick(incident_id, tick)
+        if not rec.begin_tick(incident_id, tick):
+            return False
+        if backend_name() == FIRESTORE:
+            # A scheduler runs in every container. Without a lease outside the
+            # process, four instances each run their own tick N and one silent
+            # teacher is pinged four times.
+            from src.core import durable_store
+
+            if durable_store.backend_name() != durable_store.MEMORY:
+                return durable_store.claim(
+                    TICK_LEASES, f"{incident_id}:{tick}",
+                    {"incident_id": incident_id, "tick": tick})
+        return True
     except Exception as exc:  # noqa: BLE001
         logger.error(f"Tick guard unreadable for {incident_id}/{tick} ({exc}) — running")
         return True

@@ -188,18 +188,48 @@ def extract_messages(payload: dict[str, Any]) -> list[dict[str, str]]:
     return messages
 
 
+SESSION_COLLECTION = "crisismesh_session_windows"
+
+
 def note_inbound(from_number: str) -> None:
     """Open (or re-open) this number's 24-hour free-form window."""
+    from src.core import durable_store
     from src.services.sms_consent import normalize_phone
+
     normalized = normalize_phone(from_number)
-    if normalized:
-        _last_inbound[normalized] = time.time()
+    if not normalized:
+        return
+    _last_inbound[normalized] = time.time()
+    if durable_store.backend_name() != durable_store.MEMORY:
+        try:
+            durable_store.put(SESSION_COLLECTION, normalized,
+                              {"phone": normalized, "at": time.time()})
+        except durable_store.StoreUnavailable as exc:
+            # The local copy still holds for this instance. Losing the shared
+            # one costs a template message, not a lost message.
+            logger.warning(f"Session window not persisted for {normalized}: {exc}")
 
 
 def in_session_window(phone: str) -> bool:
-    """True when Meta still permits a free-form message to this number."""
+    """True when Meta still permits a free-form message to this number.
+
+    The safe direction here is the opposite of the other stores. Assuming the
+    window is open sends a free-form message Meta rejects and the person gets
+    nothing; assuming it is closed sends a template, which arrives. So an
+    unreadable store answers False.
+    """
+    from src.core import durable_store
     from src.services.sms_consent import normalize_phone
-    last = _last_inbound.get(normalize_phone(phone), 0.0)
+
+    normalized = normalize_phone(phone)
+    last = _last_inbound.get(normalized, 0.0)
+    if not last and durable_store.backend_name() != durable_store.MEMORY:
+        try:
+            row = durable_store.get_doc(SESSION_COLLECTION, normalized)
+            last = float((row or {}).get("at", 0.0))
+        except durable_store.StoreUnavailable as exc:
+            logger.warning(f"Session window unreadable for {normalized}: {exc}")
+            return False
     return bool(last) and (time.time() - last) < SESSION_WINDOW_SECONDS
 
 

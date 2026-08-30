@@ -18,10 +18,13 @@ from __future__ import annotations
 
 import logging
 import threading
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+COLLECTION = "crisismesh_observations"
 
 _observations: dict[str, list[dict[str, Any]]] = {}
 _lock = threading.Lock()
@@ -53,11 +56,19 @@ def record(
         "at": datetime.now(timezone.utc).isoformat(),
     }
 
-    with _lock:
-        entries = _observations.setdefault(incident_id, [])
-        entries.append(entry)
-        if len(entries) > MAX_PER_INCIDENT:
-            del entries[:-MAX_PER_INCIDENT]
+    # Append-only, one document per sighting. No compare-and-set: two witnesses
+    # reporting at once are two facts, not a contended write.
+    from src.core import durable_store
+
+    if durable_store.backend_name() == durable_store.MEMORY:
+        with _lock:
+            entries = _observations.setdefault(incident_id, [])
+            entries.append(entry)
+            if len(entries) > MAX_PER_INCIDENT:
+                del entries[:-MAX_PER_INCIDENT]
+    else:
+        durable_store.put(
+            COLLECTION, f"{incident_id}:{entry['at']}:{uuid.uuid4().hex[:8]}", entry)
 
     logger.info(
         f"Observation on {incident_id} from {person_name or from_address or source}: "
@@ -67,13 +78,24 @@ def record(
 
 
 def get(incident_id: str) -> list[dict[str, Any]]:
-    with _lock:
-        return [dict(e) for e in _observations.get(incident_id, [])]
+    """Every reported sighting, oldest first.
+
+    Raises `StoreUnavailable` rather than returning [] when the store cannot
+    answer. The egress assessment calls a corridor clear because no sighting
+    lies on it — built on an empty list that only means "unreadable", that
+    sentence points a responder at the threat.
+    """
+    from src.core import durable_store
+
+    if durable_store.backend_name() == durable_store.MEMORY:
+        with _lock:
+            return [dict(e) for e in _observations.get(incident_id, [])]
+    rows = durable_store.query(COLLECTION, "incident_id", incident_id, order_by="at")
+    return rows[-MAX_PER_INCIDENT:]
 
 
 def count(incident_id: str) -> int:
-    with _lock:
-        return len(_observations.get(incident_id, []))
+    return len(get(incident_id))
 
 
 def latest_threat_location(incident_id: str) -> str:
@@ -132,6 +154,17 @@ def _started_at_iso(started_at: float) -> str:
     if not started_at:
         return ""
     return datetime.fromtimestamp(started_at, tz=timezone.utc).isoformat()
+
+
+def clear(incident_id: str) -> None:
+    """Drop one incident's sightings. Used when an incident is stood down."""
+    from src.core import durable_store
+
+    if durable_store.backend_name() == durable_store.MEMORY:
+        with _lock:
+            _observations.pop(incident_id, None)
+        return
+    durable_store.delete_where(COLLECTION, "incident_id", incident_id)
 
 
 def reset() -> None:
