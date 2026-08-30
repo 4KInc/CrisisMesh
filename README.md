@@ -461,6 +461,8 @@ adk run
 | `WHATSAPP_PHONE_NUMBER_ID` | ID | — | WhatsApp phone number ID (optional) |
 | `AUTHORIZED_IC_IDS` | IDs joined by `^` or `,` | — | Incident Commanders, constant-time compared. **Unset refuses everyone, including the IC** — an unconfigured gate that accepted anyone would be no gate at all. Use `^` when setting it through `gcloud --update-env-vars`, which reserves the comma: set with a comma and the whole string becomes one id matching nobody, so the gate refuses silently and correctly, and very confusingly |
 | `DEMO_AUTO_APPROVE` | `1` | — | Auto-approve gated actions immediately (demo mode only; never in production) |
+| `MEMORY_BACKEND` | `local` \| `vertex` | `local` | Memory Bank backend. `vertex` uses the managed Vertex AI Agent Engine Memory Bank; a managed failure falls back to local rather than losing the feature |
+| `VERTEX_MEMORY_ENGINE` | `projects/…/reasoningEngines/…` | — | The Agent Engine backing the managed Memory Bank. Unset falls back to local — guessing an engine would write lessons into a resource nobody named |
 | `CRISISMESH_DELIVERY` | `on` \| `off` | `off` | The wire. Off by default and deliberately not implied by having credentials — every step before this one had the property that a bug's worst consequence stayed inside a response body |
 | `CRISISMESH_AUTO_TICK` | `on` \| `off` | `off` | Runs the reconciliation loop on a schedule instead of only when asked |
 | `CRISISMESH_TICK_SECONDS` | seconds | `45` | Interval between reconciliation ticks (floor of 5) |

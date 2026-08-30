@@ -55,10 +55,19 @@ def find_similar_incidents(
     for o in mb.incident_outcomes:
         outcome_by_incident[o["incident_id"]] = o
 
+    # The managed backend ranks by semantic similarity and hands back its own
+    # confidence. Re-scoring those by tag overlap would throw away the ranking
+    # and relabel the number; when it is present it is used and named as what
+    # it is.
+    basis = MemoryBank.get().backend == "vertex" and any(
+        "retrieval_confidence" in x for x in lessons)
+    confidence_basis = "vector_similarity" if basis else "jaccard_tag_overlap"
+
     scored = []
     for lesson in lessons:
         lesson_tags = set(lesson.get("tags", []))
-        confidence = _jaccard(query_tags, lesson_tags)
+        confidence = (lesson["retrieval_confidence"] if basis
+                      else _jaccard(query_tags, lesson_tags))
 
         outcome = outcome_by_incident.get(lesson["incident_id"])
         citation: dict[str, Any] = {
@@ -78,7 +87,9 @@ def find_similar_incidents(
             "source": citation,
         })
 
-    scored.sort(key=lambda x: x["confidence"], reverse=True)
+    if not basis:
+        # Only the local path needs sorting; the managed store already ranked.
+        scored.sort(key=lambda x: x["confidence"], reverse=True)
     scored = scored[:limit]
 
     return {
@@ -86,6 +97,7 @@ def find_similar_incidents(
         "facility_id": facility_id,
         "query_tags": sorted(query_tags),
         "lessons_found": len(scored),
+        "confidence_basis": confidence_basis,
         "lessons": scored,
         "historical_stats": stats,
         "source": "memory_bank",
