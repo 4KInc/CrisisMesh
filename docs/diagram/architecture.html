@@ -6,13 +6,21 @@
   @page { size: A3 landscape; margin: 11mm; }
   .pagebreak { page-break-before: always; }
   body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
-         color:#111; margin:0; padding:0 4mm; }
+         color:#111827; margin:0; padding:0; background:#F7F5F1; }
+  .band { background:#0A0E17; color:#DEE3E6; padding:7mm 8mm 6mm;
+          margin:0 0 6mm; }
+  .band h1 { color:#fff; }
+  .band .pitch { color:#DEE3E6; }
+  .band .sub { color:#9CA3AF; margin:0; }
+  .band code { color:#06B6D4; }
+  .page { padding:0 8mm; }
   h1 { font-size: 22px; margin: 0 0 2px; letter-spacing:-.2px; }
   .pitch { font-size: 13.5px; color:#111; font-weight:600; margin: 4px 0 3px;
             max-width: 210mm; line-height:1.35; }
   .sub { font-size: 12px; color:#555; margin: 0 0 14px; }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing:.09em;
-       color:#444; margin: 16px 0 6px; border-bottom:1px solid #ddd; padding-bottom:3px; }
+  h2 { break-after: avoid; font-size: 13px; text-transform: uppercase; letter-spacing:.09em;
+       color:#0E7490; margin: 16px 0 6px; border-bottom:1px solid #D6D1C8;
+       padding-bottom:3px; }
   .mermaid { background:#fff; break-inside: avoid; }
   .mermaid svg { max-width: 100%; height: auto; max-height: 158mm; display: block; }
   .legend { display:flex; gap:22px; font-size:11px; color:#444; margin-top:8px; flex-wrap:wrap; }
@@ -21,17 +29,21 @@
          vertical-align:middle; margin-right:5px; }
   .key.dash { border-top:2px dashed #777; }
   table { border-collapse:collapse; font-size:10.5px; width:100%; margin-top:6px; }
-  th,td { border:1px solid #ddd; padding:3px 6px; text-align:left; vertical-align:top; }
-  th { background:#f4f4f4; font-weight:600; }
+  th,td { border:1px solid #D6D1C8; padding:3px 6px; text-align:left; vertical-align:top; }
+  th { background:#0A0E17; color:#DEE3E6; font-weight:600; }
+  td { background:#fff; }
   .foot { font-size:10px; color:#666; margin-top:12px; }
   code { font-family: ui-monospace, Menlo, monospace; font-size:10px; }
 </style></head><body>
 
+<div class="band">
 <h1>CrisisMesh — Fortified Enterprise Fleet</h1>
 <p class="pitch">Autonomous coordination on your org's own data: your rooms, staff, routes. Runs fire, active-threat, cyber and medical response, chases whoever hasn't answered, hands them to a named human.</p>
 <p class="sub">7 agents on Google ADK · Gemini 3.5 Flash on Vertex AI · Cloud Run
 (<code>max-instances=4</code>) · verified live 30 Aug 2026</p>
 
+</div>
+<div class="page">
 <h2>Full system</h2>
 <div class="mermaid">
 flowchart TB
@@ -79,6 +91,13 @@ flowchart TB
   CO --> OUT
   IC -.->|approve / deny| OUT
 
+  classDef auto fill:#E6F4F7,stroke:#0E7490,stroke-width:2px,color:#0B3C4A
+  classDef refusal fill:#FDECEC,stroke:#EF4444,stroke-width:2px,color:#7A1F1F
+  classDef human fill:#F3F4F6,stroke:#6B7280,stroke-width:1.5px,color:#111827
+  class LOOP,OUT auto
+  class MA,BLOCK refusal
+  class IC human
+
   linkStyle 2 stroke:#EF4444,stroke-width:2.5px
   linkStyle 6 stroke:#EF4444,stroke-width:2.5px
   linkStyle 11 stroke:#0E7490,stroke-width:3px
@@ -90,7 +109,7 @@ flowchart TB
   <span><span class="key dash"></span>Human decision required</span>
 </div>
 
-<h2>The autonomous accountability loop — the part nobody watches</h2>
+<h2 style="break-before: page;">The autonomous accountability loop — the part nobody watches</h2>
 <div class="mermaid">
 flowchart LR
   S["SILENT"] -->|tick: ping| R["RE-PINGED"]
@@ -101,6 +120,11 @@ flowchart LR
   E -.->|terminal for the loop| Q["quiet"]
   A -.->|terminal for the loop| Q
   E -->|"no reachable warden"| F["FLAG TO IC<br/>unreachable is reported,<br/>not dropped"]
+  classDef auto fill:#E6F4F7,stroke:#0E7490,stroke-width:2px,color:#0B3C4A
+  classDef refusal fill:#FDECEC,stroke:#EF4444,stroke-width:2px,color:#7A1F1F
+  class E,Q auto
+  class F refusal
+
   linkStyle 5 stroke:#0E7490,stroke-width:2px
   linkStyle 6 stroke:#0E7490,stroke-width:2px
   linkStyle 7 stroke:#EF4444,stroke-width:2px
@@ -146,4 +170,5 @@ github.com/4KInc/CrisisMesh · 1,309 tests, no GCP credentials required.</p>
     fontSize:"13px"
   },
   flowchart:{curve:"basis", useMaxWidth:true}});</script>
+</div>
 </body></html>

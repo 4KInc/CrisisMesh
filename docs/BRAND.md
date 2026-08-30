@@ -76,6 +76,24 @@ be both tasteless and wrong about what this is. It is a coordination system that
 runs after a human reports something, alongside 911. It is not an alarm and it
 does not detect anything.
 
+## Applying it to a diagram
+
+The two rules above decide the colouring, and they are easy to get backwards.
+On the first pass here, `ESCALATED` was tinted red because escalation sounds
+like an alarm. It is not: handing a person to a named human is the loop working,
+and it is cyan. Red went to `FLAG TO IC`, which is what the system says when it
+cannot reach anybody at all.
+
+The test to apply to any node before colouring it: does this represent the
+system running, or the system declining to claim something? Cyan for the first,
+red for the second, and neutral for everything that is neither, which is most of
+it. A diagram where most nodes are coloured is decorated rather than explained.
+
+The dark band across the top is the console's own surface (`#0A0E17` with
+`#DEE3E6` text). It makes the page recognisably the same product before a reader
+has parsed a single node, without spending colour inside the diagram where
+colour has a job.
+
 ## Where the palette has to hold
 
 * the console, `static/index.html`, which is the source of these values
