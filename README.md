@@ -21,7 +21,6 @@ Live: [crisismesh-1031148889398.us-central1.run.app](https://crisismesh-10311488
 |---|---|
 | [docs/PILLARS.md](docs/PILLARS.md) | Fortified Fleet pillars: which are managed, which are custom, and what verifies each |
 | [docs/architecture.md](docs/architecture.md) | System and agentic-loop diagrams with edge provenance |
-| [docs/BRAND.md](docs/BRAND.md) | The palette, lifted from the console's own tokens, and the icon prompt |
 | [docs/diagram/CrisisMesh-Architecture.pdf](docs/diagram/CrisisMesh-Architecture.pdf) | The rendered architecture diagram (regenerate: `architecture.html` through headless Chrome) |
 | [docs/GEMINI_IN_THE_LOOP.md](docs/GEMINI_IN_THE_LOOP.md) | Where Gemini makes decisions, and where deterministic code does |
 
