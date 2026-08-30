@@ -1,0 +1,138 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<title>CrisisMesh Architecture</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  @page { size: A3 landscape; margin: 11mm; }
+  .pagebreak { page-break-before: always; }
+  body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+         color:#111; margin:0; padding:0 4mm; }
+  h1 { font-size: 22px; margin: 0 0 2px; letter-spacing:-.2px; }
+  .sub { font-size: 12px; color:#555; margin: 0 0 14px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing:.09em;
+       color:#444; margin: 16px 0 6px; border-bottom:1px solid #ddd; padding-bottom:3px; }
+  .mermaid { background:#fff; }
+  .legend { display:flex; gap:22px; font-size:11px; color:#444; margin-top:8px; flex-wrap:wrap; }
+  .legend b { color:#111; }
+  .key { display:inline-block; width:22px; height:0; border-top:2px solid #ff6b35;
+         vertical-align:middle; margin-right:5px; }
+  .key.dash { border-top:2px dashed #777; }
+  table { border-collapse:collapse; font-size:10.5px; width:100%; margin-top:6px; }
+  th,td { border:1px solid #ddd; padding:3px 6px; text-align:left; vertical-align:top; }
+  th { background:#f4f4f4; font-weight:600; }
+  .foot { font-size:10px; color:#666; margin-top:12px; }
+  code { font-family: ui-monospace, Menlo, monospace; font-size:10px; }
+</style></head><body>
+
+<h1>CrisisMesh — Fortified Enterprise Fleet</h1>
+<p class="sub">7 agents on Google ADK · Gemini 3.5 Flash on Vertex AI · Cloud Run
+(<code>max-instances=4</code>) · verified live 30 Aug 2026</p>
+
+<h2>Full system</h2>
+<div class="mermaid">
+flowchart TB
+  IN_T["<b>1 · INBOUND</b><br/>Slack · WhatsApp · SMS · Web console<br/><i>the report arrives from whatever device is in hand</i>"]
+  HTTP["<b>2 · Cloud Run</b> — HTTP server · max-instances 4"]
+  MA["<b>3 · Model Armor</b> · MANAGED<br/>prompt injection + jailbreak, LOW_AND_ABOVE"]
+  BLOCK["blocked · quarantined<br/><i>degrades to regex on failure,<br/>never returns clean</i>"]
+  CO["<b>4 · Coordinator</b> · ADK · Gemini 3.5 Flash on Vertex AI"]
+
+  subgraph SP["<b>5 · Specialist agents</b>"]
+    direction LR
+    A1["Intake"]
+    A2["Accountability"]
+    A3["Safety Intel"]
+    A4["SITREP"]
+    A5["Learning"]
+    A6["Compliance"]
+  end
+
+  GW["<b>6 · Agent Gateway</b><br/>identity · rate limit · approval gate"]
+  IC{{"<b>Incident Commander</b><br/>3 gated actions"}}
+  LOOP["<b>7 · Reconciliation loop</b><br/>one scheduler per container<br/>each tick claimed by a Firestore lease"]
+  OUT["<b>8 · OUTBOUND</b><br/>ping · re-ping · <b>escalate to a warden by name</b><br/>SITREP · arrival brief · all-clear"]
+
+  subgraph D["<b>9 · State</b> — durable, shared across every instance"]
+    direction LR
+    FS["Firestore<br/>incident · reconciliation CAS<br/>witness log · room board · ledger"]
+    PS["Pub/Sub<br/>18 typed events"]
+    MB["Vertex AI Agent Engine<br/>Memory Bank · MANAGED"]
+    KB["Knowledge Base<br/>8 CSV types"]
+  end
+
+  IN_T --> HTTP
+  HTTP -->|scan every inbound| MA
+  MA -.->|refuse| BLOCK
+  MA -->|clean| CO
+  CO -->|delegate| SP
+  SP -->|tool call| GW
+  GW -.->|hold for approval| IC
+  GW --> D
+  HTTP -->|declare| LOOP
+  LOOP <-->|state| FS
+  A5 -->|store / recall lesson| MB
+  LOOP ==>|"unprompted, every tick"| OUT
+  CO --> OUT
+  IC -.->|approve / deny| OUT
+
+  linkStyle 2 stroke:#ff6b35,stroke-width:2.5px
+  linkStyle 6 stroke:#ff6b35,stroke-width:2.5px
+  linkStyle 11 stroke:#0b7285,stroke-width:3px
+</div>
+
+<div class="legend">
+  <span><span class="key"></span><b>Refusal path</b> — blocked, held, or withheld</span>
+  <span><span class="key" style="border-color:#0b7285"></span><b>Autonomous loop</b> — runs unwatched</span>
+  <span><span class="key dash"></span>Human decision required</span>
+</div>
+
+<h2>The autonomous accountability loop — the part nobody watches</h2>
+<div class="mermaid">
+flowchart LR
+  S["SILENT"] -->|tick: ping| R["RE-PINGED"]
+  R -->|tick: re-ping| R
+  R -->|cap reached| E["ESCALATED<br/>to floor warden, by name"]
+  S -->|check-in| A["ACCOUNTED"]
+  R -->|check-in| A
+  E -.->|terminal for the loop| Q["quiet"]
+  A -.->|terminal for the loop| Q
+  E -->|"no reachable warden"| F["FLAG TO IC<br/>unreachable is reported,<br/>not dropped"]
+  linkStyle 5 stroke:#0b7285,stroke-width:2px
+  linkStyle 6 stroke:#0b7285,stroke-width:2px
+  linkStyle 7 stroke:#ff6b35,stroke-width:2px
+</div>
+
+<h2>Managed vs custom, and what each is verified by</h2>
+<table>
+<tr><th>Pillar</th><th>Google service</th><th>Status</th><th>Verified by</th></tr>
+<tr><td>Agent Runtime</td><td>ADK on Vertex AI, Gemini 3.5 Flash</td><td>Managed</td>
+    <td><code>POST /incident/agentic/stream</code> emits live delegation events</td></tr>
+<tr><td>Content Scanning</td><td>Model Armor, template <code>crisismesh-guard</code></td><td>Managed</td>
+    <td><code>POST /armor/scan</code> → <code>decided_by: model_armor</code></td></tr>
+<tr><td>Memory Bank</td><td>Vertex AI Agent Engine</td><td>Managed</td>
+    <td><code>scripts/verify_memory_bank.py</code> — recall by a query sharing no tags</td></tr>
+<tr><td>Event Bus</td><td>Cloud Pub/Sub</td><td>Managed</td>
+    <td>publish → pull → ack, 4 topics</td></tr>
+<tr><td>State</td><td>Firestore</td><td>Managed</td>
+    <td><code>scripts/verify_durable_stores.py</code> — survives instance replacement</td></tr>
+<tr><td>Registry · Identity · Gateway</td><td>Gemini Enterprise Agent Platform</td><td>Custom</td>
+    <td>IAM for provisioning unavailable in this project; disclosed in PILLARS.md</td></tr>
+</table>
+
+<h2>What it refuses to do</h2>
+<table>
+<tr><th>Situation</th><th>Response</th></tr>
+<tr><td>Sighting log unreadable</td><td><code>EGRESS ASSESSMENT WITHHELD</code> — no route may be called clear</td></tr>
+<tr><td>Check-in ledger unreadable</td><td>Roster is the denominator; no record counts as unaccounted, and it says so</td></tr>
+<tr><td>Lockdown in progress</td><td>No assembly point, no route directions to occupants</td></tr>
+<tr><td>Arrival brief over WhatsApp</td><td>Refused — it names where people with mobility limits are</td></tr>
+<tr><td>Model Armor unreachable</td><td>Degrades to regex and labels the verdict; never returns "clean"</td></tr>
+<tr><td>Reach unknown</td><td>Reports 4 of 34, not 34 of 34</td></tr>
+</table>
+
+<p class="foot">Live: crisismesh-1031148889398.us-central1.run.app · Repo:
+github.com/4KInc/CrisisMesh · 1,299 tests, no GCP credentials required.</p>
+
+<script>mermaid.initialize({startOnLoad:true, theme:"neutral",
+  flowchart:{curve:"basis", useMaxWidth:true}});</script>
+</body></html>
