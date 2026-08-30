@@ -1,8 +1,6 @@
 # CrisisMesh
 
-**Free crisis coordination on your org's own data — your rooms, staff, routes.
-Runs fire, active-threat, cyber and medical response, chases whoever hasn't
-answered, hands them to a named human.**
+**Autonomous coordination on your org's own data: your rooms, staff, routes. Runs fire, active-threat, cyber and medical response, chases whoever hasn't answered, hands them to a named human.**
 
 An autonomous multi-agent fleet for school districts, nonprofits and other
 resource-constrained organizations — one shared agent registry, many facilities.

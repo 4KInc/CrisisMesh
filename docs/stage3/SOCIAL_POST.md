@@ -18,22 +18,25 @@ Stage-3 rules require and which is separate from the hashtag.
 
 ## X / Twitter
 
-Counted against the 280-character limit, with URLs counted as 23 characters as
-X does. Replace `YOUR_POST` with the published dev.to URL.
+Counted against the 280-character limit, with URLs counted as 23 characters the
+way X counts them.
 
-### Option 1: leads with the loop (280/280, uses the repo link)
+### Option 1: the elevator pitch verbatim (277/280, recommended)
+
+Says the same thing the Devpost pitch says, so a judge reading both hears one
+claim rather than two descriptions of the same project.
 
 ```
 Created for the #AllThingsAgenticHackathon #AllThingsAgentic.
 
-CrisisMesh: an autonomous loop that chases whoever hasn't checked in, then hands them to their floor warden by name.
+Autonomous coordination on your org's own data: your rooms, staff, routes. Runs fire, active-threat, cyber and medical response, chases whoever hasn't answered, hands them to a named human.
 
-It reports 4 of 34 people reachable. 34/34 would demo better and be a lie.
-
-https://github.com/4KInc/CrisisMesh
+https://dev.to/blockintel/four-bugs-in-one-paragraph-what-i-learned-building-an-autonomous-loop-that-chases-people-who-dont-4hdl
 ```
 
-### Option 2: leads with the write-up (263/280, recommended once dev.to is live)
+### Option 2: leads with the loop (263/280)
+
+Narrower, and better if the audience is engineers rather than schools.
 
 ```
 Created for the #AllThingsAgenticHackathon #AllThingsAgentic.
@@ -45,7 +48,7 @@ Four bugs lived in that sentence. Every one passed its tests. Write-up:
 https://dev.to/blockintel/four-bugs-in-one-paragraph-what-i-learned-building-an-autonomous-loop-that-chases-people-who-dont-4hdl
 ```
 
-### Option 3: shortest (244/280, leaves room for an image or a quote-tweet)
+### Option 3: shortest (244/280, leaves room for an image)
 
 ```
 Created for the #AllThingsAgenticHackathon #AllThingsAgentic.
@@ -57,8 +60,8 @@ CrisisMesh: a loop that chases whoever hasn't checked in, then hands them to the
 https://dev.to/blockintel/four-bugs-in-one-paragraph-what-i-learned-building-an-autonomous-loop-that-chases-people-who-dont-4hdl
 ```
 
-Option 2 is the one to post if the dev.to article is already up: it sends people
-somewhere that explains the claim rather than asking them to take it on trust.
+Option 1 is the one to post. It matches the elevator pitch word for word, and
+the link still sends anyone who wants the detail to the write-up.
 
 ---
 

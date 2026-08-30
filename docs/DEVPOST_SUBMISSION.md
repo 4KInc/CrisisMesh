@@ -17,10 +17,10 @@ Fields marked **DECIDE** need something only you can supply.
 CrisisMesh
 ```
 
-**Elevator pitch** (200 char limit; this is 191)
+**Elevator pitch** (200 char limit; this is 189)
 
 ```
-Free crisis coordination on your org's own data: your rooms, staff, routes. Runs fire, active-threat, cyber and medical response, chases whoever hasn't answered, hands them to a named human.
+Autonomous coordination on your org's own data: your rooms, staff, routes. Runs fire, active-threat, cyber and medical response, chases whoever hasn't answered, hands them to a named human.
 ```
 
 > Two other framings, if you want a different emphasis. Both fit the limit.
