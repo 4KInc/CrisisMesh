@@ -1303,7 +1303,33 @@ def _handle_reconciliation_tick(channel_id: str, user_id: str, thread_ts: str) -
         return
 
     result = reconciliation_loop.run_tick(incident_id)
+    if result.get("skipped_reason") == "already_running":
+        # The ask collided with the scheduler's own tick — most likely the
+        # immediate one at declaration. Telling a commander "skipped" in the
+        # first seconds of an incident answers a question about who is missing
+        # with a note about our locking. Wait for the tick already in flight and
+        # report that, which is what they asked for.
+        result = _await_running_tick(incident_id) or result
     _post_bot_message(channel_id, _format_tick(result), thread_ts=thread_ts)
+
+
+def _await_running_tick(incident_id: str, timeout_seconds: float = 3.0) -> dict[str, Any]:
+    """Wait briefly for an in-flight tick to finish, and return it.
+
+    Bounded: a commander waiting on a Slack reply is not helped by an unbounded
+    block, and an empty return leaves the caller to say honestly that it could
+    not read one rather than inventing a count.
+    """
+    import time as _time
+    from src.core import reconciliation_loop
+
+    deadline = _time.monotonic() + timeout_seconds
+    while _time.monotonic() < deadline:
+        latest = reconciliation_loop.last_result(incident_id)
+        if latest:
+            return latest
+        _time.sleep(0.05)
+    return {}
 
 
 def _format_tick(result: dict[str, Any], live: bool = False) -> str:

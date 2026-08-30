@@ -101,6 +101,39 @@ queries *"someone who cannot use stairs is stuck on an upper floor during a
 fire"* — deliberately sharing no tag vocabulary with it, so a tag-overlap store
 scores it zero and a hit can only come from the managed semantic search.
 
-**Status: the managed backend is implemented and unit-tested against the real
-API shape; the live round trip is pending that one IAM grant.** This line will
-be updated when the script has been run, and not before.
+**Status: verified live.** The grant was made and `scripts/verify_memory_bank.py`
+was run against the real service:
+
+```
+  wrote lesson 4eccae83-7354-4007-924d-7b2ac18c867a to the managed store
+  recalled  : 'Pre-stage the Floor 2 elevator key'
+  incident  : FIRE-2025-011
+  confidence: 0.156 (basis: vector_similarity)
+  Cross-session recall through the managed path: verified.
+```
+
+### Two things the live run corrected
+
+**Vertex Memory Bank persists `fact` and `scope` and nothing else.** `display_name`
+and `description` come back empty, so the first implementation — which put the
+structured record in `description` — retrieved memories it could not read. The
+record now rides at the end of the `fact` behind a marker, after the sentence, so
+the text the embedding is built from still leads with what the lesson says.
+
+**Scope matching is exact on the whole map, not a subset.** A memory stored with
+`{app, incident_id, facility_id}` is invisible to a query for `{app}` — verified
+by storing one of each and querying both ways. Metadata in scope would therefore
+make every lesson retrievable only by someone who already knew its incident id,
+which is the opposite of recall. Scope is one fixed key.
+
+### What the confidence number is, and is not
+
+Measured against the live API: the closest match to a well-aimed query returns
+distance **0.8345**, an unrelated lesson **1.0489**. Rendered as `1 - distance`,
+a correct top hit reads **0.166** and a miss goes negative.
+
+The ordering is real; the magnitude is not comparable to a Jaccard overlap. So
+each result carries `retrieval_distance` (raw, from the API) alongside
+`retrieval_confidence`, and `find_similar_incidents` returns a `confidence_note`
+saying so. A reader comparing 0.166 against a Jaccard 0.75 would otherwise
+conclude the managed store was less sure, when the two are not on one scale.

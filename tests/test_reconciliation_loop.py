@@ -811,17 +811,28 @@ class TestAskingReportsRatherThanActs:
         assert loop.last_result("T-1")["tick"] == 1
 
     def test_the_first_ask_before_any_scheduled_tick_still_runs_one(self, monkeypatch):
-        """Otherwise a commander asking in the first minute gets nothing."""
+        """Otherwise a commander asking in the first minute gets nothing.
+
+        Asserted on what the commander is shown, not on loop._last_result.
+        ensure_running() starts the scheduler, which ticks immediately in its
+        own thread; the asking thread then hits run_tick's already_running
+        guard, which returns a result without recording one. _last_result is
+        therefore legitimately empty here, and a test that read it was passing
+        on timing rather than on behaviour.
+        """
         from src.services import slack_transport
 
         monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
         monkeypatch.setenv("CRISISMESH_TICK_SECONDS", "300")
         monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_PRINCIPAL")
+        posted: list[str] = []
         monkeypatch.setattr(slack_transport, "_post_bot_message",
-                            lambda ch, msg, thread_ts="": None)
+                            lambda ch, msg, thread_ts="": posted.append(msg))
         try:
             slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
-            assert loop.last_result("T-1")["tick"] == 1
+            assert posted, "the commander was answered with nothing"
+            assert "no active incident" not in posted[0].lower()
+            assert "tick" in posted[0].lower()
         finally:
             # ensure_running() starts a real timer; leaving it alive lets a
             # tick land in another test's state after its fixture has reset.
@@ -1024,3 +1035,38 @@ def _person_id_for(name: str) -> str:
         if p["name"] == name.strip():
             return p["person_id"]
     return ""
+
+
+class TestAskingDuringTheSchedulersOwnTick:
+    """The first ask of an incident lands while the scheduler's immediate tick
+    is still running. run_tick's already_running guard is correct — a backlog of
+    queued ticks would run stale decisions — but answering "who hasn't answered"
+    with "skipped, already running" tells a commander about our locking instead
+    of about the people who are missing."""
+
+    def test_the_answer_is_the_tick_not_a_lock_message(self, monkeypatch):
+        from src.services import slack_transport
+
+        monkeypatch.setenv("CRISISMESH_AUTO_TICK", "on")
+        monkeypatch.setenv("CRISISMESH_TICK_SECONDS", "300")
+        monkeypatch.setenv("AUTHORIZED_IC_IDS", "U_PRINCIPAL")
+        posted: list[str] = []
+        monkeypatch.setattr(slack_transport, "_post_bot_message",
+                            lambda ch, msg, thread_ts="": posted.append(msg))
+        try:
+            slack_transport._handle_reconciliation_tick("C1", "U_PRINCIPAL", "")
+            assert posted
+            assert "already_running" not in posted[0]
+            assert "tick" in posted[0].lower()
+        finally:
+            loop.stop()
+
+    def test_it_gives_up_rather_than_blocking_forever(self, monkeypatch):
+        """Bounded wait. A commander on a Slack reply is not helped by a hang."""
+        from src.services import slack_transport
+        import time as _time
+
+        t0 = _time.monotonic()
+        got = slack_transport._await_running_tick("NOPE-1", timeout_seconds=0.3)
+        assert got == {}
+        assert _time.monotonic() - t0 < 2.0

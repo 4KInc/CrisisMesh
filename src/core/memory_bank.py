@@ -37,7 +37,19 @@ BASIS_JACCARD = "jaccard_tag_overlap"
 BASIS_VECTOR = "vector_similarity"
 
 # Partitions CrisisMesh memories inside a shared Agent Engine.
+#
+# Fixed, and deliberately one key. Scope matching is exact on the whole map, not
+# a subset — a memory stored with {app, incident_id, facility_id} is invisible
+# to a query for {app}. Putting metadata in scope would therefore make every
+# lesson retrievable only by someone who already knew its incident id, which is
+# the opposite of recall.
 MEMORY_SCOPE = {"app": "crisismesh"}
+
+# Vertex Memory Bank persists `fact` and `scope` and nothing else — display_name
+# and description come back empty. The structured record rides at the end of the
+# fact behind this marker, after the sentence, so the text the embedding is built
+# from still leads with what the lesson actually says.
+_RECORD_MARKER = "\n\u27eacrisismesh\u27eb"
 
 
 class LocalMemoryBank:
@@ -226,12 +238,11 @@ class VertexMemoryBank:
             "stored_at": datetime.now(timezone.utc).isoformat(),
             "approved": True,
         }
+        # Sentence first, record last: this whole string is what gets embedded,
+        # so the semantics have to lead.
+        sentence = f"[{incident_type}] {title}. {body} (tags: {', '.join(tags or [])})"
         memory = self._types.Memory(
-            display_name=title[:128],
-            description=json.dumps(record),
-            # What the embedding sees. The incident type and tags are included
-            # so a query naming them retrieves this without an exact match.
-            fact=f"[{incident_type}] {title}. {body} (tags: {', '.join(tags or [])})",
+            fact=sentence + _RECORD_MARKER + json.dumps(record),
             scope=dict(MEMORY_SCOPE),
         )
         self._client.create_memory(parent=self.engine, memory=memory).result(timeout=120)
@@ -257,13 +268,21 @@ class VertexMemoryBank:
 
         lessons: list[dict[str, Any]] = []
         for retrieved in response.retrieved_memories:
+            fact = retrieved.memory.fact or ""
+            if _RECORD_MARKER not in fact:
+                # Not written by CrisisMesh, or written before this format.
+                # Skipping one row is not a reason to lose the rest.
+                logger.info("Skipping a managed memory with no CrisisMesh record")
+                continue
             try:
-                record = json.loads(retrieved.memory.description)
-            except Exception:  # noqa: BLE001 - a malformed row is not a reason to lose the rest
+                record = json.loads(fact.split(_RECORD_MARKER, 1)[1])
+            except Exception:  # noqa: BLE001
                 logger.warning("Skipping a managed memory with unreadable metadata")
                 continue
-            record["retrieval_confidence"] = _confidence_from_distance(
-                getattr(retrieved, "distance", None))
+            distance = getattr(retrieved, "distance", None)
+            record["retrieval_distance"] = (
+                float(distance) if distance is not None else None)
+            record["retrieval_confidence"] = _confidence_from_distance(distance)
             record["retrieval_basis"] = BASIS_VECTOR
             lessons.append(record)
 
@@ -281,10 +300,13 @@ class VertexMemoryBank:
 
 
 def _confidence_from_distance(distance: Any) -> float:
-    """A similarity distance rendered as a 0–1 confidence.
+    """A similarity distance rendered as a 0-1 number, ordering-only.
 
-    Smaller distance is a closer match. Clamped, and never reported as a tag
-    overlap — the caller is told the basis alongside the number.
+    Measured against the live API: the closest match to a well-aimed query came
+    back at 0.8345 and an unrelated lesson at 1.0489, so this renders a correct
+    top hit as 0.166 and a miss as 0. The ordering is real; the magnitude is not
+    comparable to a Jaccard overlap, and the raw distance is kept alongside it so
+    a reader can see what it was derived from.
     """
     try:
         value = float(distance)

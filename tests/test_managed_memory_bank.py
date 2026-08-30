@@ -34,9 +34,14 @@ def _fake_client(distance=0.21):
     stored: list[dict] = []
 
     class _Mem:
-        def __init__(self, display_name, description, fact, scope):
-            self.display_name, self.description = display_name, description
+        """Shaped like a real one: Vertex persists `fact` and `scope` and drops
+        display_name and description, which is why the record rides in the fact.
+        Discovered by storing one and reading it back, not from the docs."""
+
+        def __init__(self, fact, scope):
             self.fact, self.scope = fact, scope
+            self.display_name = ""
+            self.description = ""
             self.name = f"…/memories/{len(stored)}"
 
     class _Retrieved:
@@ -46,7 +51,8 @@ def _fake_client(distance=0.21):
     client = MagicMock()
 
     def create_memory(parent, memory):
-        stored.append(memory)
+        # Round-trip through the same lossy shape the service has.
+        stored.append(_Mem(fact=memory.fact, scope=dict(memory.scope)))
         op = MagicMock()
         op.result.return_value = memory
         return op
@@ -219,3 +225,49 @@ class TestSourceCitationSurvivesTheManagedRoundTrip:
             client.retrieve_memories.side_effect = RuntimeError("backend down")
             found = bank.find_lessons(incident_type="fire")
         assert found, "a backend outage silently became 'no lessons exist'"
+
+
+class TestTheVectorNumberIsNotDressedUp:
+    """Measured against the live API: the closest match to a well-aimed query
+    came back at distance 0.8345, an unrelated lesson at 1.0489. So `1 -
+    distance` renders a correct top hit as 0.166 and a miss as negative.
+
+    The ordering is real and the magnitude is not. Reporting 0.166 beside a
+    Jaccard 0.75 invites a reader to conclude the managed store is less sure,
+    when the two numbers are not on the same scale at all."""
+
+    def _bank(self, monkeypatch, distance):
+        monkeypatch.setenv("MEMORY_BACKEND", "vertex")
+        monkeypatch.setenv("VERTEX_MEMORY_ENGINE", "projects/p/locations/l/reasoningEngines/1")
+        MemoryBank.reset()
+        with patch("src.core.memory_bank.VertexMemoryBank._build_client",
+                   return_value=_fake_client(distance=distance)):
+            return MemoryBank.get()
+
+    def test_the_raw_distance_is_kept(self, monkeypatch):
+        bank = self._bank(monkeypatch, 0.8345)
+        bank.store_lesson("I-1", "fire", "jefferson", "T", "B", tags=["fire"])
+        lesson = bank.find_lessons(incident_type="fire")[0]
+        assert lesson["retrieval_distance"] == pytest.approx(0.8345)
+
+    def test_a_miss_does_not_go_negative(self, monkeypatch):
+        bank = self._bank(monkeypatch, 1.0489)
+        bank.store_lesson("I-1", "fire", "jefferson", "T", "B", tags=["fire"])
+        assert bank.find_lessons(incident_type="fire")[0]["retrieval_confidence"] == 0.0
+
+    def test_the_tool_warns_the_scales_differ(self, monkeypatch):
+        from src.agents.learning.tools import find_similar_incidents
+
+        bank = self._bank(monkeypatch, 0.8345)
+        bank.store_lesson("I-1", "fire", "jefferson", "T", "B", tags=["fire"])
+        result = find_similar_incidents("fire", "jefferson")
+        note = result["confidence_note"].lower()
+        assert "order" in note or "rank" in note
+        assert "not" in note
+
+    def test_the_local_path_says_nothing_misleading(self):
+        from src.agents.learning.tools import find_similar_incidents
+
+        MemoryBank.get().store_lesson("I-1", "fire", "jefferson", "T", "B", tags=["fire"])
+        result = find_similar_incidents("fire", "jefferson")
+        assert "jaccard" in result["confidence_note"].lower()

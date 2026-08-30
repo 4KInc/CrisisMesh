@@ -62,6 +62,13 @@ def find_similar_incidents(
     basis = MemoryBank.get().backend == "vertex" and any(
         "retrieval_confidence" in x for x in lessons)
     confidence_basis = "vector_similarity" if basis else "jaccard_tag_overlap"
+    confidence_note = (
+        "Vector distance from managed similarity search, rendered 0-1. It ranks "
+        "these results correctly but its magnitude is not comparable to a tag-overlap "
+        "score — a good match measures around 0.17 on this scale."
+        if basis else
+        "Jaccard tag overlap between the query tags and the lesson's tags."
+    )
 
     scored = []
     for lesson in lessons:
@@ -98,6 +105,7 @@ def find_similar_incidents(
         "query_tags": sorted(query_tags),
         "lessons_found": len(scored),
         "confidence_basis": confidence_basis,
+        "confidence_note": confidence_note,
         "lessons": scored,
         "historical_stats": stats,
         "source": "memory_bank",
