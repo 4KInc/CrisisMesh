@@ -1,10 +1,31 @@
 # CrisisMesh
 
-**Autonomous multi-agent crisis-coordination fleet for school districts, nonprofits & resource-constrained organizations — one shared registry, many facilities**
+**Free crisis coordination on your org's own data — your rooms, staff, routes.
+Runs fire, active-threat, cyber and medical response, chases whoever hasn't
+answered, hands them to a named human.**
+
+An autonomous multi-agent fleet for school districts, nonprofits and other
+resource-constrained organizations — one shared agent registry, many facilities.
 
 [All Things Agentic Hackathon](https://allthingsagentic.devpost.com/) (Google / Devpost) | Category: **Fortified Enterprise Fleet**
 
 Live: [crisismesh-1031148889398.us-central1.run.app](https://crisismesh-1031148889398.us-central1.run.app)
+
+### Documentation
+
+| Doc | What it is |
+|---|---|
+| [docs/DEMO_SCRIPT_4MIN.md](docs/DEMO_SCRIPT_4MIN.md) | The recording script — beats, the Google Cloud proof to capture at each one, and a mid-take failure table |
+| [docs/DEMO_SEQUENCE.md](docs/DEMO_SEQUENCE.md) | The cross-channel walkthrough, with the reasoning behind each beat |
+| [docs/PILLARS.md](docs/PILLARS.md) | Fortified Fleet pillars: which are managed, which are custom, and what verifies each |
+| [docs/architecture.md](docs/architecture.md) | System and agentic-loop diagrams with edge provenance |
+| [docs/diagram/CrisisMesh-Architecture.pdf](docs/diagram/CrisisMesh-Architecture.pdf) | The rendered architecture diagram (regenerate: `architecture.html` → headless Chrome) |
+| [docs/DEVPOST_SUBMISSION.md](docs/DEVPOST_SUBMISSION.md) | Paste-ready answers for every Devpost field |
+| **[docs/stage3/DEVTO_POST.md](docs/stage3/DEVTO_POST.md)** | **The dev.to article** — title, tags and body, ready to paste into `dev.to/new` |
+| [docs/stage3/BUILD_LOG.md](docs/stage3/BUILD_LOG.md) | The longer build log the dev.to post is adapted from |
+| [docs/stage3/SOCIAL_POST.md](docs/stage3/SOCIAL_POST.md) | Two social drafts, both tagged and attributed |
+| [docs/GEMINI_IN_THE_LOOP.md](docs/GEMINI_IN_THE_LOOP.md) | Where Gemini makes decisions, and where deterministic code does |
+| [docs/A2P_10DLC_RESUBMISSION.md](docs/A2P_10DLC_RESUBMISSION.md) | SMS carrier registration — why SMS is not a live channel yet |
 
 ---
 
@@ -264,7 +285,7 @@ flowchart LR
 | **WhatsApp** | WhatsApp Business Cloud API (Meta) | Inbound message incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 1,302 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 1,305 tests, no GCP required |
 
 ---
 
@@ -428,7 +449,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (1,302 passing, no GCP required)
+# Run tests (1,305 passing, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -755,7 +776,7 @@ CrisisMesh/
 
 ## Test Coverage
 
-1,302 passing tests covering:
+1,305 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries

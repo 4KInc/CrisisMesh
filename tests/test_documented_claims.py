@@ -147,3 +147,25 @@ class TestSmsIsNotClaimedAsALiveChannel:
         assert line, "the intake bullet moved"
         if "SMS" in line[0]:
             assert ("not carrier-approved" in line[0] or "upcoming" in line[0].lower()), line[0]
+
+
+class TestTheDocumentationIndexIsReal:
+    """The README's doc table is the map a judge navigates by. A link in it that
+    points at nothing is the same class of claim as a wrong test count."""
+
+    def _indexed_paths(self) -> list[str]:
+        table = README.split("### Documentation", 1)[1].split("\n---", 1)[0]
+        return re.findall(r"\]\((docs/[^)]+)\)", table)
+
+    def test_every_indexed_doc_exists(self):
+        indexed = self._indexed_paths()
+        assert indexed, "the documentation index moved or lost its links"
+        for rel in indexed:
+            assert (ROOT / rel).exists(), f"README links {rel}, which does not exist"
+
+    def test_the_devto_article_is_indexed(self):
+        """Asked for by name often enough to be worth pinning."""
+        assert "docs/stage3/DEVTO_POST.md" in self._indexed_paths()
+
+    def test_the_rendered_diagram_is_indexed_and_present(self):
+        assert "docs/diagram/CrisisMesh-Architecture.pdf" in self._indexed_paths()
