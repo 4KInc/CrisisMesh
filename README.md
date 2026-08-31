@@ -9,6 +9,28 @@ resource-constrained organizations — one shared agent registry, many facilitie
 
 Live: [crisismesh-1031148889398.us-central1.run.app](https://crisismesh-1031148889398.us-central1.run.app)
 
+### Try it in thirty seconds
+
+Text **+1 772 297 1783** on WhatsApp. No account, no roster entry, nothing to install.
+
+```
+/incident smoke in the science lab, floor 2 - kids still inside
+who is still unaccounted
+what's the fastest route out of east wing
+```
+
+The first declares an incident and starts the reconciliation loop, which begins
+chasing whoever has not checked in without being asked again. The second answers
+with every name rather than a count. The third gives real directions, because
+this is a fire.
+
+Declare an active threat instead and that same question is refused: a corridor
+is what a lockdown makes dangerous, and the answer says so rather than routing
+somebody past the thing they are hiding from.
+
+`SAFE` will be refused, and that is the product rather than a gap in it. More in
+[Try it yourself](#try-it-yourself).
+
 ### Documentation
 
 > The demo run sheets and the hackathon submission drafts are deliberately not
