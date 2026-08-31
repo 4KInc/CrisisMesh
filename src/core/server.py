@@ -427,6 +427,13 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             self._serve_static("index.html")
             return
 
+        if path == "/logo.png":
+            # The brand mark, served so the WhatsApp Business profile can point
+            # at it. Sized for a circular crop: everything sits inside the
+            # inscribed circle, because that is what the profile shows.
+            self._serve_static("logo.png")
+            return
+
         # A2P 10DLC compliance pages — must stay publicly reachable with no
         # authentication so carrier vetting can review them.
         if path == "/privacy":
@@ -1211,11 +1218,24 @@ class CrisisMeshHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         self.send_response(200)
-        ct = "text/html" if filename.endswith(".html") else "application/octet-stream"
-        self.send_header("Content-Type", ct)
-        self.end_headers()
+        # Meta fetches the WhatsApp profile logo over HTTP and rejects it when
+        # the type is wrong, so a real content type matters rather than
+        # defaulting everything to a byte stream.
+        types = {".html": "text/html", ".png": "image/png", ".jpg": "image/jpeg",
+                 ".jpeg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon",
+                 ".css": "text/css", ".js": "application/javascript"}
+        ext = os.path.splitext(filename)[1].lower()
         with open(filepath, "rb") as f:
-            self.wfile.write(f.read())
+            body = f.read()
+        self.send_header("Content-Type", types.get(ext, "application/octet-stream"))
+        # Meta refuses a WhatsApp profile logo it cannot size: "logo_url cannot
+        # be processed because we couldn't determine the file size". Nothing
+        # here sent Content-Length, so every static response was unsized.
+        self.send_header("Content-Length", str(len(body)))
+        if ext in (".png", ".jpg", ".jpeg", ".svg", ".ico"):
+            self.send_header("Cache-Control", "public, max-age=86400")
+        self.end_headers()
+        self.wfile.write(body)
 
     def log_message(self, format, *args):
         pass

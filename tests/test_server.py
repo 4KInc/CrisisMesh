@@ -505,3 +505,47 @@ class TestSlackFailsClosed:
         }
         h.do_POST()
         assert h.response_code == 200
+
+
+class TestBrandLogoIsServable:
+    """The WhatsApp Business profile points at a URL rather than an upload, so
+    Meta fetches this over HTTP. It rejects a logo served with the wrong
+    content type, which the static handler used to do for everything that was
+    not HTML."""
+
+    def test_the_logo_is_served(self):
+        h = MockHandler("GET", "/logo.png")
+        assert h.response_code == 200
+
+    def test_it_is_served_as_a_png(self):
+        h = MockHandler("GET", "/logo.png")
+        assert h._headers.get("Content-Type") == "image/png"
+
+    def test_the_file_is_actually_a_png(self):
+        import pathlib
+        data = (pathlib.Path(__file__).resolve().parent.parent
+                / "static" / "logo.png").read_bytes()
+        assert data[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
+
+    def test_html_is_still_html(self):
+        assert MockHandler("GET", "/")._headers.get("Content-Type") == "text/html"
+
+
+class TestStaticResponsesAreSized:
+    """Meta refused the WhatsApp profile logo with "we couldn't determine the
+    file size", because the static handler never sent Content-Length. A client
+    that needs to size a response before fetching it cannot use one without."""
+
+    def test_the_logo_declares_its_length(self):
+        h = MockHandler("GET", "/logo.png")
+        assert h._headers.get("Content-Length"), "no Content-Length on the logo"
+
+    def test_the_declared_length_is_the_real_one(self):
+        import pathlib
+        h = MockHandler("GET", "/logo.png")
+        actual = (pathlib.Path(__file__).resolve().parent.parent
+                  / "static" / "logo.png").stat().st_size
+        assert int(h._headers["Content-Length"]) == actual
+
+    def test_html_is_sized_too(self):
+        assert MockHandler("GET", "/")._headers.get("Content-Length")
