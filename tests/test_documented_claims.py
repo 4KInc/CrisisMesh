@@ -195,7 +195,11 @@ class TestReproducibleTestingIsActuallyInTheReadme:
         submission = ROOT / "docs" / "DEVPOST_SUBMISSION.md"
         if not submission.exists():
             pytest.skip("submission draft is local-only")
-        line = [l for l in submission.read_text().splitlines()
-                if l.startswith("No GCP creds: pip install")]
-        assert line, "the paste-ready testing line moved"
-        assert len(line[0]) <= 255, f"{len(line[0])} chars, limit is 255"
+        # Keyed off the fenced block under the heading rather than the opening
+        # words, which change whenever the field is reworded.
+        text = submission.read_text()
+        block = text.split("## Testing instructions", 1)[1].split("```", 2)
+        assert len(block) > 2, "the paste-ready testing block moved"
+        line = block[1].strip()
+        assert line, "the paste-ready testing line is empty"
+        assert len(line) <= 255, f"{len(line)} chars, limit is 255"
