@@ -11,32 +11,49 @@ than four.
 
 Live: [crisismesh-1031148889398.us-central1.run.app](https://crisismesh-1031148889398.us-central1.run.app)
 
-### Try it in thirty seconds
+### Try it yourself
 
-Text **+1 772 297 1783** on WhatsApp. No account, no roster entry, nothing to install.
+Text **+1 772 297 1783** on WhatsApp. No account, no roster entry, nothing to
+install. This is the same sequence the demo runs, in the same order.
 
 ```
-/incident smoke in the science lab, floor 2 - kids still inside
+/incident active shooter reported in the east wing, gunshots heard
+room 104: 23 students are safe, 1 unaccounted
 who is still unaccounted
+shooter last seen heading toward the gym
+where is the shooter now
 what's the fastest route out of east wing
 ```
 
-The first declares an incident and starts the reconciliation loop, which begins
-chasing whoever has not checked in without being asked again. The second answers
-with every name rather than a count. The third gives real directions, because
-this is a fire.
+**1.** Declares the incident and starts the reconciliation loop, which begins
+chasing whoever has not checked in without being asked again.
 
-**Declare an active threat instead and that same question is refused.** A
-corridor is what a lockdown makes dangerous, and the answer says so rather than
-routing somebody past the thing they are hiding from. That contrast is the
-system in one exchange, and it is why the demo is an active-threat run.
+**2.** One message from a teacher, accounting for twenty-three children. This is
+the only interface that works in the first ten minutes.
 
-The example above is a fire on purpose: this is a live number, and a stranger
-typing an active-shooter report into it for fun is not something to invite. The
-lockdown path is in the demo video.
+**3.** Answers with all thirty-three names, not "and 24 more". Somebody has to
+read that list out loud and go find people.
 
-`SAFE` will be refused, and that is the product rather than a gap in it. More in
-[Try it yourself](#try-it-yourself).
+**4 and 5.** A witness reports a position; asking returns the trail,
+`east wing -> gym`, marked UNCONFIRMED. Two positions say which way it is
+moving, which is the difference between arriving behind it and in front of it.
+
+**6. The one worth waiting for.** During a lockdown this is refused: every route
+out of the east wing has a reported sighting on it, and the reply says so rather
+than routing somebody past the thing they are hiding from. Declare a fire
+instead and the same question returns real directions. The rule is the incident
+type, not the word.
+
+`SAFE` is refused too, deliberately: a check-in from a number that is not on
+Jefferson Elementary's roster would put a name in the accounted column that
+nobody can vouch for. Declaring is open on purpose, because during a real
+emergency the person holding the phone may be a substitute teacher or a parent,
+and refusing their report for being absent from a CSV would be the wrong
+failure.
+
+> This is a live number and a live incident. Whatever you declare replaces the
+> current one and really pages the demo roster. `/incident resolve` in Slack, or
+> the console's Resolve button, stands it down.
 
 ### Documentation
 
@@ -828,46 +845,20 @@ CrisisMesh/
 
 ---
 
-## Try it yourself
+## Slack, and what a visitor is refused
 
-The product is the channels, so the channels are open. Nothing below needs an
-account, a roster entry, or anything installed.
+The WhatsApp sequence at the top of this file is the whole hands-on path, and it
+needs nothing installed. Two things sit beside it.
 
-### WhatsApp: +1 772 297 1783
-
-Message it. Your first message opens your own 24-hour window, so replies arrive
-normally. Useful things to send:
-
-```
-/incident smoke in the science lab, floor 2 - kids still inside
-who is still unaccounted
-show the classroom board
-room 104: 23 students are safe, 1 unaccounted
-where is the shooter now
-what's the fastest route out of east wing
-```
-
-**`SAFE` will be refused, on purpose.** Checking in records a named person as
-accounted for, and a status from a number that is not on Jefferson Elementary's
-roster is a name in the safe column that nobody can vouch for. The reply says so
-and points at what does work. That refusal is the product, not a gap in it.
-
-Declaring an incident is deliberately open: in a real deployment the person
-holding the phone during an emergency may be a substitute teacher, a parent or a
-contractor, and refusing their report because they are not in a CSV would be the
-wrong failure.
-
-### Slack
-
-The `#fr-live-demo` channel is where an incident declared from a phone is
+**The Slack side.** `#fr-live-demo` is where an incident declared from a phone is
 announced, and where `/incident status`, `@CrisisMesh arrival brief` and the
 other queries are answered. Ask for an invite, or see the private testing
-instructions on the submission.
+instructions on the submission. Nothing in the WhatsApp sequence depends on it.
 
-Incident-commander actions are gated and will refuse you: `/incident resolve`
-and forcing a reconciliation tick both check `AUTHORIZED_IC_IDS`. That gate is
-one of the three human-approval boundaries described under Safety & Autonomy, so
-being refused by it is the feature working.
+**Incident-commander actions will refuse you.** `/incident resolve` and forcing a
+reconciliation tick both check `AUTHORIZED_IC_IDS`. That gate is one of the three
+human-approval boundaries under Safety & Autonomy, so being refused by it is the
+feature working rather than a wall.
 
 ---
 
