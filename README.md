@@ -282,7 +282,7 @@ flowchart LR
 | **WhatsApp** | WhatsApp Business Cloud API (Meta) | Inbound message incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 1,308 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 1,318 tests, no GCP required |
 
 ---
 
@@ -446,7 +446,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (1,308 passing, no GCP required)
+# Run tests (1,318 passing, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -771,6 +771,49 @@ CrisisMesh/
 
 ---
 
+## Try it yourself
+
+The product is the channels, so the channels are open. Nothing below needs an
+account, a roster entry, or anything installed.
+
+### WhatsApp: +1 772 297 1783
+
+Message it. Your first message opens your own 24-hour window, so replies arrive
+normally. Useful things to send:
+
+```
+/incident smoke in the science lab, floor 2 - kids still inside
+who is still unaccounted
+show the classroom board
+room 104: 23 students are safe, 1 unaccounted
+where is the shooter now
+what's the fastest route out of east wing
+```
+
+**`SAFE` will be refused, on purpose.** Checking in records a named person as
+accounted for, and a status from a number that is not on Jefferson Elementary's
+roster is a name in the safe column that nobody can vouch for. The reply says so
+and points at what does work. That refusal is the product, not a gap in it.
+
+Declaring an incident is deliberately open: in a real deployment the person
+holding the phone during an emergency may be a substitute teacher, a parent or a
+contractor, and refusing their report because they are not in a CSV would be the
+wrong failure.
+
+### Slack
+
+The `#fr-live-demo` channel is where an incident declared from a phone is
+announced, and where `/incident status`, `@CrisisMesh arrival brief` and the
+other queries are answered. Ask for an invite, or see the private testing
+instructions on the submission.
+
+Incident-commander actions are gated and will refuse you: `/incident resolve`
+and forcing a reconciliation tick both check `AUTHORIZED_IC_IDS`. That gate is
+one of the three human-approval boundaries described under Safety & Autonomy, so
+being refused by it is the feature working.
+
+---
+
 ## Reproducible Testing
 
 **The suite needs no Google Cloud credentials.** Every managed backend has an
@@ -780,7 +823,7 @@ on a laptop with no project attached.
 ```bash
 git clone https://github.com/4KInc/CrisisMesh.git && cd CrisisMesh
 pip install -e ".[dev]"
-pytest tests/ -q          # 1,308 tests, all offline
+pytest tests/ -q          # 1,318 tests, all offline
 ```
 
 ### Checking the managed claims from outside the process
@@ -840,7 +883,7 @@ credentials, and would make the suite depend on a network.
 
 ## Test Coverage
 
-1,308 passing tests covering:
+1,318 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries

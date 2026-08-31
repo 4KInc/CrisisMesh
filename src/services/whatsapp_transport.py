@@ -281,9 +281,15 @@ def _handle_checkin(from_number: str, status: str) -> dict[str, Any]:
     person_id = _phone_to_person.get(normalized, "")
     if not person_id:
         return {
+            # Refusing the check-in is the point: a status nobody can attribute
+            # would put a name in the accounted column that nobody can vouch
+            # for. Dead-ending the sender is not. Most of this number works for
+            # anyone, and the reply should say which parts.
             "reply": (
-                "You are not registered in CrisisMesh. "
-                "If this is an emergency, call 911."
+                "This number is not on the roster, so I cannot record a check-in "
+                "against a person. You can still report an incident, or ask: "
+                "\"who is still unaccounted\", \"show the classroom board\", "
+                "\"who is on call\". If this is an emergency, call 911."
             ),
             "action": "unknown_person",
         }
