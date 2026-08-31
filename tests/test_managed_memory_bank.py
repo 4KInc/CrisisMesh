@@ -291,3 +291,42 @@ class TestHealthNamesTheBackend:
         monkeypatch.delenv("VERTEX_MEMORY_ENGINE", raising=False)
         MemoryBank.reset()
         assert MockHandler("GET", "/health").get_response()["memory_backend"] == "local"
+
+
+class TestTheSeededFlagSurvivesTheManagedRoundTrip:
+    """The local bank carried the flag and every test passed while the managed
+    path silently dropped it — the signature accepted `seeded` and the record
+    dict never wrote it down. Both stores now get asserted separately, because
+    the deployment runs the one the suite was not covering."""
+
+    def _bank(self, monkeypatch, client):
+        monkeypatch.setenv("MEMORY_BACKEND", "vertex")
+        monkeypatch.setenv("VERTEX_MEMORY_ENGINE", "projects/p/locations/l/reasoningEngines/1")
+        MemoryBank.reset()
+        with patch("src.core.memory_bank.VertexMemoryBank._build_client", return_value=client):
+            return MemoryBank.get()
+
+    def test_a_seeded_lesson_comes_back_marked(self, monkeypatch):
+        client = _fake_client()
+        bank = self._bank(monkeypatch, client)
+        bank.store_lesson("FIRE-2025-DRILL-001", "fire", "jefferson",
+                          "Fixture", "Body", tags=["fire"], seeded=True)
+        assert bank.find_lessons("fire", limit=5)[0]["seeded"] is True
+
+    def test_a_real_lesson_comes_back_unmarked(self, monkeypatch):
+        client = _fake_client()
+        bank = self._bank(monkeypatch, client)
+        bank.store_lesson("FIRE-2026-009", "fire", "jefferson",
+                          "Learned in a run", "Body", tags=["fire"])
+        assert not bank.find_lessons("fire", limit=5)[0].get("seeded")
+
+    def test_the_tool_carries_the_flag_to_the_console(self, monkeypatch):
+        from src.agents.learning.tools import find_similar_incidents
+
+        client = _fake_client()
+        bank = self._bank(monkeypatch, client)
+        bank.store_lesson("FIRE-2025-DRILL-001", "fire", "jefferson",
+                          "Fixture", "Body", tags=["fire"], seeded=True)
+        with patch("src.core.memory_bank.VertexMemoryBank._build_client", return_value=client):
+            result = find_similar_incidents("fire", "jefferson")
+        assert result["lessons"][0]["seeded"] is True

@@ -388,7 +388,7 @@ function renderSit(d){
   const lessons=d.prior_lessons?.lessons||[];
   document.getElementById('sit-lessons').innerHTML=`
     <div class="card-header"><span class="card-header-label">PRIOR LESSONS (${lessons.length})</span><span class="material-symbols-outlined text-[16px] text-on-surface-variant">history</span></div>
-    <div class="p-4 flex flex-col gap-2">${lessons.map(l=>`<div class="border-l-2 border-l-tertiary p-2 bg-surface-container-low text-[12px] text-on-surface-variant font-mono"><span class="text-tertiary text-[10px] block mb-0.5 tracking-widest">${l.source?.incident_id||l.category||''}</span>${l.title||''}</div>`).join('')||'<div class="text-on-surface-variant text-[12px] font-mono">No prior lessons</div>'}</div>`;
+    <div class="p-4 flex flex-col gap-2">${lessons.map(l=>`<div class="border-l-2 border-l-tertiary p-2 bg-surface-container-low text-[12px] text-on-surface-variant font-mono"><span class="text-tertiary text-[10px] block mb-0.5 tracking-widest">${l.source?.incident_id||l.category||''}${l.seeded?' · SEEDED DRILL DATA':''}</span>${l.title||''}</div>`).join('')||'<div class="text-on-surface-variant text-[12px] font-mono">No prior lessons</div>'}</div>`;
   document.getElementById('sit-lessons').className='tactical-card lg:col-span-1 opacity-80';
   loadAcct();
 }

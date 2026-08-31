@@ -91,6 +91,9 @@ def find_similar_incidents(
             "category": lesson["category"],
             "tags": lesson.get("tags", []),
             "confidence": round(confidence, 3),
+            # Passed through so a surface can distinguish a fixture from
+            # something this deployment actually learned.
+            "seeded": bool(lesson.get("seeded")),
             "source": citation,
         })
 

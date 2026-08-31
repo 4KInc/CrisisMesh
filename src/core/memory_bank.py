@@ -69,6 +69,7 @@ class LocalMemoryBank:
         body: str,
         category: str = "general",
         tags: list[str] | None = None,
+        seeded: bool = False,
     ) -> str:
         lesson_id = str(uuid.uuid4())
         lesson = {
@@ -82,6 +83,10 @@ class LocalMemoryBank:
             "tags": tags or [],
             "stored_at": datetime.now(timezone.utc).isoformat(),
             "approved": True,
+            # Fixture rather than something the system learned. Rendered
+            # identically to a real recall, a seed claims experience this
+            # deployment has not had.
+            "seeded": seeded,
         }
         self.lessons.append(lesson)
         return lesson_id
@@ -224,6 +229,7 @@ class VertexMemoryBank:
         body: str,
         category: str = "general",
         tags: list[str] | None = None,
+        seeded: bool = False,
     ) -> str:
         lesson_id = str(uuid.uuid4())
         record = {
@@ -237,6 +243,10 @@ class VertexMemoryBank:
             "tags": tags or [],
             "stored_at": datetime.now(timezone.utc).isoformat(),
             "approved": True,
+            # Fixture rather than something the system learned. Rendered
+            # identically to a real recall, a seed claims experience this
+            # deployment has not had.
+            "seeded": seeded,
         }
         # Sentence first, record last: this whole string is what gets embedded,
         # so the semantics have to lead.
@@ -479,7 +489,7 @@ def _seed(store: LocalMemoryBank) -> None:
     if store.lessons:
         return
     for seed in _SEED_LESSONS:
-        store.store_lesson(**seed)
+        store.store_lesson(**seed, seeded=True)
 
 
 def _already_seeded(mb: MemoryBank) -> bool:
@@ -510,7 +520,7 @@ def init_memory_bank() -> MemoryBank:
     mb = MemoryBank.get()
     if not _already_seeded(mb):
         for seed in _SEED_LESSONS:
-            mb.store_lesson(**seed)
+            mb.store_lesson(**seed, seeded=True)
         # Store a demo outcome
         mb.store_incident_outcome(
             incident_id="FIRE-2025-DRILL-001",
