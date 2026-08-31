@@ -143,6 +143,15 @@ class TestIncidentEndpoint:
         assert resp["trace_id"]
 
     def test_declare_incident_with_lessons(self):
+        """The store no longer ships with fixtures, so the lesson this recalls
+        has to be one something actually put there."""
+        from src.core.memory_bank import MemoryBank
+
+        MemoryBank.get().store_lesson(
+            incident_id="FIRE-2026-PRIOR", incident_type="fire",
+            facility_id="jefferson", title="Gym exit was blocked by a delivery truck",
+            body="The truck blocked the gym exit during the last drill.",
+            category="evacuation", tags=["fire", "gym"])
         h = MockHandler("POST", "/incident", {
             "report": "Fire alarm triggered in the gym area",
         })
@@ -568,6 +577,10 @@ class TestPriorLessonsRenderWhatTheApiReturns:
 
         MemoryBank.reset()
         init_memory_bank()
+        MemoryBank.get().store_lesson(
+            incident_id="FIRE-2026-PRIOR", incident_type="fire",
+            facility_id="jefferson", title="A lesson from an actual run",
+            body="Body.", category="evacuation", tags=["fire"])
         lessons = find_similar_incidents("fire", "jefferson")["lessons"]
         assert lessons, "no lessons to check"
         first = lessons[0]

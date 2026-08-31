@@ -149,7 +149,7 @@ def main() -> None:
 
     step("Memory Bank loaded:")
     mb = MemoryBank.get()
-    data("Pre-seeded lessons", len(mb.lessons))
+    data("Lessons on record", len(mb.lessons))
     data("Historical outcomes", len(mb.incident_outcomes))
     pause()
 

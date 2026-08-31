@@ -1,8 +1,60 @@
-"""Tests for Memory Bank — persistent cross-session lesson storage."""
+"""Tests for Memory Bank — persistent cross-session lesson storage.
+
+These exercise search, confidence scoring, citation and outcome stats, all of
+which need a corpus to search. That corpus used to be the five demo lessons
+`init_memory_bank()` wrote into every deployment; it now lives here, where
+fiction belongs. Production starts empty — see test_memory_starts_empty.py.
+"""
 
 import pytest
 
 from src.core.memory_bank import MemoryBank, init_memory_bank
+
+
+def corpus() -> MemoryBank:
+    """Three fire lessons, one weather, one medical, two fire outcomes."""
+    mb = MemoryBank.get()
+    mb.store_lesson(
+        incident_id="FIRE-2025-DRILL-001", incident_type="fire",
+        facility_id="jefferson",
+        title="Floor 2 west stairwell bottleneck during fire drill",
+        body="The west stairwell backed up when Room 215 and Room 210 evacuated together.",
+        category="evacuation",
+        tags=["fire", "floor2", "stairwell", "bottleneck", "science_lab", "accessibility"])
+    mb.store_lesson(
+        incident_id="FIRE-2025-DRILL-001", incident_type="fire",
+        facility_id="jefferson",
+        title="Elevator key should be pre-staged on Floor 2 for mobility evacuations",
+        body="Retrieving the key from the Floor 1 office cost two minutes.",
+        category="accessibility",
+        tags=["fire", "elevator", "accessibility", "mobility", "key"])
+    mb.store_lesson(
+        incident_id="FIRE-2025-DRILL-002", incident_type="fire",
+        facility_id="jefferson",
+        title="Science lab gas shutoff must be verified before evacuation clearance",
+        body="The Room 215 gas valve was not confirmed closed before the all-clear.",
+        category="playbook",
+        tags=["fire", "gas_shutoff", "science_lab", "floor2", "hazmat"])
+    mb.store_lesson(
+        incident_id="WEATHER-2025-001", incident_type="severe_weather",
+        facility_id="jefferson",
+        title="Shelter-in-place locations should be marked with signage",
+        body="Staff were unsure which interior hallway was the designated shelter.",
+        category="facilities",
+        tags=["severe_weather", "shelter", "signage", "floor2"])
+    mb.store_lesson(
+        incident_id="MEDICAL-2025-001", incident_type="medical",
+        facility_id="jefferson",
+        title="AED response time from west wing was over 3 minutes",
+        body="The responding teacher did not know where the nearest AED was.",
+        category="resources",
+        tags=["medical", "aed", "west_wing", "training"])
+    for iid, seconds in (("FIRE-2025-DRILL-001", 270), ("FIRE-2025-DRILL-002", 240)):
+        mb.store_incident_outcome(
+            incident_id=iid, incident_type="fire", facility_id="jefferson",
+            total_personnel=34, accounted=34, response_time_seconds=seconds,
+            resolved=True, summary=f"Drill completed in {seconds}s, all 34 accounted for.")
+    return mb
 
 
 @pytest.fixture(autouse=True)
@@ -10,18 +62,6 @@ def fresh_mb():
     MemoryBank.reset()
     yield
     MemoryBank.reset()
-
-
-class TestMemoryBankInit:
-    def test_pre_seeded_lessons(self):
-        init_memory_bank()
-        mb = MemoryBank.get()
-        assert len(mb.lessons) == 5
-
-    def test_pre_seeded_outcomes(self):
-        init_memory_bank()
-        mb = MemoryBank.get()
-        assert len(mb.incident_outcomes) == 2
 
 
 class TestLessonStorage:
@@ -42,29 +82,25 @@ class TestLessonStorage:
         assert lessons[0]["title"] == "Test lesson"
 
     def test_find_by_category(self):
-        init_memory_bank()
-        mb = MemoryBank.get()
+        mb = corpus()
         evac = mb.find_lessons(category="evacuation")
         assert len(evac) >= 1
         assert all(l["category"] == "evacuation" for l in evac)
 
     def test_find_by_tags(self):
-        init_memory_bank()
-        mb = MemoryBank.get()
+        mb = corpus()
         results = mb.find_lessons(tags=["science_lab"])
         assert len(results) >= 1
 
     def test_find_fire_lessons(self):
-        init_memory_bank()
-        mb = MemoryBank.get()
+        mb = corpus()
         fire = mb.find_lessons(incident_type="fire")
         assert len(fire) == 3  # stairwell bottleneck, elevator key, gas shutoff
 
 
 class TestOutcomeStats:
     def test_stats(self):
-        init_memory_bank()
-        mb = MemoryBank.get()
+        mb = corpus()
         stats = mb.get_outcome_stats("fire")
         assert stats["total_incidents"] == 2
         assert stats["accountability_rate"] == 100.0
@@ -78,7 +114,7 @@ class TestOutcomeStats:
 
 class TestLearningTools:
     def test_find_similar_incidents(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import find_similar_incidents
 
         result = find_similar_incidents("fire", "jefferson")
@@ -86,14 +122,14 @@ class TestLearningTools:
         assert result["historical_stats"]["total_incidents"] == 2
 
     def test_find_similar_with_no_history(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import find_similar_incidents
 
         result = find_similar_incidents("flood")
         assert result["lessons_found"] == 0
 
     def test_store_lesson_via_tool(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import store_lesson
 
         result = store_lesson(
@@ -107,10 +143,10 @@ class TestLearningTools:
 
         mb = MemoryBank.get()
         fire = mb.find_lessons(incident_type="fire")
-        assert len(fire) == 4  # 3 seeded + 1 new
+        assert len(fire) == 4  # 3 in the corpus + 1 new
 
     def test_produce_aar(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import produce_after_action_review
 
         result = produce_after_action_review(
@@ -125,10 +161,10 @@ class TestLearningTools:
         )
         assert result["type"] == "AFTER_ACTION_REVIEW"
         assert result["response_metrics"]["accountability_rate"] == 94.1
-        assert result["historical_comparison"]["total_incidents"] == 3  # 2 seeded + this one
+        assert result["historical_comparison"]["total_incidents"] == 3  # 2 in the corpus + this one
 
     def test_propose_playbook_change(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import propose_playbook_change
 
         result = propose_playbook_change(
@@ -146,7 +182,7 @@ class TestJaccardConfidence:
     """Batch D: Jaccard tag-overlap confidence scores."""
 
     def test_confidence_present_on_every_lesson(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import find_similar_incidents
 
         result = find_similar_incidents("fire", "jefferson")
@@ -156,7 +192,7 @@ class TestJaccardConfidence:
             assert 0.0 <= lesson["confidence"] <= 1.0
 
     def test_results_sorted_by_confidence_descending(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import find_similar_incidents
 
         result = find_similar_incidents("fire", "jefferson")
@@ -164,7 +200,7 @@ class TestJaccardConfidence:
         assert confidences == sorted(confidences, reverse=True)
 
     def test_query_tags_included_in_response(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import find_similar_incidents
 
         result = find_similar_incidents("fire", "jefferson", tags="floor2,science_lab")
@@ -175,7 +211,7 @@ class TestJaccardConfidence:
         assert "science_lab" in result["query_tags"]
 
     def test_extra_tags_boost_confidence(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import find_similar_incidents
 
         broad = find_similar_incidents("fire", "jefferson")
@@ -198,7 +234,7 @@ class TestSourceCitation:
     """Batch D: Source citations on every recalled lesson."""
 
     def test_citation_on_every_lesson(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import find_similar_incidents
 
         result = find_similar_incidents("fire", "jefferson")
@@ -209,7 +245,7 @@ class TestSourceCitation:
             assert "lesson_id" in src
 
     def test_citation_includes_outcome_when_available(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import find_similar_incidents
 
         result = find_similar_incidents("fire", "jefferson")
@@ -223,7 +259,7 @@ class TestSourceCitation:
         assert has_outcome, "At least one fire lesson should have a linked outcome"
 
     def test_citation_without_outcome(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import find_similar_incidents
 
         result = find_similar_incidents("severe_weather", "jefferson")
@@ -237,7 +273,7 @@ class TestCrossSessionRecall:
     """Batch D / GAP-08: Lessons stored during incident A surface during incident B."""
 
     def test_cross_incident_recall_with_citation_and_confidence(self):
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import find_similar_incidents, store_lesson
 
         store_lesson(
@@ -273,7 +309,7 @@ class TestCrossSessionRecall:
 
     def test_cross_incident_different_facility(self):
         """Lessons from facility X surface when querying facility Y if type matches."""
-        init_memory_bank()
+        corpus()
         from src.agents.learning.tools import find_similar_incidents, store_lesson
 
         store_lesson(
@@ -290,9 +326,9 @@ class TestCrossSessionRecall:
         titles = [l["title"] for l in result["lessons"]]
         assert "Lincoln gym had no working fire extinguisher" in titles
 
-    def test_seed_data_preserved(self):
-        """Storing new lessons doesn't corrupt the pre-seeded data."""
-        init_memory_bank()
+    def test_existing_lessons_survive_a_new_one(self):
+        """Storing a lesson doesn't disturb the ones already there."""
+        corpus()
         from src.agents.learning.tools import find_similar_incidents, store_lesson
 
         store_lesson(
@@ -306,7 +342,7 @@ class TestCrossSessionRecall:
         )
 
         result = find_similar_incidents("fire", "jefferson")
-        assert result["lessons_found"] >= 4  # 3 seed + 1 new
+        assert result["lessons_found"] >= 4  # 3 in the corpus + 1 new
         titles = [l["title"] for l in result["lessons"]]
         assert "Floor 2 west stairwell bottleneck during fire drill" in titles
         assert "New lesson from new incident" in titles

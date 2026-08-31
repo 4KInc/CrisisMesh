@@ -8,7 +8,7 @@ Backend selected by MEMORY_BACKEND, same facade shape as ContentScanner:
                 Google-managed store and are retrieved by semantic similarity
                 search, so recall crosses processes and instances because the
                 store is outside all of them.
-  * `local`   — in-process store with seeded lessons (default). Offline, no GCP.
+  * `local`   — in-process store (default). Offline, no GCP.
 
 A managed backend that fails to initialise falls back to local rather than
 losing the feature, and a retrieval that raises falls back rather than returning
@@ -69,7 +69,6 @@ class LocalMemoryBank:
         body: str,
         category: str = "general",
         tags: list[str] | None = None,
-        seeded: bool = False,
     ) -> str:
         lesson_id = str(uuid.uuid4())
         lesson = {
@@ -83,10 +82,6 @@ class LocalMemoryBank:
             "tags": tags or [],
             "stored_at": datetime.now(timezone.utc).isoformat(),
             "approved": True,
-            # Fixture rather than something the system learned. Rendered
-            # identically to a real recall, a seed claims experience this
-            # deployment has not had.
-            "seeded": seeded,
         }
         self.lessons.append(lesson)
         return lesson_id
@@ -180,8 +175,6 @@ class LocalMemoryBank:
         self.incident_outcomes = data.get("incident_outcomes", [])
 
 
-# ── Pre-seeded lessons for demo ──
-
 class VertexMemoryBank:
     """Managed Vertex AI Memory Bank (Agent Engine `reasoningEngines/*/memories`).
 
@@ -229,7 +222,6 @@ class VertexMemoryBank:
         body: str,
         category: str = "general",
         tags: list[str] | None = None,
-        seeded: bool = False,
     ) -> str:
         lesson_id = str(uuid.uuid4())
         record = {
@@ -243,10 +235,6 @@ class VertexMemoryBank:
             "tags": tags or [],
             "stored_at": datetime.now(timezone.utc).isoformat(),
             "approved": True,
-            # Fixture rather than something the system learned. Rendered
-            # identically to a real recall, a seed claims experience this
-            # deployment has not had.
-            "seeded": seeded,
         }
         # Sentence first, record last: this whole string is what gets embedded,
         # so the semantics have to lead.
@@ -379,11 +367,21 @@ class MemoryBank:
 
     def find_lessons(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         try:
-            return self._store.find_lessons(*args, **kwargs)
+            found = self._store.find_lessons(*args, **kwargs)
+            self._read_degraded = False
+            return found
         except Exception as exc:  # noqa: BLE001
             # An empty list reads as "no prior lessons", which is a claim. A
             # backend that is down has not established it.
+            #
+            # The seeded fixtures used to hide this: the local fallback always
+            # held five lessons, so an outage returned something. With nothing
+            # seeded the fallback is empty too, and a dead backend is
+            # indistinguishable from a store that has learned nothing — unless
+            # the degradation is carried out to the surface, which is what this
+            # flag is for.
             logger.error(f"Managed lesson read failed, falling back to local: {exc}")
+            self._read_degraded = True
             return self._fallback().find_lessons(*args, **kwargs)
 
     def store_incident_outcome(self, *args: Any, **kwargs: Any) -> str:
@@ -399,149 +397,29 @@ class MemoryBank:
         self._fallback().load_from_file(filepath)
 
     _fallback_store: LocalMemoryBank | None = None
+    _read_degraded: bool = False
+
+    @property
+    def recall_degraded(self) -> bool:
+        """Whether the last read fell back because the managed store failed."""
+        return self._read_degraded
 
     def _fallback(self) -> LocalMemoryBank:
-        """The local store, seeded, kept ready for whenever managed cannot answer."""
+        """The local store, kept ready for whenever managed cannot answer."""
         if isinstance(self._store, LocalMemoryBank):
             return self._store
         if self._fallback_store is None:
             self._fallback_store = LocalMemoryBank()
-            _seed(self._fallback_store)
         return self._fallback_store
 
 
-_SEED_LESSONS = [
-    {
-        "incident_id": "FIRE-2025-DRILL-001",
-        "incident_type": "fire",
-        "facility_id": "jefferson",
-        "title": "Floor 2 west stairwell bottleneck during fire drill",
-        "body": (
-            "During the October 2025 fire drill, Floor 2 West Wing evacuation took 4:30 "
-            "to fully clear. The west stairwell created a bottleneck when Room 215 (Science Lab) "
-            "and Room 210 evacuated simultaneously. Recommend staggering Room 215 evacuation 30 seconds "
-            "before Room 210 to avoid congestion. Also noted: Mrs. Thompson (knee replacement) "
-            "needed elevator evacuation — the key was not immediately accessible from Floor 2."
-        ),
-        "category": "evacuation",
-        "tags": ["fire", "floor2", "stairwell", "bottleneck", "science_lab", "accessibility"],
-    },
-    {
-        "incident_id": "FIRE-2025-DRILL-001",
-        "incident_type": "fire",
-        "facility_id": "jefferson",
-        "title": "Elevator key should be pre-staged on Floor 2 for mobility evacuations",
-        "body": (
-            "During the October drill, it took 2 minutes to retrieve the elevator key from "
-            "the main office (Floor 1) for Mrs. Thompson's evacuation from Floor 2. "
-            "Approved change: a duplicate elevator key is now stored in Room 201 (Floor Warden "
-            "Mrs. Nguyen's classroom). Verified with Principal Johnson."
-        ),
-        "category": "accessibility",
-        "tags": ["fire", "elevator", "accessibility", "mobility", "key"],
-    },
-    {
-        "incident_id": "FIRE-2025-DRILL-002",
-        "incident_type": "fire",
-        "facility_id": "jefferson",
-        "title": "Science lab gas shutoff must be verified before evacuation clearance",
-        "body": (
-            "During the January 2026 drill, the science lab gas shutoff valve (Room 215 east wall) "
-            "was not verified as closed before the all-clear. Dr. Franklin confirmed the gas line was "
-            "off, but no formal check was in the drill procedure. Added to the fire playbook: "
-            "Floor Warden must confirm science lab gas shutoff before reporting Floor 2 West clear."
-        ),
-        "category": "playbook",
-        "tags": ["fire", "gas_shutoff", "science_lab", "floor2", "hazmat"],
-    },
-    {
-        "incident_id": "WEATHER-2025-001",
-        "incident_type": "severe_weather",
-        "facility_id": "jefferson",
-        "title": "Shelter-in-place locations should be marked with signage",
-        "body": (
-            "During the March 2026 tornado warning, staff in the East Wing Floor 2 were unsure "
-            "which interior hallway was the designated shelter. The zone data specifies 'Interior hallway C' "
-            "but there's no physical signage. Recommend adding shelter location signs at hallway entrances."
-        ),
-        "category": "facilities",
-        "tags": ["severe_weather", "shelter", "signage", "floor2"],
-    },
-    {
-        "incident_id": "MEDICAL-2025-001",
-        "incident_type": "medical",
-        "facility_id": "jefferson",
-        "title": "AED response time from west wing was over 3 minutes",
-        "body": (
-            "A student fainted in Room 112 (West Wing Floor 1). The nearest AED is in Hallway B "
-            "outside Room 112, which was correct and accessible. However, the responding teacher "
-            "didn't know the AED location. Recommend: AED location posters in every classroom "
-            "and quarterly AED awareness refreshers for all staff."
-        ),
-        "category": "resources",
-        "tags": ["medical", "aed", "west_wing", "training"],
-    },
-]
-
-
-def _seed(store: LocalMemoryBank) -> None:
-    """Load the demo lessons into a local store."""
-    if store.lessons:
-        return
-    for seed in _SEED_LESSONS:
-        store.store_lesson(**seed, seeded=True)
-
-
-def _already_seeded(mb: MemoryBank) -> bool:
-    """Whether the active store already holds lessons.
-
-    The old check read `mb.lessons`, which is the local store's list. The
-    managed adapter has no such list, so the check read empty on every cold
-    start and seeded again: eleven restarts put fifty-five memories in the
-    Agent Engine, eleven copies of each seed, and similarity search then
-    returned five hits that were all the same lesson.
-
-    An unreadable store is treated as seeded. Failing to seed is a demo without
-    prior lessons; seeding on a failed read writes duplicates that then need
-    finding and deleting.
-    """
-    if getattr(mb, "lessons", None):
-        return True
-    try:
-        return bool(mb.find_lessons(limit=1))
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"Could not check whether the Memory Bank is seeded ({exc}); "
-                       "not seeding")
-        return True
-
-
 def init_memory_bank() -> MemoryBank:
-    """Initialize the Memory Bank singleton with pre-seeded lessons."""
-    mb = MemoryBank.get()
-    if not _already_seeded(mb):
-        for seed in _SEED_LESSONS:
-            mb.store_lesson(**seed, seeded=True)
-        # Store a demo outcome
-        mb.store_incident_outcome(
-            incident_id="FIRE-2025-DRILL-001",
-            incident_type="fire",
-            facility_id="jefferson",
-            total_personnel=34,
-            accounted=34,
-            response_time_seconds=270,
-            resolved=True,
-            summary="Fire drill completed. All 34 personnel accounted for in 4:30. "
-                    "West stairwell bottleneck identified as improvement area.",
-        )
-        mb.store_incident_outcome(
-            incident_id="FIRE-2025-DRILL-002",
-            incident_type="fire",
-            facility_id="jefferson",
-            total_personnel=34,
-            accounted=34,
-            response_time_seconds=240,
-            resolved=True,
-            summary="Fire drill completed. All 34 personnel accounted for in 4:00. "
-                    "Gas shutoff verification gap identified.",
-        )
-    return mb
+    """Return the Memory Bank singleton. It starts empty.
+
+    It used to start with five drill lessons and two outcomes, invented for a
+    Jefferson Elementary demo. Rendered in the PRIOR LESSONS panel beside ids
+    like FIRE-2025-DRILL-001, they were indistinguishable from recall of a real
+    incident, so the console claimed experience no deployment had had. An empty
+    panel reads "No prior lessons", which is the truth until one is learned.
+    """
+    return MemoryBank.get()

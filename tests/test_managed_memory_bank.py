@@ -212,9 +212,15 @@ class TestSourceCitationSurvivesTheManagedRoundTrip:
         assert source["lesson_id"]
         assert source["outcome_summary"] == "Evacuated in 4 minutes"
 
-    def test_a_retrieval_failure_falls_back_rather_than_returning_nothing(self, monkeypatch):
+    def test_a_retrieval_failure_says_so_rather_than_returning_nothing(self, monkeypatch):
         """An empty list reads as "no prior lessons", which is a claim. A
-        backend that is down has not established that."""
+        backend that is down has not established that.
+
+        The seeded fixtures used to mask this: the local fallback always held
+        five lessons, so an outage still returned something. Nothing is seeded
+        now, so the outage has to be reported rather than absorbed."""
+        from src.agents.learning.tools import find_similar_incidents
+
         monkeypatch.setenv("MEMORY_BACKEND", "vertex")
         monkeypatch.setenv("VERTEX_MEMORY_ENGINE", "projects/p/locations/l/reasoningEngines/1")
         MemoryBank.reset()
@@ -223,8 +229,27 @@ class TestSourceCitationSurvivesTheManagedRoundTrip:
             bank = MemoryBank.get()
             bank.store_lesson("I-1", "fire", "jefferson", "T", "B", tags=["fire"])
             client.retrieve_memories.side_effect = RuntimeError("backend down")
-            found = bank.find_lessons(incident_type="fire")
-        assert found, "a backend outage silently became 'no lessons exist'"
+            result = find_similar_incidents("fire", "jefferson")
+
+        assert result["lessons_found"] == 0
+        assert result["recall_degraded"] is True, (
+            "a backend outage silently became 'no lessons exist'")
+
+    def test_a_healthy_empty_store_is_not_reported_as_degraded(self, monkeypatch):
+        """Empty because nothing has been learned is a different statement
+        from empty because the store could not be read."""
+        from src.agents.learning.tools import find_similar_incidents
+
+        monkeypatch.setenv("MEMORY_BACKEND", "vertex")
+        monkeypatch.setenv("VERTEX_MEMORY_ENGINE", "projects/p/locations/l/reasoningEngines/1")
+        MemoryBank.reset()
+        client = _fake_client()
+        with patch("src.core.memory_bank.VertexMemoryBank._build_client", return_value=client):
+            MemoryBank.get()
+            result = find_similar_incidents("fire", "jefferson")
+
+        assert result["lessons_found"] == 0
+        assert result["recall_degraded"] is False
 
 
 class TestTheVectorNumberIsNotDressedUp:
@@ -292,41 +317,3 @@ class TestHealthNamesTheBackend:
         MemoryBank.reset()
         assert MockHandler("GET", "/health").get_response()["memory_backend"] == "local"
 
-
-class TestTheSeededFlagSurvivesTheManagedRoundTrip:
-    """The local bank carried the flag and every test passed while the managed
-    path silently dropped it — the signature accepted `seeded` and the record
-    dict never wrote it down. Both stores now get asserted separately, because
-    the deployment runs the one the suite was not covering."""
-
-    def _bank(self, monkeypatch, client):
-        monkeypatch.setenv("MEMORY_BACKEND", "vertex")
-        monkeypatch.setenv("VERTEX_MEMORY_ENGINE", "projects/p/locations/l/reasoningEngines/1")
-        MemoryBank.reset()
-        with patch("src.core.memory_bank.VertexMemoryBank._build_client", return_value=client):
-            return MemoryBank.get()
-
-    def test_a_seeded_lesson_comes_back_marked(self, monkeypatch):
-        client = _fake_client()
-        bank = self._bank(monkeypatch, client)
-        bank.store_lesson("FIRE-2025-DRILL-001", "fire", "jefferson",
-                          "Fixture", "Body", tags=["fire"], seeded=True)
-        assert bank.find_lessons("fire", limit=5)[0]["seeded"] is True
-
-    def test_a_real_lesson_comes_back_unmarked(self, monkeypatch):
-        client = _fake_client()
-        bank = self._bank(monkeypatch, client)
-        bank.store_lesson("FIRE-2026-009", "fire", "jefferson",
-                          "Learned in a run", "Body", tags=["fire"])
-        assert not bank.find_lessons("fire", limit=5)[0].get("seeded")
-
-    def test_the_tool_carries_the_flag_to_the_console(self, monkeypatch):
-        from src.agents.learning.tools import find_similar_incidents
-
-        client = _fake_client()
-        bank = self._bank(monkeypatch, client)
-        bank.store_lesson("FIRE-2025-DRILL-001", "fire", "jefferson",
-                          "Fixture", "Body", tags=["fire"], seeded=True)
-        with patch("src.core.memory_bank.VertexMemoryBank._build_client", return_value=client):
-            result = find_similar_incidents("fire", "jefferson")
-        assert result["lessons"][0]["seeded"] is True

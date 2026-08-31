@@ -91,9 +91,6 @@ def find_similar_incidents(
             "category": lesson["category"],
             "tags": lesson.get("tags", []),
             "confidence": round(confidence, 3),
-            # Passed through so a surface can distinguish a fixture from
-            # something this deployment actually learned.
-            "seeded": bool(lesson.get("seeded")),
             "source": citation,
         })
 
@@ -107,6 +104,10 @@ def find_similar_incidents(
         "facility_id": facility_id,
         "query_tags": sorted(query_tags),
         "lessons_found": len(scored),
+        # An empty list has two very different causes and they must not read
+        # the same: nothing has been learned yet, or the store could not be
+        # reached. Only the first is a statement about the facility.
+        "recall_degraded": mb.recall_degraded,
         "confidence_basis": confidence_basis,
         "confidence_note": confidence_note,
         "lessons": scored,

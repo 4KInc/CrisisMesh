@@ -124,7 +124,7 @@ services.
 12. **Tracks the threat as a trail, not a point** — reported sightings accumulate (`east wing → gym`), each timestamped and attributed, and every answer carries `UNCONFIRMED`. With no sighting it says nobody has reported one rather than reaching for the opening message as though it were a position
 13. **Works out which way is clear** — the floor plan and the sighting trail are joined, not printed side by side. Every route in the facility is classified into paths no reported sighting touches and paths one does, judged against every reported position and against the floor plan's own exclusions, with step-free options marked. When every path touches a sighting the clear list is empty and says so — the least-bad route is never promoted to a safe one
 14. **Generates Law Enforcement Arrival Briefs** — on-demand via `@CrisisMesh arrival brief`: a read-only point-in-time package with the threat trail, two separately-labelled headcounts (tracked staff roster vs room-reported occupants), silent rooms prioritised by threat-zone proximity, floor wardens, on-site resources, hazards, and the egress assessment above
-15. **Surfaces prior lessons without prompting** — the Memory Bank automatically retrieves relevant lessons from past incidents across facilities (e.g. "elevator key should be pre-staged on Floor 2") with Jaccard confidence scoring and source citations
+15. **Surfaces prior lessons without prompting** — the Memory Bank automatically retrieves relevant lessons from past incidents across facilities, with confidence scoring and source citations. It ships empty: a lesson appears only once an incident has been resolved and one was written, and a store that cannot be reached says so rather than reading as "no prior lessons"
 16. **Blocks** malicious inputs via Google Model Armor API (injection, jailbreak, malicious URI, RAI) + InjectionGuard regex fallback
 17. **Audits** every action with an append-only audit log and observability trace
 18. **Hot-reloads facility data** — CSV files dropped in the Slack channel are validated, applied against a staged copy, and swapped in atomically. A file that would empty the roster is refused and the previous data stays; a CSV CrisisMesh does not read is ignored with a log line rather than a refusal in the one room that has to stay readable
@@ -356,7 +356,7 @@ flowchart LR
 | **WhatsApp** | WhatsApp Business Cloud API (Meta) | Inbound message incident reports and check-in replies |
 | **Frontend** | Tailwind CSS + vanilla JS SPA | 4-screen command console with real-time binding |
 | **Models** | Pydantic v2 | Typed events, incidents, personnel, facilities |
-| **Tests** | pytest + pytest-asyncio | 1,339 tests, no GCP required |
+| **Tests** | pytest + pytest-asyncio | 1,331 tests, no GCP required |
 
 ---
 
@@ -399,7 +399,7 @@ CrisisMesh implements all 7 platform pillars required by the Fortified Enterpris
 | **Agent Identity** | Least-privilege enforcement — out-of-scope tool calls denied and logged as `policy.violation` events | Custom |
 | **Agent Gateway** | 4-layer policy: identity check, rate limiting (100 calls/agent/incident), approval gates, content scanning | Custom |
 | **Content Scanning** | Dual-backend `ContentScanner`: Google Model Armor API (prompt injection, PII, malicious URI, RAI) + regex `InjectionGuard` fallback (9 injection + 5 PII patterns) | Managed + Custom fallback |
-| **Memory Bank** | Cross-session lesson storage with Jaccard tag-overlap confidence scoring, source citations, and historical outcome stats; pre-seeded with 5 drill lessons and 2 outcomes | Custom |
+| **Memory Bank** | Cross-session lesson storage with Jaccard tag-overlap confidence scoring, source citations, and historical outcome stats; ships empty and fills from resolved incidents | Managed (Vertex AI Agent Engine) |
 | **Observability** | Hierarchical span traces per incident with span trees, duration tracking, and audit bundle export | Custom |
 | **Event Bus** | Typed pub/sub events via Google Cloud Pub/Sub (deployed) or in-memory (local); 18 event types | Managed |
 
@@ -494,8 +494,7 @@ The system ships with a complete, production-realistic dataset for **Jefferson E
 | **Emergency Resources** | 17 | 3 AEDs, 5 first aid kits, 6 fire extinguishers, 2 emergency phones, 1 trauma kit |
 | **Assembly Points** | 3 | Athletic Field (primary), Staff Parking (alternate), First Baptist Church (off-site) |
 | **Nearby Services** | 6 | Vanderbilt Level I trauma, TriStar hospital, fire station (3-min ETA), police, pediatric |
-| **Pre-seeded Lessons** | 5 | From prior fire drills: stairwell bottleneck, elevator key staging, gas shutoff, shelter signage, AED awareness |
-| **Historical Outcomes** | 2 | Response time benchmarks: 4:30 and 4:00 full accountability |
+| **Pre-seeded Lessons** | 0 | The Memory Bank ships empty. Lessons are written by resolved incidents, so PRIOR LESSONS reads "No prior lessons" until this deployment has had one |
 
 ---
 
@@ -520,7 +519,7 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your Google Cloud project ID
 
-# Run tests (1,339 passing, no GCP required)
+# Run tests (1,331 passing, no GCP required)
 pytest tests/ -v
 
 # Run the demo fire drill (no GCP required)
@@ -871,7 +870,7 @@ on a laptop with no project attached.
 ```bash
 git clone https://github.com/4KInc/CrisisMesh.git && cd CrisisMesh
 pip install -e ".[dev]"
-pytest tests/ -q          # 1,339 tests, all offline
+pytest tests/ -q          # 1,331 tests, all offline
 ```
 
 ### Checking the managed claims from outside the process
@@ -931,7 +930,7 @@ credentials, and would make the suite depend on a network.
 
 ## Test Coverage
 
-1,339 passing tests covering:
+1,331 passing tests covering:
 
 - **Intake:** Incident classification (10 types, 4 severity levels), location resolution against KB, playbook selection
 - **Accountability:** Roster loading, check-in processing, mobility-need escalation, accountability summaries

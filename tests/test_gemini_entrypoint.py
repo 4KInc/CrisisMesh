@@ -124,8 +124,13 @@ class TestLearningAgentTools:
         assert len(learning_agent.tools) == 4
 
     def test_fire_lessons_found(self):
-        from src.agents.learning.tools import find_similar_incidents
+        from src.agents.learning.tools import find_similar_incidents, store_lesson
 
+        for n in range(3):
+            store_lesson(
+                incident_id=f"FIRE-2026-{n}", incident_type="fire",
+                lesson_title=f"Lesson {n}", lesson_body="Body.",
+                facility_id="jefferson", category="evacuation", tags="fire")
         result = find_similar_incidents("fire", "jefferson")
         assert result["lessons_found"] >= 3
 

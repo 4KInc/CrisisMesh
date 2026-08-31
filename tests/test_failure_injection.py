@@ -73,6 +73,13 @@ class TestSubAgentTimeout:
         MemoryBank.reset()
         init_memory_bank()
         mb = MemoryBank.get()
+        # The bank starts empty now, so the state that has to survive the
+        # timeout is state this test puts there.
+        for n in range(3):
+            mb.store_lesson(
+                incident_id=f"FIRE-2026-{n}", incident_type="fire",
+                facility_id="jefferson", title=f"Lesson {n}", body="Body.",
+                category="evacuation", tags=["fire"])
         initial_count = len(mb.lessons)
 
         tm = TaskManager.get()
