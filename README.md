@@ -2,8 +2,10 @@
 
 **Autonomous coordination on your org's own data: your rooms, staff, routes. Runs fire, active-threat, cyber and medical response, chases whoever hasn't answered, hands them to a named human.**
 
-An autonomous multi-agent fleet for school districts, nonprofits and other
-resource-constrained organizations — one shared agent registry, many facilities.
+Built for the hardest case a school has: an active threat, when nobody opens a
+laptop and the only device anyone is holding is a phone. The same fleet runs
+fire, severe weather, medical and cyber, because a school buys one system rather
+than four.
 
 [All Things Agentic Hackathon](https://allthingsagentic.devpost.com/) (Google / Devpost) | Category: **Fortified Enterprise Fleet**
 
@@ -24,9 +26,14 @@ chasing whoever has not checked in without being asked again. The second answers
 with every name rather than a count. The third gives real directions, because
 this is a fire.
 
-Declare an active threat instead and that same question is refused: a corridor
-is what a lockdown makes dangerous, and the answer says so rather than routing
-somebody past the thing they are hiding from.
+**Declare an active threat instead and that same question is refused.** A
+corridor is what a lockdown makes dangerous, and the answer says so rather than
+routing somebody past the thing they are hiding from. That contrast is the
+system in one exchange, and it is why the demo is an active-threat run.
+
+The example above is a fire on purpose: this is a live number, and a stranger
+typing an active-shooter report into it for fun is not something to invite. The
+lockdown path is in the demo video.
 
 `SAFE` will be refused, and that is the product rather than a gap in it. More in
 [Try it yourself](#try-it-yourself).
@@ -50,13 +57,41 @@ somebody past the thing they are hiding from.
 
 ## The Problem
 
-During a fire, active-threat, or severe-weather event, a K-12 school district coordinates across multiple buildings via frantic group chats, failing phone trees, paper rosters, and disconnected documents. The incident commander cannot rapidly answer what matters: *who is safe, who is unaccounted for, which route is blocked, who needs mobility assistance, where the AEDs are* — much less answer it for each facility in the district. Enterprise incident platforms solve this — but cost $21+/user/month. CrisisMesh gives these underserved organizations the same capability through a no-code, Google Cloud-native multi-agent fleet that spans facilities with a shared agent registry, a cross-site Memory Bank, and per-facility knowledge bases.
+A lockdown is the case where every other tool stops working. The binder is in a
+drawer on the far side of the building. The phone tree needs somebody free to
+make calls. The roster is on paper in the front office, which is exactly where
+nobody is. Meanwhile the incident commander has to answer questions that have
+names attached to them: *who is unaccounted for, who cannot use the stairs,
+which corridor is the shooter reported to be in.*
+
+The person who can answer any of that is a teacher under a desk with a phone, in
+a room with twenty-three children, who can send one message and cannot take a
+call. Everything about CrisisMesh follows from that constraint.
+
+Fire, severe weather, medical and cyber run through the same fleet, on the same
+building data. They are easier cases, and a school that adopts this for one of
+them gets the others without adopting anything else. But the design decisions
+that matter were all made for the lockdown: refusing to publish an assembly
+point, refusing to give corridor directions, chasing silence rather than waiting
+for it, and handing a person nobody can reach to a named human instead of
+quietly giving up.
+
+Enterprise incident platforms solve this at $21+/user/month, which is not a
+number a public elementary school reaches for.
 
 ## What It Does
 
-A human sends a message — a Slack `/incident` command, a WhatsApp message, or a console declaration — describing what they see. CrisisMesh's deterministic pipeline fires immediately with a Block Kit SITREP. The Gemini agent fleet is available on-demand for deeper analysis via `@CrisisMesh` follow-up queries or the `/incident/agentic` endpoint. The console lights up in real time.
+Somebody sends the message they would already have sent: `active shooter reported
+in the east wing, gunshots heard`, typed into WhatsApp from a corridor. The
+deterministic pipeline fires immediately with a Block Kit SITREP, the Slack room
+where the response is coordinated hears it within a second, and the
+reconciliation loop starts chasing whoever has not checked in. The Gemini fleet
+is available on demand for deeper analysis; the console lights up in real time.
 
-**This is a human sending a message they would already send.** CrisisMesh does not detect or sense incidents. It coordinates the organizational response after a human reports one.
+**This is a human sending a message they would already send.** CrisisMesh does
+not detect or sense incidents, and it never replaces 911. It coordinates the
+organisational response after a person reports one, alongside emergency
+services.
 
 1. **Receives** an incident report via Slack, WhatsApp, or the command console *(SMS is built and tested but not carrier-approved — see Known Limits)*
 2. **Classifies** the report (type, severity, location) and activates the matching playbook — no human triage needed
