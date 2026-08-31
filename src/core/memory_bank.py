@@ -482,10 +482,33 @@ def _seed(store: LocalMemoryBank) -> None:
         store.store_lesson(**seed)
 
 
+def _already_seeded(mb: MemoryBank) -> bool:
+    """Whether the active store already holds lessons.
+
+    The old check read `mb.lessons`, which is the local store's list. The
+    managed adapter has no such list, so the check read empty on every cold
+    start and seeded again: eleven restarts put fifty-five memories in the
+    Agent Engine, eleven copies of each seed, and similarity search then
+    returned five hits that were all the same lesson.
+
+    An unreadable store is treated as seeded. Failing to seed is a demo without
+    prior lessons; seeding on a failed read writes duplicates that then need
+    finding and deleting.
+    """
+    if getattr(mb, "lessons", None):
+        return True
+    try:
+        return bool(mb.find_lessons(limit=1))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Could not check whether the Memory Bank is seeded ({exc}); "
+                       "not seeding")
+        return True
+
+
 def init_memory_bank() -> MemoryBank:
     """Initialize the Memory Bank singleton with pre-seeded lessons."""
     mb = MemoryBank.get()
-    if not mb.lessons:
+    if not _already_seeded(mb):
         for seed in _SEED_LESSONS:
             mb.store_lesson(**seed)
         # Store a demo outcome

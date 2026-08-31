@@ -549,3 +549,28 @@ class TestStaticResponsesAreSized:
 
     def test_html_is_sized_too(self):
         assert MockHandler("GET", "/")._headers.get("Content-Length")
+
+
+class TestPriorLessonsRenderWhatTheApiReturns:
+    """The console printed "undefined" above every prior lesson: it read
+    `l.source_incident`, and the API returns `source`, an object carrying
+    incident_id. That field name has never existed."""
+
+    def test_the_console_does_not_read_a_field_that_is_not_returned(self):
+        html = MockHandler("GET", "/").get_body() if hasattr(
+            MockHandler("GET", "/"), "get_body") else MockHandler(
+            "GET", "/").wfile.getvalue().decode(errors="ignore")
+        assert "l.source_incident" not in html
+
+    def test_lesson_shape_from_the_learning_tool_has_the_fields_used(self):
+        from src.agents.learning.tools import find_similar_incidents
+        from src.core.memory_bank import MemoryBank, init_memory_bank
+
+        MemoryBank.reset()
+        init_memory_bank()
+        lessons = find_similar_incidents("fire", "jefferson")["lessons"]
+        assert lessons, "no lessons to check"
+        first = lessons[0]
+        assert "title" in first
+        assert isinstance(first.get("source"), dict)
+        assert "incident_id" in first["source"]
